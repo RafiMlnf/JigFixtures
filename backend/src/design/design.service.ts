@@ -36,7 +36,7 @@ export class DesignService {
   /** Get all items (alias for inventory list) for the design form dropdown */
   async getAllItems() {
     const designs = await this.prisma.design.findMany({
-      include: { line: true, documents: true, revisionHistories: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { line: true, documents: true, revisionHistories: { orderBy: { createdAt: 'desc' }, take: 1 }, cellParts: true },
       orderBy: { noReg: 'asc' },
     });
 
@@ -49,6 +49,7 @@ export class DesignService {
       designDateNew: d.designDateNew,
       docLocation2D: d.documents[0]?.loc2D || null,
       docLocation3D: d.revisionHistories[0]?.loc3D || null,
+      cellPartCount: d.cellParts?.length || 0,
     }));
   }
 
@@ -162,6 +163,9 @@ export class DesignService {
           include: { changedBy: { select: { name: true } }, vendor: true },
           orderBy: { createdAt: 'desc' },
         },
+        cellParts: {
+          orderBy: { partNumber: 'asc' },
+        },
       },
       orderBy: { noReg: 'asc' },
     });
@@ -220,6 +224,26 @@ export class DesignService {
         createdAt: abn.createdAt,
         reportedBy: abn.reportedBy.name,
       })),
+      cellParts: (d as any).cellParts?.map((cp: any) => {
+        const baseDate = cp.lastRenewalDate || cp.installDate;
+        const dueDate = new Date(new Date(baseDate).getTime() + cp.lifetimeDays * 86400000);
+        const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+        return {
+          id: cp.id,
+          partNumber: cp.partNumber,
+          name: cp.name,
+          description: cp.description,
+          lifetimeDays: cp.lifetimeDays,
+          installDate: cp.installDate,
+          lastRenewalDate: cp.lastRenewalDate,
+          dueDate: dueDate.toISOString(),
+          daysRemaining,
+          lifetimeStatus: daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE',
+          minimumStock: cp.minimumStock,
+          actualStock: cp.actualStock,
+          pdfPageIndex: cp.pdfPageIndex,
+        };
+      }) || [],
     }));
   }
 
@@ -286,6 +310,7 @@ export class DesignService {
         processId,
         minimumStock: dto.minimumStock ? parseInt(String(dto.minimumStock), 10) : 0,
         actualStock: dto.actualStock ? parseInt(String(dto.actualStock), 10) : 0,
+        lifetimeDays: dto.lifetimeDays ? parseInt(String(dto.lifetimeDays), 10) : 180,
         revStatus: dto.revStatus || '0',
         lifecycleStatus: dto.lifecycleStatus || 'ACTIVE',
         vendorId: dto.vendorId || undefined,

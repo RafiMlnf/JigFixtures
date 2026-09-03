@@ -197,3 +197,108 @@ export async function deleteDesignItem(id: string) {
   return res.json();
 }
 
+// ==========================================
+// CELL PART API
+// ==========================================
+
+/** Fetch CellParts for a parent Design/Jig */
+export async function fetchCellParts(designId: string) {
+  const res = await fetch(`${BASE}/api/cell-part/by-design/${designId}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new HttpError('Failed to fetch cell parts', res.status);
+  return res.json();
+}
+
+/** Fetch CellPart reminders (approaching or past due date) */
+export async function fetchCellPartReminders() {
+  const res = await fetch(`${BASE}/api/cell-part/reminders`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new HttpError('Failed to fetch cell part reminders', res.status);
+  return res.json();
+}
+
+/** Create a new CellPart under a parent Design */
+export async function createCellPart(data: {
+  designId: string;
+  partNumber: string;
+  name: string;
+  description?: string;
+  lifetimeDays?: number;
+  installDate?: string;
+  minimumStock?: number;
+  actualStock?: number;
+  pdfPageIndex?: number;
+}) {
+  const res = await fetch(`${BASE}/api/cell-part`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to create cell part', res.status);
+  }
+  return res.json();
+}
+
+/** Update an existing CellPart */
+export async function updateCellPart(id: string, data: {
+  partNumber?: string;
+  name?: string;
+  description?: string;
+  lifetimeDays?: number;
+  installDate?: string;
+  minimumStock?: number;
+  actualStock?: number;
+  pdfPageIndex?: number;
+}) {
+  const res = await fetch(`${BASE}/api/cell-part/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to update cell part', res.status);
+  }
+  return res.json();
+}
+
+/** Renew a CellPart's lifetime (reset install date to now) */
+export async function renewCellPart(id: string) {
+  const res = await fetch(`${BASE}/api/cell-part/${id}/renew`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to renew cell part', res.status);
+  }
+  return res.json();
+}
+
+/** Delete a CellPart */
+export async function deleteCellPart(id: string) {
+  const res = await fetch(`${BASE}/api/cell-part/${id}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to delete cell part', res.status);
+  }
+  return res.json();
+}

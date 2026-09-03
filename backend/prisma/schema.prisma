@@ -109,6 +109,7 @@ model Design {
   designDateLast    DateTime?      @map("design_date_last")
   designDateNew     DateTime?      @map("design_date_new")
   newVisualDesign   String?        @map("new_visual_design")
+  lifetimeDays      Int            @default(180) @map("lifetime_days")
 
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
@@ -119,6 +120,7 @@ model Design {
   inventoryLogs     InventoryLog[]
   notifications     Notification[]
   revisionHistories RevisionHistory[]
+  cellParts         CellPart[]
 
   @@map("design")
 }
@@ -279,4 +281,36 @@ enum LifecycleStatus {
   UNDER_IMPROVEMENT
   OBSOLETE
   SCRAP
+}
+
+// ==========================================
+// CELL PART (Child of Design/Jig)
+// ==========================================
+
+model CellPart {
+  id              String    @id @default(cuid())
+  designId        String    @map("design_id")
+  design          Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
+
+  partNumber      String    @map("part_number")
+  name            String
+  description     String?
+
+  // Lifetime tracking
+  lifetimeDays    Int       @default(180) @map("lifetime_days")
+  installDate     DateTime  @default(now()) @map("install_date")
+  lastRenewalDate DateTime? @map("last_renewal_date")
+  reminderSent    Boolean   @default(false) @map("reminder_sent")
+
+  // Stock
+  minimumStock    Int       @default(0) @map("minimum_stock")
+  actualStock     Int       @default(0) @map("actual_stock")
+
+  // PDF drawing page reference
+  pdfPageIndex    Int?      @map("pdf_page_index")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("cell_part")
 }

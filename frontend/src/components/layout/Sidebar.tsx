@@ -64,6 +64,23 @@ export default function Sidebar() {
   const role = user?.role ?? null;
 
   const [showLogoImage, setShowLogoImage] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    // Read saved preference
+    const saved = localStorage.getItem('sidebar_collapsed');
+    if (saved !== null) {
+      setIsCollapsed(saved === 'true');
+    }
+  }, []);
+
+  const toggleSidebar = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -100,8 +117,11 @@ export default function Sidebar() {
   const { logout } = useApp();
 
   return (
-    <aside className="w-56 bg-surface-container-low flex flex-col h-full z-10 shrink-0">
-
+    <aside
+      className={`${
+        isCollapsed ? 'w-16' : 'w-56'
+      } bg-surface-container-low flex flex-col h-full z-10 shrink-0 transition-all duration-300 relative`}
+    >
       {/* Import ENOCH Font */}
       <style dangerouslySetInnerHTML={{
         __html: `
@@ -122,35 +142,59 @@ export default function Sidebar() {
       </svg>
 
       {/* Header */}
-      <div className="p-4 py-5 border-b border-outline-variant h-[80px] flex flex-col justify-center overflow-hidden">
-        <div className="relative w-full h-[32px] flex items-center justify-start px-2">
-          {/* Logo Text */}
-          <div
-            className={`absolute inset-y-0 left-2 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${showLogoImage ? 'opacity-0 -translate-x-8 pointer-events-none' : 'opacity-100 translate-x-0'
+      <div className={`border-b border-outline-variant h-[80px] flex items-center justify-between overflow-hidden relative ${isCollapsed ? 'px-2 justify-center' : 'p-4 py-5'}`}>
+        {!isCollapsed ? (
+          <div className="relative w-full h-[42px] flex items-center justify-start px-2">
+            {/* Logo Text */}
+            <div
+              className={`absolute inset-y-0 left-2 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${
+                showLogoImage ? 'opacity-0 -translate-x-8 pointer-events-none' : 'opacity-100 translate-x-0'
               }`}
-          >
-            <h1 className="text-[25px] text-on-surface leading-none text-left font-normal" style={{ fontFamily: "'ENOCH', sans-serif", fontWeight: 'normal' }}>
-              JIG FIXTURES
-            </h1>
-          </div>
+            >
+              <h1
+                className="text-[21px] text-on-surface leading-[0.92] text-left font-normal tracking-wide whitespace-nowrap"
+                style={{ fontFamily: "'ENOCH', sans-serif", fontWeight: 'normal' }}
+              >
+                JIG<br />FIXTURES
+              </h1>
+            </div>
 
-          {/* Logo Image */}
-          <div
-            className={`absolute inset-y-0 left-0 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${showLogoImage ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8 pointer-events-none'
+            {/* Logo Image */}
+            <div
+              className={`absolute inset-y-0 left-0 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${
+                showLogoImage ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8 pointer-events-none'
               }`}
-          >
-            <Image
-              src={logoImg}
-              alt="MTM Logo"
-              className="h-8 w-auto object-contain"
-              style={{
-                filter: 'url(#white-outline)'
-              }}
-              priority
-            />
+            >
+              <Image
+                src={logoImg}
+                alt="MTM Logo"
+                className="h-8 w-auto object-contain"
+                style={{
+                  filter: 'url(#white-outline)',
+                }}
+                priority
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-2xl font-bold">build_circle</span>
+          </div>
+        )}
       </div>
+
+      {/* Floating 3-Dots Toggle Button: Luar Sidebar, Align Tengah Vertikal */}
+      <button
+        type="button"
+        onClick={toggleSidebar}
+        className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-white/95 hover:bg-white text-slate-400 hover:text-slate-700 border border-slate-200/90 rounded-full flex items-center justify-center shadow-md z-30 cursor-pointer transition-all hover:scale-105 group"
+        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <span className="material-symbols-outlined text-[16px] leading-none select-none text-slate-500 group-hover:text-blue-600 transition-colors">
+          more_vert
+        </span>
+      </button>
 
       {/* Navigation Links */}
       <nav className="flex-1 overflow-y-auto py-2">
@@ -170,21 +214,32 @@ export default function Sidebar() {
                 <li key={item.name}>
                   <Link
                     href={item.href}
-                    className={`flex items-center gap-2 py-2 px-3 mx-2 rounded-lg transition-all group ${isActive
-                      ? 'bg-secondary-container text-on-secondary-container font-semibold'
-                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest/50'
-                      }`}
+                    title={isCollapsed ? item.name : undefined}
+                    className={`flex items-center ${
+                      isCollapsed ? 'justify-center px-0 mx-1.5 h-10' : 'gap-2 px-3 mx-2'
+                    } py-2 rounded-lg transition-all group relative ${
+                      isActive
+                        ? 'bg-secondary-container text-on-secondary-container font-semibold'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest/50'
+                    }`}
                   >
                     <span
-                      className={`material-symbols-outlined text-base transition-transform ${!isActive && 'group-hover:scale-110'
-                        }`}
+                      className={`material-symbols-outlined text-base transition-transform ${
+                        !isActive && 'group-hover:scale-110'
+                      }`}
                     >
                       {item.icon}
                     </span>
-                    <span className="font-medium text-xs flex-1">{item.name}</span>
+                    {!isCollapsed && <span className="font-medium text-xs flex-1 truncate">{item.name}</span>}
                     {item.badge !== undefined && item.badge > 0 && (
-                      <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                        {item.badge}
+                      <span
+                        className={`${
+                          isCollapsed
+                            ? 'absolute top-1 right-1 w-2 h-2 p-0 rounded-full'
+                            : 'text-[9px] font-bold px-1.5 py-0.5 rounded-full'
+                        } bg-red-500 text-white`}
+                      >
+                        {!isCollapsed && item.badge}
                       </span>
                     )}
                   </Link>
@@ -196,41 +251,53 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer Container */}
-      <div className="p-3 border-t border-outline-variant mt-auto flex flex-col gap-2 relative">
+      <div className={`border-t border-outline-variant mt-auto flex flex-col gap-2 relative ${isCollapsed ? 'p-1.5 items-center' : 'p-3'}`}>
         {showSubmitBtn && (
           <Link
             href="/design?action=revision"
-            className="w-full py-1.5 px-3 rounded-lg bg-[#0063ff] text-white font-bold text-xs hover:bg-[#0052d4] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            title={isCollapsed ? 'Submit Revision' : undefined}
+            className={`rounded-lg bg-[#0063ff] text-white font-bold text-xs hover:bg-[#0052d4] transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+              isCollapsed ? 'w-10 h-10 p-0' : 'w-full py-1.5 px-3'
+            }`}
           >
             <span className="material-symbols-outlined text-sm">add</span>
-            Submit Revision
+            {!isCollapsed && <span>Submit Revision</span>}
           </Link>
         )}
 
-
-
         {/* User Profile and Logout */}
-        <div className="flex items-center justify-between bg-surface-container-highest/20 border border-outline-variant/30 rounded-xl p-2 mt-1">
-          <div className="flex items-center gap-2 min-w-0">
+        <div
+          className={`flex items-center ${
+            isCollapsed ? 'justify-center p-1.5 w-10 h-10' : 'justify-between p-2'
+          } bg-surface-container-highest/20 border border-outline-variant/30 rounded-xl mt-1`}
+        >
+          <div
+            className="flex items-center gap-2 min-w-0"
+            title={isCollapsed ? `${user?.name || 'User'} (${getRoleLabel(role)})` : undefined}
+          >
             <div className="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center text-[10px] font-bold shrink-0">
               {user ? getInitials(user.name) : 'PE'}
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold text-on-surface truncate leading-none mb-1">
-                {user?.name || 'Guest User'}
-              </p>
-              <p className="text-[8px] text-on-surface-variant truncate leading-none">
-                {isLoading ? 'Loading' : getRoleLabel(role)}
-              </p>
-            </div>
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-on-surface truncate leading-none mb-1">
+                  {user?.name || 'Guest User'}
+                </p>
+                <p className="text-[8px] text-on-surface-variant truncate leading-none">
+                  {isLoading ? 'Loading' : getRoleLabel(role)}
+                </p>
+              </div>
+            )}
           </div>
-          <button
-            onClick={logout}
-            className="text-on-surface-variant hover:text-red-500 transition-colors cursor-pointer shrink-0 ml-1.5 flex items-center"
-            title="Logout"
-          >
-            <span className="material-symbols-outlined text-[16px]">logout</span>
-          </button>
+          {!isCollapsed && (
+            <button
+              onClick={logout}
+              className="text-on-surface-variant hover:text-red-500 transition-colors cursor-pointer shrink-0 ml-1.5 flex items-center"
+              title="Logout"
+            >
+              <span className="material-symbols-outlined text-[16px]">logout</span>
+            </button>
+          )}
         </div>
       </div>
     </aside>

@@ -37,7 +37,7 @@ export class InventoryService {
     // Fetch all designs matching criteria
     const rawItems = await this.prisma.design.findMany({
       where,
-      include: { line: true, process: true, vendor: true },
+      include: { line: true, process: true, vendor: true, cellParts: { orderBy: { partNumber: 'asc' } } },
       orderBy: { noReg: 'asc' },
     });
 
@@ -47,6 +47,18 @@ export class InventoryService {
       lineProduct: item.line.lineName,
       process: item.process.name,
       indicator: this.getIndicator(item.actualStock, item.minimumStock),
+      cellParts: (item as any).cellParts?.map((cp: any) => {
+        const baseDate = cp.lastRenewalDate || cp.installDate;
+        const dueDate = new Date(new Date(baseDate).getTime() + cp.lifetimeDays * 86400000);
+        const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+        return {
+          ...cp,
+          indicator: this.getIndicator(cp.actualStock, cp.minimumStock),
+          dueDate: dueDate.toISOString(),
+          daysRemaining,
+          lifetimeStatus: daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE',
+        };
+      }) || [],
     }));
 
     if (query.indicator) {
@@ -74,7 +86,7 @@ export class InventoryService {
   async findOne(id: string) {
     const item = await this.prisma.design.findUnique({
       where: { id },
-      include: { line: true, process: true, vendor: true },
+      include: { line: true, process: true, vendor: true, cellParts: { orderBy: { partNumber: 'asc' } } },
     });
     if (!item) {
       throw new NotFoundException(`Inventory item with ID ${id} not found`);

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useApp, JigFixtureItem, ApprovalItem } from '@/context/AppContext';
-import { fetchMasterList } from '@/lib/api/phase3';
+import { fetchMasterList, fetchCellPartReminders, renewCellPart } from '@/lib/api/phase3';
 
 interface LifetimeItem {
   id: string;
@@ -22,7 +22,7 @@ interface LifetimeItem {
 }
 
 export default function DashboardPage() {
-  const { user, items, approvals, isLoading: isAppLoading } = useApp();
+  const { user, items, approvals, isLoading: isAppLoading, processApproval } = useApp();
 
   const [masterList, setMasterList] = useState<any[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -36,13 +36,31 @@ export default function DashboardPage() {
   const [lifetimeSearch, setLifetimeSearch] = useState('');
   const [selectedLine, setSelectedLine] = useState('All');
 
+  // Left card states (CellPart Lifetime Reminders ≤5 Minggu & Overdue)
+  const [cellPartReminders, setCellPartReminders] = useState<any[]>([]);
+  const [cellPartSearch, setCellPartSearch] = useState('');
+  const [processingCpId, setProcessingCpId] = useState<string | null>(null);
+
+  const loadCellPartReminders = async () => {
+    try {
+      const res = await fetchCellPartReminders();
+      setCellPartReminders(res || []);
+    } catch (err) {
+      console.warn('Could not fetch cell part reminders', err);
+    }
+  };
+
   // Load backend master list if items in AppContext are empty
   useEffect(() => {
     async function loadMasterData() {
       setIsLoadingData(true);
       try {
-        const res = await fetchMasterList();
-        setMasterList(res || []);
+        const [res, cpReminders] = await Promise.allSettled([
+          fetchMasterList(),
+          fetchCellPartReminders(),
+        ]);
+        if (res.status === 'fulfilled') setMasterList(res.value || []);
+        if (cpReminders.status === 'fulfilled') setCellPartReminders(cpReminders.value || []);
       } catch (err) {
         console.warn('Using local context items for dashboard data', err);
       } finally {
@@ -91,11 +109,11 @@ export default function DashboardPage() {
     return displayItems.map((item) => {
       const baseDateStr = item.designDateNew || item.designDateLast;
       const baseDate = baseDateStr ? new Date(baseDateStr) : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-      
+
       // Standard life cycle duration: 180 days (6 months periodic maintenance/review)
       const cycleDays = 180;
       const dueDate = new Date(baseDate.getTime() + cycleDays * 24 * 60 * 60 * 1000);
-      
+
       const diffTime = dueDate.getTime() - now.getTime();
       const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -201,6 +219,39 @@ export default function DashboardPage() {
     return { overdue, warning, safe, total: lifetimeItems.length };
   }, [lifetimeItems]);
 
+  // CellPart Reminders summary statistics (≤5 minggu / 35 hari & Overdue)
+  const cpStats = useMemo(() => {
+    const overdue = cellPartReminders.filter((cp) => cp.lifetimeStatus === 'OVERDUE').length;
+    const warning = cellPartReminders.filter((cp) => cp.lifetimeStatus === 'WARNING').length;
+    return { overdue, warning, total: cellPartReminders.length };
+  }, [cellPartReminders]);
+
+  const filteredCpReminders = useMemo(() => {
+    if (!cellPartSearch.trim()) return cellPartReminders;
+    const q = cellPartSearch.toLowerCase().trim();
+    return cellPartReminders.filter(
+      (cp) =>
+        (cp.partNumber && cp.partNumber.toLowerCase().includes(q)) ||
+        (cp.name && cp.name.toLowerCase().includes(q)) ||
+        (cp.parentNoReg && cp.parentNoReg.toLowerCase().includes(q)) ||
+        (cp.parentName && cp.parentName.toLowerCase().includes(q))
+    );
+  }, [cellPartReminders, cellPartSearch]);
+
+  const handleRenewCellPartItem = async (cpId: string, cpName: string) => {
+    try {
+      setProcessingCpId(cpId);
+      await renewCellPart(cpId);
+      setActionSuccessMsg(`Lifetime CellPart "${cpName}" berhasil di-renew!`);
+      setTimeout(() => setActionSuccessMsg(null), 3000);
+      await loadCellPartReminders();
+    } catch (err: any) {
+      alert(`Gagal me-renew CellPart: ${err.message || 'Error server'}`);
+    } finally {
+      setProcessingCpId(null);
+    }
+  };
+
   const currentDateStr = new Intl.DateTimeFormat('id-ID', {
     weekday: 'long',
     day: 'numeric',
@@ -210,535 +261,468 @@ export default function DashboardPage() {
 
   const isLoading = isAppLoading || isLoadingData;
 
+  const [processingTaskId, setProcessingTaskId] = useState<string | null>(null);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  const handleQuickDecision = async (taskId: string, action: 'APPROVE' | 'REJECT') => {
+    try {
+      setProcessingTaskId(taskId);
+      await processApproval(taskId, action, action === 'APPROVE' ? 'Quick approval from dashboard' : 'Declined from dashboard');
+      setActionSuccessMsg(`Task berhasil di-${action === 'APPROVE' ? 'setujui' : 'tolak'}.`);
+      setTimeout(() => setActionSuccessMsg(null), 3000);
+    } catch (err: any) {
+      alert(`Gagal memproses approval: ${err.message || 'Error server'}`);
+    } finally {
+      setProcessingTaskId(null);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full overflow-y-auto bg-slate-50/70 p-5 gap-4">
-      
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/80 rounded-2xl p-4 px-5 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#0063ff] flex items-center justify-center shadow-xs">
-            <span className="material-symbols-outlined text-2xl">dashboard</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-800 tracking-tight">Dashboard Overview</h1>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live System
+    <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden">
+      {/* Header controls with border-b divider */}
+      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
+        <div>
+          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[#0063ff] text-lg">dashboard</span>
+            Dashboard Overview
+          </h2>
+        </div>
+      </header>
+
+      {/* Main Content Area (Scrollable) */}
+      <div className="flex-1 overflow-y-auto pr-1">
+        {/* Main 3 Cards Layout: KIRI (Area Informasi) | TENGAH (Tasks & Approval Simple) | KANAN (Reminder Lifetime & Stock) */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start pb-2">
+
+          {/* ========================================================================= */}
+          {/* CARD 1: KIRI (xl:col-span-3) - Reminder Lifetime CellPart (≤5 Mgg)        */}
+          {/* ========================================================================= */}
+          <div className="xl:col-span-3 flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs min-h-[560px] overflow-hidden">
+            {/* Header Card Kiri */}
+            <div className="h-10 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">notifications_active</span>
+                Reminder CellPart
+              </h2>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${cpStats.overdue > 0 ? 'bg-rose-500 text-white' : 'bg-white/20 text-white'}`}>
+                {cpStats.total}
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Selamat datang, <span className="font-semibold text-slate-700">{user?.name || 'User'}</span> &bull; {currentDateStr}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <Link
-            href="/approval-center"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-base">fact_check</span>
-            Approval Center ({taskStats.waiting})
-          </Link>
-          <Link
-            href="/design"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-base">table_view</span>
-            Design Master List
-          </Link>
-        </div>
-      </div>
-
-      {/* Main 3 Cards Layout: KIRI (Kosong) | TENGAH (Highlight Tasks/Approval) | KANAN (Due Date Lifetime) */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 flex-1 items-start">
-        
-        {/* ========================================================================= */}
-        {/* CARD 1: KIRI (xl:col-span-3) - Kosongkan Dulu (Reserved Placeholder)      */}
-        {/* ========================================================================= */}
-        <div className="xl:col-span-3 flex flex-col justify-between bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs min-h-[560px]">
-          {/* Header Card Kiri */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-slate-100 text-slate-500">
-                <span className="material-symbols-outlined text-base">dashboard_customize</span>
+            {/* Content Container */}
+            <div className="p-3 flex-1 flex flex-col gap-2 overflow-hidden">
+              {/* Compact Metric Strip */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="flex items-center justify-between bg-rose-50/80 border border-rose-200/70 px-2.5 py-1.5 rounded-lg">
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                    <span className="text-[9px] font-bold text-rose-700">Overdue</span>
+                  </div>
+                  <span className="text-xs font-black text-rose-800">{cpStats.overdue}</span>
+                </div>
+                <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200/70 px-2.5 py-1.5 rounded-lg">
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span className="text-[9px] font-bold text-amber-700">&le;5 Minggu</span>
+                  </div>
+                  <span className="text-xs font-black text-amber-800">{cpStats.warning}</span>
+                </div>
               </div>
-              <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Area Informasi</h2>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-400 rounded-md">
-              Reserved
-            </span>
-          </div>
 
-          {/* Clean Placeholder Body */}
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 my-auto">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200/60 flex items-center justify-center text-slate-300 mb-3 shadow-2xs">
-              <span className="material-symbols-outlined text-3xl">space_dashboard</span>
-            </div>
-            <p className="text-xs font-bold text-slate-600 mb-1">Slot Widget Kiri</p>
-            <p className="text-[11px] text-slate-400 max-w-[200px] leading-relaxed">
-              Area ini disiapkan untuk penambahan modul grafik atau ringkasan lainnya di masa mendatang.
-            </p>
-          </div>
-
-          {/* Footer Card Kiri */}
-          <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-[11px] text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-              Slot Kosong
-            </span>
-            <span>Standby</span>
-          </div>
-        </div>
-
-
-        {/* ========================================================================= */}
-        {/* CARD 2: TENGAH BESAR (xl:col-span-6) - Highlight Tasks / Approval Center */}
-        {/* ========================================================================= */}
-        <div className="xl:col-span-6 flex flex-col gap-3.5 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs min-h-[560px]">
-          {/* Header Card Tengah */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
-                <span className="material-symbols-outlined text-base">fact_check</span>
-              </div>
-              <div>
-                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Highlight Tasks & Approval Center
-                </h2>
-                <p className="text-[10px] text-slate-400">Daftar pengajuan revisi desain dan update inventori yang memerlukan tindakan</p>
-              </div>
-            </div>
-
-            {/* Quick Badge */}
-            <div className="flex items-center gap-1.5">
-              {taskStats.waiting > 0 ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                  {taskStats.waiting} Menunggu Approval
+              {/* Quick Search */}
+              <div className="relative w-full">
+                <span className="material-symbols-outlined text-sm text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
+                  search
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <span className="material-symbols-outlined text-xs">check_circle</span>
-                  Semua Selesai
-                </span>
+                <input
+                  type="text"
+                  placeholder="Cari part number / parent..."
+                  value={cellPartSearch}
+                  onChange={(e) => setCellPartSearch(e.target.value)}
+                  className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* List */}
+              <div className="flex-1 overflow-y-auto max-h-[385px] space-y-2 pr-1 no-scrollbar">
+                {isLoading ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-slate-400">
+                    <span className="material-symbols-outlined animate-spin text-2xl text-blue-500 mb-2">sync</span>
+                    <p className="text-xs">Memuat reminder...</p>
+                  </div>
+                ) : filteredCpReminders.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 my-auto">
+                    <span className="material-symbols-outlined text-3xl mb-1 text-emerald-500">verified</span>
+                    <p className="text-xs font-bold text-slate-700">Semua CellPart Aman</p>
+                    <p className="text-[10px] text-slate-400 text-center mt-0.5">Tidak ada CellPart yang butuh peremajaan dalam 5 minggu ke depan.</p>
+                  </div>
+                ) : (
+                  filteredCpReminders.map((cp) => {
+                    const isOverdue = cp.lifetimeStatus === 'OVERDUE';
+                    const isProcessing = processingCpId === cp.id;
+
+                    return (
+                      <div
+                        key={cp.id}
+                        className={`border rounded-xl p-2.5 flex flex-col gap-1.5 transition-all shadow-2xs ${
+                          isOverdue
+                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70'
+                            : 'bg-amber-50/30 border-amber-200 hover:bg-amber-50/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <span className="text-[9px] font-bold text-blue-650 font-mono block truncate">
+                              Jig: {cp.parentNoReg || '-'}
+                            </span>
+                            <h4 className="text-xs font-bold text-slate-800 truncate">
+                              {cp.partNumber} &middot; {cp.name}
+                            </h4>
+                          </div>
+                          <span
+                            className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 uppercase ${
+                              isOverdue ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-amber-100 text-amber-700 border border-amber-300'
+                            }`}
+                          >
+                            {isOverdue ? 'Overdue' : `${cp.daysRemaining} hari lagi`}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/60">
+                          <div className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs text-slate-400">event</span>
+                            <span>Due: {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isProcessing}
+                            onClick={() => handleRenewCellPartItem(cp.id, cp.name)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[9px] font-bold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                            title="Renew lifetime part ini"
+                          >
+                            {isProcessing ? (
+                              <span className="material-symbols-outlined text-[10px] animate-spin">sync</span>
+                            ) : (
+                              <span className="material-symbols-outlined text-[10px]">autorenew</span>
+                            )}
+                            Renew
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer Kiri */}
+              <div className="mt-auto pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <Link
+                  href="/inventory"
+                  className="text-[#0063ff] hover:underline font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  Buka Kontrol Inventory
+                  <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+
+          {/* ========================================================================= */}
+          {/* CARD 2: TENGAH (xl:col-span-6) - Simple Task Card + Approval / Decline     */}
+          {/* ========================================================================= */}
+          <div className="xl:col-span-6 flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs min-h-[560px] overflow-hidden">
+            {/* Header Card Tengah */}
+            <div className="h-10 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+                Daftar Task & Approval
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-white/20 text-white rounded">
+                {taskStats.waiting}
+              </span>
+            </div>
+
+            {/* Content Container */}
+            <div className="p-3 flex-1 flex flex-col gap-2 overflow-hidden">
+              {/* Success notification banner */}
+              {actionSuccessMsg && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium">
+                  <span className="material-symbols-outlined text-sm text-emerald-600">check_circle</span>
+                  <span>{actionSuccessMsg}</span>
+                </div>
               )}
+
+              {/* Task List Content (Cleaner & Simpler with Icon-Only Approval & Decline Buttons) */}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {isLoading ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-slate-400">
+                    <span className="material-symbols-outlined animate-spin text-2xl text-amber-500 mb-2">sync</span>
+                    <p className="text-xs">Memuat daftar approval tasks...</p>
+                  </div>
+                ) : filteredTasks.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                    <span className="material-symbols-outlined text-4xl mb-1.5 text-emerald-400">task_alt</span>
+                    <p className="text-xs font-bold text-slate-700">Tidak ada task yang perlu diproses.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Semua pengajuan telah ditindaklanjuti.</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto max-h-[430px] space-y-2 pr-1">
+                    {filteredTasks.map((task) => {
+                      const isWaiting = task.status === 'WAITING';
+                      const isDesign = task.type === 'Design Rev';
+                      const isProcessing = processingTaskId === task.id;
+
+                      return (
+                        <div
+                          key={task.id}
+                          className="bg-white hover:bg-slate-50/90 border border-slate-200 rounded-xl p-3 flex flex-col gap-2 transition-all shadow-2xs"
+                        >
+                          {/* Top: Tag, Reg No, Title, and Status */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${isDesign ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  }`}
+                              >
+                                {task.type}
+                              </span>
+                              <span className="font-mono font-bold text-xs text-slate-800 shrink-0">
+                                {task.noReg}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-700 truncate" title={task.itemName}>
+                                {task.itemName}
+                              </span>
+                            </div>
+
+                            {/* Status Badge (hanya tampil jika bukan WAITING) */}
+                            {task.status !== 'WAITING' && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${task.status === 'APPROVED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  }`}
+                              >
+                                {task.status}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Middle: Submitter & Note */}
+                          <div className="text-[11px] text-slate-500 bg-slate-50/70 p-2 rounded-lg border border-slate-100 flex flex-col gap-0.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-600 font-medium flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[13px] text-slate-400">person</span>
+                                Diajukan oleh: <b className="text-slate-700">{task.author}</b>
+                              </span>
+                              <span className="text-[10px] text-slate-400">{task.date}</span>
+                            </div>
+                            {task.note && (
+                              <p className="text-slate-500 line-clamp-1 italic text-[10px] mt-0.5">
+                                &ldquo;{task.note}&rdquo;
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Bottom Row: Direct Approval & Decline Buttons (Icon Only) */}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                            <Link
+                              href={`/approval-center/${task.id}`}
+                              className="text-[11px] font-semibold text-slate-500 hover:text-blue-600 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <span>Detail</span>
+                              <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                            </Link>
+
+                            {/* Direct Action Buttons - Icon only */}
+                            {isWaiting ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isProcessing}
+                                  onClick={() => handleQuickDecision(task.id, 'REJECT')}
+                                  className="w-7 h-7 flex items-center justify-center bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                  title="Tolak / Decline task ini"
+                                  aria-label="Decline task"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">close</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isProcessing}
+                                  onClick={() => handleQuickDecision(task.id, 'APPROVE')}
+                                  className="w-7 h-7 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                                  title="Setujui / Approve task ini"
+                                  aria-label="Approve task"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">check</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-400 italic">
+                                Task sudah diselesaikan
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Tengah */}
+              <div className="mt-auto pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <Link
+                  href="/approval-center"
+                  className="text-[#0063ff] hover:underline font-bold text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  Buka Approval Center Lengkap
+                  <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                </Link>
+              </div>
             </div>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-4 gap-2">
-            <div className="bg-slate-50 border border-slate-150 p-2.5 rounded-xl flex flex-col">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Total Tasks</span>
-              <span className="text-base font-black text-slate-800 mt-0.5">{taskStats.total}</span>
-            </div>
-            <div className="bg-amber-50/70 border border-amber-200/80 p-2.5 rounded-xl flex flex-col">
-              <span className="text-[10px] font-bold text-amber-700 uppercase">Menunggu</span>
-              <span className="text-base font-black text-amber-800 mt-0.5">{taskStats.waiting}</span>
-            </div>
-            <div className="bg-blue-50/70 border border-blue-200/80 p-2.5 rounded-xl flex flex-col">
-              <span className="text-[10px] font-bold text-blue-700 uppercase">Rev Desain</span>
-              <span className="text-base font-black text-blue-800 mt-0.5">{taskStats.designRevWaiting}</span>
-            </div>
-            <div className="bg-emerald-50/70 border border-emerald-200/80 p-2.5 rounded-xl flex flex-col">
-              <span className="text-[10px] font-bold text-emerald-700 uppercase">Disetujui</span>
-              <span className="text-base font-black text-emerald-800 mt-0.5">{taskStats.approved}</span>
-            </div>
-          </div>
 
-          {/* Filter Tabs & Search */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
-            {/* Tabs */}
-            <div className="flex items-center p-1 bg-slate-100/90 rounded-xl gap-1 w-full sm:w-auto overflow-x-auto">
-              <button
-                type="button"
-                onClick={() => setTaskFilter('WAITING')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  taskFilter === 'WAITING'
-                    ? 'bg-white text-amber-700 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Menunggu ({taskStats.waiting})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('ALL')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  taskFilter === 'ALL'
-                    ? 'bg-white text-blue-600 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Semua ({taskStats.total})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('DESIGN_REV')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  taskFilter === 'DESIGN_REV'
-                    ? 'bg-white text-blue-600 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-blue-600'
-                }`}
-              >
-                Design Rev ({approvals.filter((a) => a.type === 'Design Rev').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTaskFilter('INVENTORY_UPDATE')}
-                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                  taskFilter === 'INVENTORY_UPDATE'
-                    ? 'bg-white text-indigo-600 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-indigo-600'
-                }`}
-              >
-                Inventory ({approvals.filter((a) => a.type === 'Inventory Update').length})
-              </button>
+          {/* ========================================================================= */}
+          {/* CARD 3: KANAN (xl:col-span-3) - Reminder Lifetime & Stock                 */}
+          {/* ========================================================================= */}
+          <div className="xl:col-span-3 flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs min-h-[560px] overflow-hidden">
+            {/* Header Card Kanan */}
+            <div className="h-10 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-white">
+                Lifetime & Stok
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-white/20 text-white rounded">
+                {lifetimeStats.total}
+              </span>
             </div>
 
-            {/* Task Search */}
-            <div className="relative w-full sm:w-48">
-              <span className="material-symbols-outlined text-sm text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2">
+            {/* Content Container */}
+            <div className="p-3 flex-1 flex flex-col gap-2 overflow-hidden">
+
+            {/* Compact Metric Strip */}
+            <div className="grid grid-cols-3 gap-1">
+              <div className="flex items-center justify-between bg-rose-50/70 border border-rose-200/70 px-2 py-1 rounded-md">
+                <span className="text-[9px] font-bold text-rose-700">Overdue</span>
+                <span className="text-xs font-black text-rose-800">{lifetimeStats.overdue}</span>
+              </div>
+              <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200/70 px-2 py-1 rounded-md">
+                <span className="text-[9px] font-bold text-amber-700">&le;30hr</span>
+                <span className="text-xs font-black text-amber-800">{lifetimeStats.warning}</span>
+              </div>
+              <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200/70 px-2 py-1 rounded-md">
+                <span className="text-[9px] font-bold text-emerald-700">Aman</span>
+                <span className="text-xs font-black text-emerald-800">{lifetimeStats.safe}</span>
+              </div>
+            </div>
+
+            {/* Quick Search Input */}
+            <div className="relative w-full">
+              <span className="material-symbols-outlined text-sm text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
                 search
               </span>
               <input
                 type="text"
-                placeholder="Cari task / requester..."
-                value={taskSearch}
-                onChange={(e) => setTaskSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-8 pr-3 py-1.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                placeholder="Cari reg / part..."
+                value={lifetimeSearch}
+                onChange={(e) => setLifetimeSearch(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 text-[11px] rounded-lg pl-7 pr-2 py-1 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
               />
             </div>
-          </div>
 
-          {/* Task List Content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {isLoading ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-slate-400">
-                <span className="material-symbols-outlined animate-spin text-2xl text-amber-500 mb-2">sync</span>
-                <p className="text-xs">Memuat daftar approval tasks...</p>
-              </div>
-            ) : filteredTasks.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                <span className="material-symbols-outlined text-4xl mb-1.5 text-emerald-400">task_alt</span>
-                <p className="text-xs font-bold text-slate-700">Tidak ada task yang sesuai filter.</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Semua antrean approval saat ini dalam status aman.</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto max-h-[360px] space-y-2.5 pr-1">
-                {filteredTasks.map((task) => {
-                  const isWaiting = task.status === 'WAITING';
-                  const isDesign = task.type === 'Design Rev';
+            {/* Items List (Compact Rows) */}
+            <div className="flex-1 overflow-y-auto max-h-[400px] space-y-1.5 pr-0.5">
+              {filteredLifetime.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-slate-400 bg-slate-50/60 rounded-lg border border-dashed border-slate-200">
+                  <span className="material-symbols-outlined text-2xl mb-1 text-emerald-500">check_circle</span>
+                  <p className="text-[11px] font-medium text-slate-500">Semua jig aman</p>
+                </div>
+              ) : (
+                filteredLifetime.map((item) => {
+                  const isOverdue = item.status === 'OVERDUE';
+                  const isWarning = item.status === 'WARNING';
+                  const isLowStock = item.actualStock < item.minimumStock;
+                  const isZeroStock = item.actualStock === 0;
 
                   return (
                     <div
-                      key={task.id}
-                      className="bg-slate-50 hover:bg-slate-100/90 border border-slate-200/80 rounded-xl p-3.5 flex flex-col gap-2.5 transition-all shadow-2xs"
+                      key={item.id}
+                      className={`p-2 rounded-lg border transition-colors flex flex-col gap-1 ${isOverdue
+                          ? 'bg-rose-50/40 border-rose-200'
+                          : isWarning
+                            ? 'bg-amber-50/40 border-amber-200'
+                            : 'bg-white border-slate-200/80 hover:bg-slate-50/60'
+                        }`}
                     >
-                      {/* Top Row: Type, Reg No, Requester, & Status */}
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              isDesign ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800'
-                            }`}
-                          >
-                            {task.type}
+                      {/* Baris 1: Reg, Part Name, Status hr */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="font-mono text-[9px] font-bold text-slate-800 shrink-0">
+                            {item.noReg}
                           </span>
-                          <span className="font-mono font-bold text-xs text-slate-800">
-                            {task.noReg}
-                          </span>
-                          <span className="text-xs font-bold text-slate-700 truncate max-w-[200px]">
-                            {task.itemName}
+                          <span className="text-[11px] font-semibold text-slate-700 truncate" title={item.assyPartName}>
+                            {item.assyPartName}
                           </span>
                         </div>
-
-                        {/* Overall Status Badge */}
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            task.status === 'WAITING'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200'
-                              : task.status === 'APPROVED'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0 font-mono ${isOverdue
+                              ? 'bg-rose-100 text-rose-800'
+                              : isWarning
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
                         >
-                          {task.status === 'WAITING' ? 'Menunggu Approval' : task.status}
+                          {isOverdue ? 'OVERDUE' : `${item.daysRemaining}d`}
                         </span>
                       </div>
 
-                      {/* Middle Row: Note & Requester Details */}
-                      <div className="flex items-center justify-between gap-3 text-xs bg-white p-2 rounded-lg border border-slate-150">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-slate-600 line-clamp-1 text-[11px]">
-                            <span className="font-semibold text-slate-700">Catatan: </span>
-                            {task.note || 'Pengajuan pembaruan revisi / kuantitas stok.'}
-                          </p>
-                          <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-                            <span>Diajukan oleh: <b className="text-slate-600">{task.author}</b></span>
-                            <span>&bull;</span>
-                            <span>{task.date}</span>
-                          </p>
+                      {/* Baris 2: Stok, Due Date, dan Persentase */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-500">
+                        <div className="flex items-center gap-1">
+                          <span>Stok:</span>
+                          <span className={`font-bold ${isZeroStock ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-700'}`}>
+                            {item.actualStock}/{item.minimumStock}
+                          </span>
+                          {isZeroStock && (
+                            <span className="px-1 py-0.2 rounded text-[8px] font-black bg-rose-100 text-rose-700 leading-none">
+                              0
+                            </span>
+                          )}
                         </div>
 
-                        {/* Multi-level Approval Chips */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <div className="flex flex-col items-center">
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">Section</span>
-                            <span
-                              className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                task.sectionStatus === 'APPROVED'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : task.sectionStatus === 'REJECTED'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}
-                            >
-                              {task.sectionStatus || 'WAITING'}
-                            </span>
-                          </div>
-                          <div className="flex flex-col items-center">
-                            <span className="text-[8px] font-bold text-slate-400 uppercase">Dept</span>
-                            <span
-                              className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                task.deptStatus === 'APPROVED'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : task.deptStatus === 'REJECTED'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}
-                            >
-                              {task.deptStatus || 'WAITING'}
-                            </span>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-slate-400 font-mono">{item.dueDate}</span>
+                          <span className={`font-bold font-mono text-[10px] ${isOverdue ? 'text-rose-600' : isWarning ? 'text-amber-600' : 'text-slate-600'
+                            }`}>
+                            {item.lifetimePercent}%
+                          </span>
                         </div>
-                      </div>
-
-                      {/* Bottom Row: Actions */}
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-xs">info</span>
-                          ID Task: {task.id.substring(0, 8)}...
-                        </span>
-                        
-                        <Link
-                          href={`/approval-center`}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-[#0063ff] font-bold text-[11px] rounded-lg transition-colors cursor-pointer shadow-2xs"
-                        >
-                          Review Detail
-                          <span className="material-symbols-outlined text-xs">arrow_forward</span>
-                        </Link>
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Footer Tengah */}
-          <div className="mt-auto pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>
-              Menampilkan <b>{filteredTasks.length}</b> tasks
-            </span>
-            <Link
-              href="/approval-center"
-              className="text-[#0063ff] hover:underline font-bold text-xs flex items-center gap-1 cursor-pointer"
-            >
-              Buka Approval Center Lengkap
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-            </Link>
-          </div>
-        </div>
-
-
-        {/* ========================================================================= */}
-        {/* CARD 3: KANAN (xl:col-span-3) - Due Date & Life Time Jig Fixture          */}
-        {/* ========================================================================= */}
-        <div className="xl:col-span-3 flex flex-col gap-3.5 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs min-h-[560px]">
-          {/* Header Card Kanan */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
-                <span className="material-symbols-outlined text-base">timer</span>
-              </div>
-              <div>
-                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Due Date & Life Time</h2>
-                <p className="text-[10px] text-slate-400">Monitoring masa pakai & jadwal PM Jig Fixture</p>
-              </div>
+                })
+              )}
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
-              {lifetimeStats.total} Item
-            </span>
-          </div>
 
-          {/* Lifetime Status Ratio Badges */}
-          <div className="grid grid-cols-3 gap-1.5">
-            <div className="flex flex-col items-center bg-rose-50/60 border border-rose-200/70 p-2 rounded-xl text-center">
-              <span className="text-[9px] font-bold text-rose-600 uppercase flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                Overdue
+            {/* Footer Kanan */}
+            <div className="mt-auto pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="font-semibold text-slate-600">
+                {lifetimeStats.overdue + lifetimeStats.warning} perlu perhatian
               </span>
-              <span className="text-base font-black text-rose-700 mt-0.5">{lifetimeStats.overdue}</span>
-            </div>
-            <div className="flex flex-col items-center bg-amber-50/60 border border-amber-200/70 p-2 rounded-xl text-center">
-              <span className="text-[9px] font-bold text-amber-600 uppercase flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                &le; 30 Hari
-              </span>
-              <span className="text-base font-black text-amber-700 mt-0.5">{lifetimeStats.warning}</span>
-            </div>
-            <div className="flex flex-col items-center bg-emerald-50/60 border border-emerald-200/70 p-2 rounded-xl text-center">
-              <span className="text-[9px] font-bold text-emerald-600 uppercase flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Aman
-              </span>
-              <span className="text-base font-black text-emerald-700 mt-0.5">{lifetimeStats.safe}</span>
-            </div>
-          </div>
-
-          {/* Search & Filter Controls */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setLifetimeFilter('ALL')}
-                className={`flex-1 py-1 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer text-center ${
-                  lifetimeFilter === 'ALL'
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                }`}
+              <Link
+                href="/inventory"
+                className="text-rose-600 hover:underline font-bold text-[11px] flex items-center gap-0.5 cursor-pointer"
               >
-                Semua ({lifetimeStats.total})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLifetimeFilter('WARNING_OVERDUE')}
-                className={`flex-1 py-1 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer text-center flex items-center justify-center gap-1 ${
-                  lifetimeFilter === 'WARNING_OVERDUE'
-                    ? 'bg-rose-600 text-white border-rose-600'
-                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                Perlu Perhatian ({lifetimeStats.overdue + lifetimeStats.warning})
-              </button>
+                Inventori
+                <span className="material-symbols-outlined text-xs">arrow_forward</span>
+              </Link>
             </div>
-
-            {/* Quick Search */}
-            <div className="relative w-full">
-              <span className="material-symbols-outlined text-sm text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2">
-                search
-              </span>
-              <input
-                type="text"
-                placeholder="Cari Reg No / Part..."
-                value={lifetimeSearch}
-                onChange={(e) => setLifetimeSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-8 pr-3 py-1.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
-              />
             </div>
           </div>
 
-          {/* Lifetime Items List */}
-          <div className="flex-1 overflow-y-auto max-h-[350px] space-y-2 pr-1">
-            {filteredLifetime.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-40 text-slate-400 bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
-                <span className="material-symbols-outlined text-3xl mb-1 text-emerald-400">check_circle</span>
-                <p className="text-xs font-medium">Tidak ada item yang sesuai filter.</p>
-              </div>
-            ) : (
-              filteredLifetime.map((item) => {
-                const isOverdue = item.status === 'OVERDUE';
-                const isWarning = item.status === 'WARNING';
-
-                return (
-                  <div
-                    key={item.id}
-                    className={`p-2.5 rounded-xl border transition-colors flex flex-col gap-1.5 ${
-                      isOverdue
-                        ? 'bg-rose-50/50 border-rose-200/80 hover:bg-rose-50'
-                        : isWarning
-                        ? 'bg-amber-50/50 border-amber-200/80 hover:bg-amber-50'
-                        : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-100/70'
-                    }`}
-                  >
-                    {/* Header item */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-slate-200 text-slate-800">
-                          {item.noReg}
-                        </span>
-                        <span className="text-xs font-bold text-slate-800 truncate max-w-[120px]">
-                          {item.assyPartName}
-                        </span>
-                      </div>
-
-                      {/* Due Tag */}
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                          isOverdue
-                            ? 'bg-rose-100 text-rose-800 border-rose-300'
-                            : isWarning
-                            ? 'bg-amber-100 text-amber-800 border-amber-300'
-                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                        }`}
-                      >
-                        {isOverdue
-                          ? 'OVERDUE'
-                          : `${item.daysRemaining} hari lagi`}
-                      </span>
-                    </div>
-
-                    {/* Due Date & Line */}
-                    <div className="flex items-center justify-between text-[10px] text-slate-500">
-                      <span>Line: <b className="text-slate-700">{item.lineProduct || 'Line'}</b></span>
-                      <span>Due: <b className="text-slate-700">{item.dueDate}</b></span>
-                    </div>
-
-                    {/* Progress Bar of Lifetime Consumed */}
-                    <div className="flex flex-col gap-0.5 pt-0.5">
-                      <div className="flex justify-between text-[9px] text-slate-400 font-semibold">
-                        <span>Pemakaian Life Time</span>
-                        <span className={isOverdue ? 'text-rose-600 font-bold' : isWarning ? 'text-amber-600 font-bold' : 'text-slate-600'}>
-                          {item.lifetimePercent}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isOverdue
-                              ? 'bg-rose-500'
-                              : isWarning
-                              ? 'bg-amber-500'
-                              : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${item.lifetimePercent}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Footer Kanan */}
-          <div className="mt-auto pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="text-[11px]">
-              Kritis/Warning: <b>{lifetimeStats.overdue + lifetimeStats.warning}</b> item
-            </span>
-            <Link
-              href="/inventory"
-              className="text-rose-600 hover:underline font-bold text-xs flex items-center gap-1 cursor-pointer"
-            >
-              Cek Inventori
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-            </Link>
-          </div>
         </div>
-
       </div>
     </div>
   );

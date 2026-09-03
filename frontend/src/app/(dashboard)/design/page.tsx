@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, deleteCellPart } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 
 interface DocumentInfo {
@@ -43,6 +43,22 @@ interface AbnormalityInfo {
   reportedBy: string;
 }
 
+interface CellPartInfo {
+  id: string;
+  partNumber: string;
+  name: string;
+  description: string | null;
+  lifetimeDays: number;
+  installDate: string;
+  lastRenewalDate: string | null;
+  dueDate: string;
+  daysRemaining: number;
+  lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+  minimumStock: number;
+  actualStock: number;
+  pdfPageIndex: number | null;
+}
+
 interface MasterItem {
   id: string;
   noReg: string;
@@ -63,6 +79,7 @@ interface MasterItem {
   documents: DocumentInfo[];
   revisionHistories: RevHistoryInfo[];
   abnormalities: AbnormalityInfo[];
+  cellParts: CellPartInfo[];
 }
 
 function SearchableDropdown({
@@ -232,6 +249,18 @@ export function DesignPageContent() {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<MasterItem | null>(null);
 
+  // CellPart expand and modal state
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [showCellPartModal, setShowCellPartModal] = useState(false);
+  const [cellPartParentId, setCellPartParentId] = useState('');
+  const [cpPartNumber, setCpPartNumber] = useState('');
+  const [cpName, setCpName] = useState('');
+  const [cpDescription, setCpDescription] = useState('');
+  const [cpLifetimeDays, setCpLifetimeDays] = useState(180);
+  const [cpInstallDate, setCpInstallDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cpMinStock, setCpMinStock] = useState(0);
+  const [cpActStock, setCpActStock] = useState(0);
+
   // Lists for dropdown
   const [lines, setLines] = useState<any[]>([]);
   const [processes, setProcesses] = useState<any[]>([]);
@@ -246,6 +275,7 @@ export function DesignPageContent() {
   const [actualStock, setActualStock] = useState<number>(0);
   const [lineInput, setLineInput] = useState('');
   const [processInput, setProcessInput] = useState('');
+  const [lifetimeDaysInput, setLifetimeDaysInput] = useState(180);
 
   // Shared / Edit Form Fields
   const [revStatus, setRevStatus] = useState('1');
@@ -486,6 +516,7 @@ export function DesignPageContent() {
         processName,
         minimumStock,
         actualStock,
+        lifetimeDays: lifetimeDaysInput,
         revStatus,
         designDateNew,
         docLocation2D: docLocation2D || undefined,
@@ -531,6 +562,73 @@ export function DesignPageContent() {
       setToast({ type: 'error', msg: err.message || 'Gagal mengajukan revisi.' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // CellPart Handlers
+  const toggleExpandRow = (id: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleOpenCellPartModal = (designId: string) => {
+    setCellPartParentId(designId);
+    setCpPartNumber('');
+    setCpName('');
+    setCpDescription('');
+    setCpLifetimeDays(180);
+    setCpInstallDate(new Date().toISOString().split('T')[0]);
+    setCpMinStock(0);
+    setCpActStock(0);
+    setShowCellPartModal(true);
+  };
+
+  const handleCellPartSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await createCellPart({
+        designId: cellPartParentId,
+        partNumber: cpPartNumber,
+        name: cpName,
+        description: cpDescription || undefined,
+        lifetimeDays: cpLifetimeDays,
+        installDate: cpInstallDate,
+        minimumStock: cpMinStock,
+        actualStock: cpActStock,
+      });
+      setToast({ type: 'success', msg: `CellPart "${cpName}" berhasil ditambahkan!` });
+      setShowCellPartModal(false);
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal menambah CellPart.' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRenewCellPart = async (cpId: string, cpName: string) => {
+    try {
+      await renewCellPart(cpId);
+      setToast({ type: 'success', msg: `Lifetime "${cpName}" berhasil di-renew!` });
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal renew CellPart.' });
+    }
+  };
+
+  const handleDeleteCellPart = async (cpId: string, cpName: string) => {
+    if (!window.confirm(`Hapus CellPart "${cpName}"? Data tidak bisa dikembalikan.`)) return;
+    try {
+      await deleteCellPart(cpId);
+      setToast({ type: 'success', msg: `CellPart "${cpName}" berhasil dihapus!` });
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal menghapus CellPart.' });
     }
   };
 
@@ -971,72 +1069,186 @@ export function DesignPageContent() {
               {filteredItems.map((item, index) => {
                 const isRed = item.actualStock < item.minimumStock * 0.5;
                 const isYellow = item.actualStock < item.minimumStock && item.actualStock >= item.minimumStock * 0.5;
+                const isExpanded = expandedRows.has(item.id);
+                const cellParts = item.cellParts || [];
 
                 return (
-                  <tr
-                    key={item.id}
-                    onClick={() => {
-                      router.push(`/design/${item.id}`);
-                    }}
-                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <td className="px-3 py-2 text-center font-bold text-gray-400">
-                      {index + 1}
-                    </td>
-                    <td className="px-2 py-2 font-mono font-bold text-gray-900">{item.noReg}</td>
-                    <td className="px-2 py-2 font-medium">{item.assyPartName}</td>
-                    <td className="px-2 py-2 text-gray-550">{item.lineProduct}</td>
-                    <td className="px-2 py-2 text-gray-550">{item.process}</td>
-                    <td className="px-2 py-2 font-bold text-gray-500">{item.type}</td>
-                    <td className="px-2 py-2 text-center">
-                      <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${item.lifecycleStatus === 'UNDER_REPAIR' ? 'bg-orange-100 text-orange-700' :
-                        item.lifecycleStatus === 'UNDER_IMPROVEMENT' ? 'bg-blue-100 text-blue-700' :
-                          item.lifecycleStatus === 'OBSOLETE' ? 'bg-gray-100 text-gray-700' :
-                            item.lifecycleStatus === 'SCRAP' ? 'bg-red-100 text-red-700' :
-                              'bg-green-100 text-green-700'
-                        }`}>
-                        {item.lifecycleStatus || 'ACTIVE'}
-                      </span>
-                    </td>
-                    <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${isRed ? 'bg-red-500 text-white' : isYellow ? 'bg-yellow-400 text-yellow-950' : 'bg-green-500 text-white'
-                      }`}>
-                      {isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'}
-                    </td>
-                    <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${item.abnormalityStatus === 'RESOLVED' ? 'bg-green-500 text-white' :
-                      item.abnormalityStatus === 'IN_PROGRESS' ? 'bg-yellow-400 text-yellow-950' :
-                        'bg-red-500 text-white animate-pulse'
-                      }`}>
-                      {item.abnormalityStatus === 'RESOLVED' ? 'Aman' :
-                        item.abnormalityStatus === 'IN_PROGRESS' ? 'Monitoring' :
-                          'Anomali'}
-                    </td>
-                    {isPic && (
-                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditModal(item);
-                            }}
-                            className="text-gray-650 hover:text-gray-900 transition-colors cursor-pointer inline-flex items-center justify-center"
-                            title="Update Desain"
-                          >
-                            <span className="material-symbols-outlined text-[11px]">edit</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenDeleteConfirm(item);
-                            }}
-                            className="text-gray-655 hover:text-red-650 transition-colors cursor-pointer inline-flex items-center justify-center"
-                            title="Hapus Desain"
-                          >
-                            <span className="material-symbols-outlined text-[11px]">delete</span>
-                          </button>
+                  <React.Fragment key={item.id}>
+                    <tr
+                      onClick={() => toggleExpandRow(item.id)}
+                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/40' : ''}`}
+                    >
+                      <td className="px-3 py-2 text-center font-bold text-gray-400">
+                        <div className="flex items-center justify-center gap-0.5">
+                          <span className={`material-symbols-outlined text-[10px] transition-transform ${isExpanded ? 'rotate-90' : ''} ${cellParts.length > 0 ? 'text-blue-500' : 'text-gray-300'}`}>
+                            chevron_right
+                          </span>
+                          <span className="text-[10px]">{index + 1}</span>
                         </div>
                       </td>
+                      <td className="px-2 py-2 font-mono font-bold text-gray-900">
+                        <div className="flex items-center gap-1">
+                          {item.noReg}
+                          {cellParts.length > 0 && (
+                            <span className="text-[7px] bg-blue-100 text-blue-600 px-1 py-0.5 rounded-full font-bold">{cellParts.length}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 font-medium">{item.assyPartName}</td>
+                      <td className="px-2 py-2 text-gray-550">{item.lineProduct}</td>
+                      <td className="px-2 py-2 text-gray-550">{item.process}</td>
+                      <td className="px-2 py-2 font-bold text-gray-500">{item.type}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${item.lifecycleStatus === 'UNDER_REPAIR' ? 'bg-orange-100 text-orange-700' :
+                          item.lifecycleStatus === 'UNDER_IMPROVEMENT' ? 'bg-blue-100 text-blue-700' :
+                            item.lifecycleStatus === 'OBSOLETE' ? 'bg-gray-100 text-gray-700' :
+                              item.lifecycleStatus === 'SCRAP' ? 'bg-red-100 text-red-700' :
+                                'bg-green-100 text-green-700'
+                          }`}>
+                          {item.lifecycleStatus || 'ACTIVE'}
+                        </span>
+                      </td>
+                      <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${isRed ? 'bg-red-500 text-white' : isYellow ? 'bg-yellow-400 text-yellow-950' : 'bg-green-500 text-white'
+                        }`}>
+                        {isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'}
+                      </td>
+                      <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${item.abnormalityStatus === 'RESOLVED' ? 'bg-green-500 text-white' :
+                        item.abnormalityStatus === 'IN_PROGRESS' ? 'bg-yellow-400 text-yellow-950' :
+                          'bg-red-500 text-white animate-pulse'
+                        }`}>
+                        {item.abnormalityStatus === 'RESOLVED' ? 'Aman' :
+                          item.abnormalityStatus === 'IN_PROGRESS' ? 'Monitoring' :
+                            'Anomali'}
+                      </td>
+                      {isPic && (
+                        <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal(item);
+                              }}
+                              className="text-gray-650 hover:text-gray-900 transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title="Update Desain"
+                            >
+                              <span className="material-symbols-outlined text-[11px]">edit</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeleteConfirm(item);
+                              }}
+                              className="text-gray-655 hover:text-red-650 transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title="Hapus Desain"
+                            >
+                              <span className="material-symbols-outlined text-[11px]">delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+
+                    {/* CellPart Expanded Sub-Row */}
+                    {isExpanded && (
+                      <tr className="bg-slate-50/80">
+                        <td colSpan={isPic ? 10 : 9} className="px-4 py-3">
+                          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            {/* Sub-header */}
+                            <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
+                              <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-blue-600 text-sm">account_tree</span>
+                                <span className="text-[10px] font-bold text-gray-700">Cell Parts — {item.noReg}</span>
+                                <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">{cellParts.length} items</span>
+                              </div>
+                              {isPic && (
+                                <button
+                                  onClick={() => handleOpenCellPartModal(item.id)}
+                                  className="flex items-center gap-1 text-[9px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-xs">add</span>
+                                  Tambah CellPart
+                                </button>
+                              )}
+                            </div>
+
+                            {cellParts.length === 0 ? (
+                              <div className="text-center py-6 text-gray-400 text-[10px]">
+                                <span className="material-symbols-outlined text-lg mb-1 block">widgets</span>
+                                Belum ada CellPart. Klik "Tambah CellPart" untuk menambahkan.
+                              </div>
+                            ) : (
+                              <table className="w-full text-[10px]">
+                                <thead>
+                                  <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-150">
+                                    <th className="px-3 py-1.5 text-left">Part Number</th>
+                                    <th className="px-2 py-1.5 text-left">Nama</th>
+                                    <th className="px-2 py-1.5 text-center">Lifetime</th>
+                                    <th className="px-2 py-1.5 text-center">Due Date</th>
+                                    <th className="px-2 py-1.5 text-center">Stock</th>
+                                    {isPic && <th className="px-2 py-1.5 text-center w-20">Aksi</th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {cellParts.map((cp) => {
+                                    const cpStockRed = cp.actualStock === 0;
+                                    const cpStockYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
+                                    return (
+                                      <tr key={cp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                                        <td className="px-3 py-1.5 font-mono font-bold text-gray-800">{cp.partNumber}</td>
+                                        <td className="px-2 py-1.5 text-gray-700 font-medium">{cp.name}</td>
+                                        <td className="px-2 py-1.5 text-center">
+                                          <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                                            cp.lifetimeStatus === 'OVERDUE' ? 'bg-red-100 text-red-700' :
+                                            cp.lifetimeStatus === 'WARNING' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-green-100 text-green-700'
+                                          }`}>
+                                            <span className="material-symbols-outlined text-[8px]">
+                                              {cp.lifetimeStatus === 'OVERDUE' ? 'error' : cp.lifetimeStatus === 'WARNING' ? 'warning' : 'check_circle'}
+                                            </span>
+                                            {cp.lifetimeStatus === 'OVERDUE' ? 'OVERDUE' : `${cp.daysRemaining}d`}
+                                          </span>
+                                        </td>
+                                        <td className="px-2 py-1.5 text-center text-gray-500 text-[9px]">
+                                          {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        </td>
+                                        <td className="px-2 py-1.5 text-center">
+                                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                                            cpStockRed ? 'bg-red-100 text-red-700' : cpStockYellow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                                          }`}>
+                                            {cp.actualStock}/{cp.minimumStock}
+                                          </span>
+                                        </td>
+                                        {isPic && (
+                                          <td className="px-2 py-1.5 text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button
+                                                onClick={() => handleRenewCellPart(cp.id, cp.name)}
+                                                className="text-blue-500 hover:text-blue-700 transition-colors cursor-pointer"
+                                                title="Renew Lifetime"
+                                              >
+                                                <span className="material-symbols-outlined text-[12px]">autorenew</span>
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteCellPart(cp.id, cp.name)}
+                                                className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                                                title="Hapus CellPart"
+                                              >
+                                                <span className="material-symbols-outlined text-[12px]">delete</span>
+                                              </button>
+                                            </div>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </React.Fragment>
                 );
               })}
               {filteredItems.length === 0 && (
@@ -1177,6 +1389,20 @@ export function DesignPageContent() {
                     value={actualStock}
                     onChange={(e) => setActualStock(parseInt(e.target.value) || 0)}
                   />
+                </div>
+
+                {/* Lifetime */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Lifetime (hari)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-green-500"
+                    value={lifetimeDaysInput}
+                    onChange={(e) => setLifetimeDaysInput(parseInt(e.target.value) || 180)}
+                    placeholder="180"
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">Default: 180 hari. Reminder 5 minggu sebelum habis.</p>
                 </div>
 
                 {/* 2D drawing upload */}
@@ -1985,6 +2211,137 @@ export function DesignPageContent() {
                   Silakan pilih item Jig/Fixture untuk memulai revisi.
                 </div>
               )}
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CELLPART CREATE MODAL */}
+      {showCellPartModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-600 text-sm">account_tree</span>
+                Tambah CellPart
+              </h3>
+              <button onClick={() => setShowCellPartModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer">✕</button>
+            </div>
+
+            {/* Form Body */}
+            <form onSubmit={handleCellPartSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Part Number */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Part Number *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpPartNumber}
+                    onChange={(e) => setCpPartNumber(e.target.value)}
+                    placeholder="Contoh: CP-001"
+                  />
+                </div>
+
+                {/* Name */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama CellPart *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpName}
+                    onChange={(e) => setCpName(e.target.value)}
+                    placeholder="Contoh: Pin Locator"
+                  />
+                </div>
+
+                {/* Lifetime */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Lifetime (hari) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpLifetimeDays}
+                    onChange={(e) => setCpLifetimeDays(parseInt(e.target.value) || 180)}
+                  />
+                </div>
+
+                {/* Install Date */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tanggal Install *</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white outline-none text-gray-700 focus:ring-1 focus:ring-blue-500"
+                    value={cpInstallDate}
+                    onChange={(e) => setCpInstallDate(e.target.value)}
+                  />
+                </div>
+
+                {/* Stock */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Minimum</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpMinStock}
+                    onChange={(e) => setCpMinStock(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Aktual</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpActStock}
+                    onChange={(e) => setCpActStock(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Deskripsi (opsional)</label>
+                  <textarea
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500 resize-none"
+                    rows={2}
+                    value={cpDescription}
+                    onChange={(e) => setCpDescription(e.target.value)}
+                    placeholder="Keterangan tambahan..."
+                  />
+                </div>
+              </div>
+
+              {/* Submit */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCellPartModal(false)}
+                  className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  {submitting ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan CellPart'
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -4,7 +4,7 @@ import React, { useState, useEffect, use, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, deleteCellPart } from '@/lib/api/phase3';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -48,6 +48,22 @@ interface AbnormalityInfo {
   reportedBy: string;
 }
 
+interface CellPartInfo {
+  id: string;
+  partNumber: string;
+  name: string;
+  description: string | null;
+  lifetimeDays: number;
+  installDate: string;
+  lastRenewalDate: string | null;
+  dueDate: string;
+  daysRemaining: number;
+  lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+  minimumStock: number;
+  actualStock: number;
+  pdfPageIndex: number | null;
+}
+
 interface MasterItem {
   id: string;
   noReg: string;
@@ -68,13 +84,14 @@ interface MasterItem {
   documents: DocumentInfo[];
   revisionHistories: RevHistoryInfo[];
   abnormalities: AbnormalityInfo[];
+  cellParts: CellPartInfo[];
 }
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-type InspectorTab = 'info' | 'rev' | 'cost' | 'stock' | 'abn';
+type InspectorTab = 'info' | 'rev' | 'cost' | 'stock' | 'abn' | 'cellpart';
 
 export default function DesignDetailPage({ params }: PageProps) {
   const resolvedParams = use(params);
@@ -90,6 +107,21 @@ export default function DesignDetailPage({ params }: PageProps) {
   const [viewer3DName, setViewer3DName] = useState<string | undefined>();
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
 
+  // Multi-page 2D drawing state (Page 1 = Parent Jig, Page 2+ = Child CellParts)
+  const [activePdfPage, setActivePdfPage] = useState<number>(1);
+
+  // CellPart management modal state
+  const [showAddCpModal, setShowAddCpModal] = useState(false);
+  const [cpPartNumber, setCpPartNumber] = useState('');
+  const [cpName, setCpName] = useState('');
+  const [cpDescription, setCpDescription] = useState('');
+  const [cpLifetimeDays, setCpLifetimeDays] = useState(180);
+  const [cpInstallDate, setCpInstallDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cpMinStock, setCpMinStock] = useState(0);
+  const [cpActStock, setCpActStock] = useState(0);
+  const [cpPdfPageIndex, setCpPdfPageIndex] = useState<number>(2);
+  const [cpSubmitting, setCpSubmitting] = useState(false);
+
   const loadItem = async () => {
     setLoading(true);
     try {
@@ -100,6 +132,63 @@ export default function DesignDetailPage({ params }: PageProps) {
       if (e.status === 401 || e.status === 403) logout();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenAddCpModal = () => {
+    const nextPageIndex = item?.cellParts ? item.cellParts.length + 2 : 2;
+    setCpPartNumber('');
+    setCpName('');
+    setCpDescription('');
+    setCpLifetimeDays(180);
+    setCpInstallDate(new Date().toISOString().split('T')[0]);
+    setCpMinStock(0);
+    setCpActStock(0);
+    setCpPdfPageIndex(nextPageIndex);
+    setShowAddCpModal(true);
+  };
+
+  const handleCreateCellPart = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!item) return;
+    setCpSubmitting(true);
+    try {
+      await createCellPart({
+        designId: item.id,
+        partNumber: cpPartNumber,
+        name: cpName,
+        description: cpDescription || undefined,
+        lifetimeDays: cpLifetimeDays,
+        installDate: cpInstallDate,
+        minimumStock: cpMinStock,
+        actualStock: cpActStock,
+        pdfPageIndex: cpPdfPageIndex,
+      });
+      setShowAddCpModal(false);
+      await loadItem();
+    } catch (err: any) {
+      alert(`Gagal menambah CellPart: ${err.message || 'Error server'}`);
+    } finally {
+      setCpSubmitting(false);
+    }
+  };
+
+  const handleRenewCp = async (cpId: string, cpName: string) => {
+    try {
+      await renewCellPart(cpId);
+      await loadItem();
+    } catch (err: any) {
+      alert(`Gagal me-renew CellPart: ${err.message || 'Error server'}`);
+    }
+  };
+
+  const handleDeleteCp = async (cpId: string, cpName: string) => {
+    if (!window.confirm(`Hapus CellPart "${cpName}"?`)) return;
+    try {
+      await deleteCellPart(cpId);
+      await loadItem();
+    } catch (err: any) {
+      alert(`Gagal menghapus CellPart: ${err.message || 'Error server'}`);
     }
   };
 
@@ -147,6 +236,7 @@ export default function DesignDetailPage({ params }: PageProps) {
 
   const inspectorTabs: { key: InspectorTab; icon: string; label: string }[] = [
     { key: 'info', icon: 'info', label: 'Info' },
+    { key: 'cellpart', icon: 'account_tree', label: 'CellPart' },
     { key: 'rev', icon: 'history', label: 'Revisi' },
     { key: 'cost', icon: 'monetization_on', label: 'Cost' },
     { key: 'stock', icon: 'inventory', label: 'Stok' },
@@ -326,6 +416,44 @@ export default function DesignDetailPage({ params }: PageProps) {
                   </button>
                 )}
               </div>
+
+              {/* Multi-Page Navigation for Parent Jig & Child CellParts */}
+              {previewMode === '2D' && activeDoc?.loc2D && (
+                <div className="flex items-center gap-1 overflow-x-auto py-0.5 max-w-[65%] no-scrollbar">
+                  <span className="text-[8px] font-bold text-gray-400 uppercase shrink-0">Halaman:</span>
+                  <button
+                    onClick={() => setActivePdfPage(1)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
+                      activePdfPage === 1
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                    title={`Halaman 1: Induk Jig (${item.noReg})`}
+                  >
+                    <span className="material-symbols-outlined text-[10px]">home</span>
+                    <span>Hal 1: Induk ({item.noReg})</span>
+                  </button>
+                  {item.cellParts?.map((cp, idx) => {
+                    const pageNum = cp.pdfPageIndex || (idx + 2);
+                    const isSelected = activePdfPage === pageNum;
+                    return (
+                      <button
+                        key={cp.id}
+                        onClick={() => setActivePdfPage(pageNum)}
+                        className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                        title={`Halaman ${pageNum}: ${cp.partNumber} - ${cp.name}`}
+                      >
+                        <span className="material-symbols-outlined text-[10px]">widgets</span>
+                        <span>Hal {pageNum}: {cp.partNumber}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Canvas content */}
@@ -333,9 +461,11 @@ export default function DesignDetailPage({ params }: PageProps) {
               {previewMode === '2D' ? (
                 activeDoc?.loc2D ? (() => {
                   const pdfUrl = getFileUrl(activeDoc.loc2D);
-                  return pdfUrl ? (
+                  const fullUrl = pdfUrl ? `${pdfUrl}#page=${activePdfPage}` : null;
+                  return fullUrl ? (
                     <iframe
-                      src={pdfUrl}
+                      key={`pdf-frame-page-${activePdfPage}`}
+                      src={fullUrl}
                       className="flex-1 w-full border-0"
                       title="2D Drawing PDF"
                     />
@@ -469,6 +599,133 @@ export default function DesignDetailPage({ params }: PageProps) {
                         </div>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* ─ CELLPART TAB ─ */}
+                {activeTab === 'cellpart' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest">Child Cell Parts</p>
+                        <p className="text-[9px] text-gray-500">Komponen turunan &amp; lifetime control</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenAddCpModal}
+                        className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[9px] font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-xs">add</span>
+                        Tambah
+                      </button>
+                    </div>
+
+                    {(!item.cellParts || item.cellParts.length === 0) ? (
+                      <div className="text-center py-8 bg-white rounded-lg border border-gray-200 p-4 shadow-2xs">
+                        <span className="material-symbols-outlined text-2xl text-blue-400 block mb-1">widgets</span>
+                        <p className="text-[10px] font-bold text-gray-700">Belum Ada Child CellPart</p>
+                        <p className="text-[9px] text-gray-400 mt-0.5">Tambahkan sub-komponen dengan drawing child pada halaman multi-page.</p>
+                        <button
+                          type="button"
+                          onClick={handleOpenAddCpModal}
+                          className="mt-2.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded text-[9px] font-bold transition-colors cursor-pointer"
+                        >
+                          + Tambah CellPart Baru
+                        </button>
+                      </div>
+                    ) : (
+                      item.cellParts.map((cp, idx) => {
+                        const pageNum = cp.pdfPageIndex || (idx + 2);
+                        const isOverdue = cp.lifetimeStatus === 'OVERDUE';
+                        const isWarning = cp.lifetimeStatus === 'WARNING';
+                        const isSelectedPage = activePdfPage === pageNum;
+
+                        return (
+                          <div
+                            key={cp.id}
+                            className={`bg-white rounded-lg p-2.5 border transition-all shadow-2xs ${
+                              isSelectedPage ? 'border-blue-500 ring-1 ring-blue-400' : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-1 mb-1.5">
+                              <div className="min-w-0">
+                                <span className="font-mono text-[9px] font-bold text-blue-650 block">
+                                  {cp.partNumber}
+                                </span>
+                                <h4 className="text-[10px] font-bold text-gray-800 truncate">{cp.name}</h4>
+                              </div>
+                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                isOverdue ? 'bg-rose-100 text-rose-700 border border-rose-300' :
+                                isWarning ? 'bg-amber-100 text-amber-700 border border-amber-300' :
+                                'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                              }`}>
+                                {isOverdue ? 'Overdue' : `${cp.daysRemaining} hari`}
+                              </span>
+                            </div>
+
+                            {cp.description && (
+                              <p className="text-[9px] text-gray-500 mb-1.5 leading-tight italic">"{cp.description}"</p>
+                            )}
+
+                            {/* Details Grid */}
+                            <div className="space-y-1 text-[8px] text-gray-400 border-t border-gray-100 pt-1.5 mb-2">
+                              <div className="flex justify-between">
+                                <span>Halaman Drawing</span>
+                                <span className="font-bold text-gray-700">Halaman {pageNum}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Due Date</span>
+                                <span className="font-semibold text-gray-700">{new Date(cp.dueDate).toLocaleDateString('id-ID')}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Stok (Aktual / Min)</span>
+                                <span className={`font-bold ${cp.actualStock < cp.minimumStock ? 'text-amber-600' : 'text-gray-700'}`}>
+                                  {cp.actualStock} / {cp.minimumStock} unit
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-1.5 border-t border-gray-100 pt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewMode('2D');
+                                  setActivePdfPage(pageNum);
+                                }}
+                                className={`flex-1 py-1 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                                  isSelectedPage && previewMode === '2D'
+                                    ? 'bg-blue-600 text-white shadow-2xs'
+                                    : 'bg-gray-100 hover:bg-blue-50 hover:text-blue-700 text-gray-700'
+                                }`}
+                                title="Lihat gambar teknik di PDF viewer"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">visibility</span>
+                                Lihat Drawing
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRenewCp(cp.id, cp.name)}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[8px] font-bold transition-colors cursor-pointer"
+                                title="Renew lifetime siklus part ini"
+                              >
+                                Renew
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCp(cp.id, cp.name)}
+                                className="p-1 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                                title="Hapus Child CellPart"
+                              >
+                                <span className="material-symbols-outlined text-xs">delete</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 )}
 
@@ -683,6 +940,165 @@ export default function DesignDetailPage({ params }: PageProps) {
           )}
         </div>
       </div>
+
+      {/* MODAL: TAMBAH CHILD CELLPART */}
+      {showAddCpModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-3.5 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-600 text-sm">widgets</span>
+                Tambah Child CellPart
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCpModal(false)}
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <form onSubmit={handleCreateCellPart} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar text-xs">
+              <div className="bg-blue-50/70 border border-blue-200/80 rounded-lg p-2 text-[10px] text-blue-800">
+                <span className="font-bold">Induk Jig:</span> {item.noReg} — {item.assyPartName}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Part Number */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Part Number *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    placeholder="Contoh: CP-LOC-01"
+                    value={cpPartNumber}
+                    onChange={(e) => setCpPartNumber(e.target.value)}
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">Part number sublist drawing harus unik di bawah Jig ini.</p>
+                </div>
+
+                {/* Nama CellPart */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama Part *</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    placeholder="Contoh: Pin Locator Guide Block"
+                    value={cpName}
+                    onChange={(e) => setCpName(e.target.value)}
+                  />
+                </div>
+
+                {/* Halaman PDF Drawing */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Halaman Drawing (PDF) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpPdfPageIndex}
+                    onChange={(e) => setCpPdfPageIndex(parseInt(e.target.value) || 2)}
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">Halaman 1 = Parent, Hal 2+ = Child</p>
+                </div>
+
+                {/* Lifetime Days */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Lifetime (Hari) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpLifetimeDays}
+                    onChange={(e) => setCpLifetimeDays(parseInt(e.target.value) || 180)}
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">Reminder 5 minggu (35 hari) sblm due date</p>
+                </div>
+
+                {/* Tanggal Install */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tanggal Pasang / Install *</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white"
+                    value={cpInstallDate}
+                    onChange={(e) => setCpInstallDate(e.target.value)}
+                  />
+                </div>
+
+                {/* Minimum Stock */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Minimum</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpMinStock}
+                    onChange={(e) => setCpMinStock(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Actual Stock */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Aktual</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpActStock}
+                    onChange={(e) => setCpActStock(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+
+                {/* Deskripsi */}
+                <div className="col-span-2">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Keterangan (Opsional)</label>
+                  <textarea
+                    rows={2}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500 resize-none"
+                    placeholder="Catatan material, toleransi, atau spesifikasi khusus..."
+                    value={cpDescription}
+                    onChange={(e) => setCpDescription(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Submit / Cancel Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-gray-150">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCpModal(false)}
+                  className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={cpSubmitting}
+                  className="flex-1 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  {cpSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan CellPart'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }
