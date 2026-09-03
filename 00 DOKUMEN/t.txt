@@ -1,0 +1,3 @@
+CREATE DATABASE jigfixtures;
+
+psql -U postgres -d jigfixtures -f jigfixtures_backup.sql

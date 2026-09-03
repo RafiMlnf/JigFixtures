@@ -2,8 +2,8 @@
 **/node_modules/
 
 # Next.js build output
-front/.next/
-front/out/
+frontend/.next/
+frontend/out/
 
 # NestJS build output
 backend/dist/

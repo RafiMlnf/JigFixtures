@@ -19,6 +19,12 @@ interface MenuItem {
 
 const ALL_MENU_ITEMS: MenuItem[] = [
   {
+    name: 'Dashboard',
+    icon: 'dashboard',
+    href: '/dashboard',
+    // visible to all roles
+  },
+  {
     name: 'Design',
     icon: 'table_view',
     href: '/design',
