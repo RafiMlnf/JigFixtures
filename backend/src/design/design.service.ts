@@ -426,9 +426,20 @@ export class DesignService {
   }
 
   /**
-   * PIC signature on released document
+   * PIC signature on released document with Nitro visual placement support
    */
-  async signDocumentDrawn(designId: string, signatureData: string, userId: string) {
+  async signDocumentDrawn(
+    designId: string,
+    signatureData: string,
+    userId: string,
+    placement?: {
+      pageIndex?: number;
+      xPercent: number;
+      yPercent: number;
+      widthPercent: number;
+      heightPercent: number;
+    },
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const doc = await this.prisma.document.findFirst({
       where: { designId },
@@ -445,18 +456,37 @@ export class DesignService {
       },
     });
 
-    await this.stampDocumentPdf(doc.id, designId, userId);
+    await this.stampDocumentPdf(doc.id, designId, userId, placement);
     return updated;
   }
 
-  private async stampDocumentPdf(docId: string, designId: string, userId: string) {
+  private async stampDocumentPdf(
+    docId: string,
+    designId: string,
+    userId: string,
+    placement?: {
+      pageIndex?: number;
+      xPercent: number;
+      yPercent: number;
+      widthPercent: number;
+      heightPercent: number;
+    },
+  ) {
     try {
       const doc = await this.prisma.document.findUnique({ where: { id: docId } });
       if (!doc || !doc.loc2D) return;
 
       const rawPath = doc.loc2D.startsWith('/uploads/') ? doc.loc2D.replace('/uploads/', '') : doc.loc2D;
-      const originalFilePath = join(process.cwd(), 'uploads', rawPath);
-      if (!existsSync(originalFilePath)) return;
+      let originalFilePath = join(process.cwd(), 'uploads', rawPath);
+      if (!existsSync(originalFilePath)) {
+        const altPath = join(process.cwd(), '..', 'frontend', 'assets', 'pdf', rawPath);
+        if (existsSync(altPath)) {
+          originalFilePath = altPath;
+        } else {
+          console.warn(`[DrawingStamper] Original drawing file not found at: ${originalFilePath}`);
+          return;
+        }
+      }
 
       const pdfBuffer = readFileSync(originalFilePath);
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -468,6 +498,7 @@ export class DesignService {
               date: (doc.drawnAt || new Date()).toISOString(),
               signatureData: doc.drawnSignature || undefined,
               npk: user?.npk,
+              placement: placement,
             }
           : undefined,
         checked: (doc.checkedByName || doc.checkedSignature)
@@ -496,8 +527,70 @@ export class DesignService {
         where: { id: docId },
         data: { stampedPdfPath: `/uploads/${stampedFilename}` },
       });
+      console.log(`[DrawingStamper] Successfully stamped and saved to: ${stampedFilePath}`);
     } catch (err) {
       console.error('Failed to stamp PDF in design service:', err);
     }
+  }
+
+  /**
+   * Extract a single page of 2D drawing (Hal 1 for Induk Jig, Hal N for CellPart)
+   */
+  async getSinglePagePdf(designId: string, pageNumber: number) {
+    const design = await this.prisma.design.findUnique({
+      where: { id: designId },
+      include: {
+        documents: { orderBy: { createdAt: 'desc' } },
+        cellParts: true,
+      },
+    });
+    if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);
+
+    const doc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && (d.stampedPdfPath || d.loc2D))
+      || design.documents.find((d) => d.stampedPdfPath || d.loc2D)
+      || design.documents[0];
+
+    if (!doc) throw new NotFoundException('Tidak ada dokumen PDF untuk item ini.');
+
+    const targetPath = doc.stampedPdfPath || doc.loc2D;
+    if (!targetPath) throw new NotFoundException('Path PDF tidak ditemukan.');
+
+    let pdfBuffer: Buffer | null = null;
+    const rawPath = targetPath.startsWith('/uploads/') ? targetPath.replace('/uploads/', '') : targetPath;
+    const localFilePath = join(process.cwd(), 'uploads', rawPath);
+
+    if (existsSync(localFilePath)) {
+      pdfBuffer = readFileSync(localFilePath);
+    } else if (targetPath.startsWith('http')) {
+      const resp = await fetch(targetPath);
+      if (resp.ok) {
+        const arr = await resp.arrayBuffer();
+        pdfBuffer = Buffer.from(arr);
+      }
+    }
+
+    if (!pdfBuffer) {
+      throw new NotFoundException(`File PDF tidak dapat ditemukan di penyimpanan.`);
+    }
+
+    const singlePageBuffer = await this.drawingStamperService.extractSinglePage(pdfBuffer, pageNumber);
+
+    // Compute descriptive filename
+    let filename = '';
+    if (pageNumber === 1) {
+      filename = `${design.noReg}_Induk_Hal_1.pdf`;
+    } else {
+      const cp = design.cellParts.find((c) => (c.pdfPageIndex || 0) === pageNumber);
+      if (cp) {
+        filename = `${design.noReg}_CP_${cp.partNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}_Hal_${pageNumber}.pdf`;
+      } else {
+        filename = `${design.noReg}_Hal_${pageNumber}.pdf`;
+      }
+    }
+
+    return {
+      buffer: singlePageBuffer,
+      filename,
+    };
   }
 }

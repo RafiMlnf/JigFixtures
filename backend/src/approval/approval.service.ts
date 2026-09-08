@@ -214,7 +214,7 @@ export class ApprovalService {
         });
 
         // Stamp PDF with updated Checked signature
-        await this.stampApprovalDocument(id);
+        await this.stampApprovalDocument(id, dto.placement, role);
 
         // Notify Dept Heads
         const deptHeads = await this.prisma.user.findMany({
@@ -304,7 +304,7 @@ export class ApprovalService {
         });
 
         // Stamp PDF with Approved signature
-        await this.stampApprovalDocument(id);
+        await this.stampApprovalDocument(id, dto.placement, role);
 
         // Update the item revision status in the main master list
         const latestHistory = await this.prisma.revisionHistory.findFirst({
@@ -423,9 +423,19 @@ export class ApprovalService {
   }
 
   /**
-   * Stamp official signatures onto the PDF drawing if present
+   * Stamp official signatures onto the PDF drawing if present with Nitro visual placement support
    */
-  async stampApprovalDocument(approvalId: string) {
+  async stampApprovalDocument(
+    approvalId: string,
+    placement?: {
+      pageIndex?: number;
+      xPercent: number;
+      yPercent: number;
+      widthPercent: number;
+      heightPercent: number;
+    },
+    role?: string,
+  ) {
     try {
       const approval = await this.prisma.approval.findUnique({
         where: { id: approvalId },
@@ -443,8 +453,16 @@ export class ApprovalService {
 
       // Local file resolution
       const rawPath = doc.loc2D.startsWith('/uploads/') ? doc.loc2D.replace('/uploads/', '') : doc.loc2D;
-      const originalFilePath = join(process.cwd(), 'uploads', rawPath);
-      if (!existsSync(originalFilePath)) return;
+      let originalFilePath = join(process.cwd(), 'uploads', rawPath);
+      if (!existsSync(originalFilePath)) {
+        const altPath = join(process.cwd(), '..', 'frontend', 'assets', 'pdf', rawPath);
+        if (existsSync(altPath)) {
+          originalFilePath = altPath;
+        } else {
+          console.warn(`[DrawingStamper] Approval PDF file not found at: ${originalFilePath}`);
+          return;
+        }
+      }
 
       const pdfBuffer = readFileSync(originalFilePath);
 
@@ -463,6 +481,7 @@ export class ApprovalService {
               date: (approval.checkedAt || new Date()).toISOString(),
               signatureData: approval.checkedSignature || undefined,
               npk: approval.sectionHead?.npk,
+              placement: role === 'PE_SECTION_HEAD' ? placement : undefined,
             }
           : undefined,
         approved: (approval.approvedByName || approval.approvedSignature)
@@ -471,6 +490,7 @@ export class ApprovalService {
               date: (approval.approvedAt || new Date()).toISOString(),
               signatureData: approval.approvedSignature || undefined,
               npk: approval.deptHead?.npk,
+              placement: role === 'PE_DEPT_HEAD' ? placement : undefined,
             }
           : undefined,
       });

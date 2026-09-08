@@ -8,7 +8,9 @@ import { canApprove } from '@/lib/rbac';
 import { getFileUrl, approveWithSignature } from '@/lib/api/phase3';
 import ETiketSignature from '@/components/design/ETiketSignature';
 import SignaturePadModal from '@/components/design/SignaturePadModal';
+import dynamic from 'next/dynamic';
 
+const NitroPdfSignerModal = dynamic(() => import('@/components/design/NitroPdfSignerModal'), { ssr: false });
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
 interface RevHistoryInfo {
@@ -55,6 +57,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [approvalDetail, setApprovalDetail] = useState<any>(null);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [directPdfSignerOpen, setDirectPdfSignerOpen] = useState(false);
 
   // Fetch approval detail directly from backend (includes design.revisionHistories)
   useEffect(() => {
@@ -216,20 +219,60 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               3D Model
             </button>
             <div className="flex-1" />
+            {approval.status === 'WAITING' && isApprover && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewMode('2D');
+                  setDirectPdfSignerOpen(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[9px] font-bold shadow-xs cursor-pointer active:scale-98 transition-all mr-2 animate-pulse"
+                title="Tanda Tangan & Setujui Langsung di PDF"
+              >
+                <span className="material-symbols-outlined text-xs">ink_pen</span>
+                <span>Tanda Tangani di PDF</span>
+              </button>
+            )}
             <span className="text-[8px] font-mono text-gray-400 font-bold uppercase">{item.noReg}</span>
           </div>
 
           {/* Viewer Content */}
           <div className="flex-1 relative min-h-0">
             {previewMode === '2D' ? (
-              pdf2DUrl ? (
-                <iframe src={pdf2DUrl} className="w-full h-full border-0" title="2D Drawing PDF" />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400">
-                  <span className="material-symbols-outlined text-4xl">picture_as_pdf</span>
-                  <p className="text-[10px] font-medium">File PDF 2D Drawing belum tersedia.</p>
-                </div>
-              )
+              <>
+                {pdf2DUrl ? (
+                  <iframe
+                    src={`${pdf2DUrl}#navpanes=0&pagemode=none&view=FitH`}
+                    className="w-full h-full border-0"
+                    title="2D Drawing PDF"
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400">
+                    <span className="material-symbols-outlined text-4xl">picture_as_pdf</span>
+                    <p className="text-[10px] font-medium">File PDF 2D Drawing belum tersedia.</p>
+                  </div>
+                )}
+
+                {/* Nitro-Style Visual PDF Signer Modal */}
+                <NitroPdfSignerModal
+                  isOpen={directPdfSignerOpen}
+                  onClose={() => setDirectPdfSignerOpen(false)}
+                  pdfUrl={pdf2DUrl || ''}
+                  onApplySignature={async (sigData, placement, sigType) => {
+                    await approveWithSignature(approval.id, {
+                      comment: 'Approved & digitally signed visually on PDF drawing.',
+                      signatureData: sigData,
+                      signatureType: sigType,
+                      placement,
+                    });
+                    setToastMessage('Dokumen berhasil disetujui & ditandatangani di dalam PDF!');
+                    setTimeout(() => { router.push('/approval-center'); }, 1200);
+                  }}
+                  roleLabel={user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'}
+                  signerName={user?.name || (user?.role === 'PE_DEPT_HEAD' ? 'Rahmat K.' : 'M. Fariedl')}
+                  signerNpk={user?.npk || 'NPK001'}
+                />
+              </>
             ) : (
               model3DUrl ? (
                 <Suspense fallback={

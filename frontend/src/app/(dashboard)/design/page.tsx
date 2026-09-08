@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 import SignaturePadModal from '@/components/design/SignaturePadModal';
 import ETiketSignature from '@/components/design/ETiketSignature';
@@ -884,7 +884,7 @@ export function DesignPageContent() {
         <div className="flex items-center gap-4 flex-1">
           <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
             <span className="material-symbols-outlined text-blue-600 text-lg">database</span>
-            View Master Data Design
+            Master Data
           </h2>
           {/* Search bar inside header */}
           <div className="relative w-80">
@@ -1092,30 +1092,30 @@ export function DesignPageContent() {
       </div>
 
       {/* Main Datatable */}
-      <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200 bg-white">
+      <div className="flex-1 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-gray-200 bg-white shadow-3xs">
         {loading ? (
-          <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs">
+          <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
             <span className="material-symbols-outlined animate-spin text-2xl mb-1 text-blue-600">sync</span>
             <span>Memuat data master...</span>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-[11px]">
             <thead>
-              <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10">
-                <th className="px-3 py-2 text-center w-8">No</th>
-                <th className="px-2 py-2">No. Reg</th>
-                <th className="px-2 py-2">Assy Part Name</th>
-                <th className="px-2 py-2">Line</th>
-                <th className="px-2 py-2">OP (Process)</th>
-                <th className="px-2 py-2">Type</th>
-                <th className="px-2 py-2 text-center">Lifecycle</th>
-                <th className="px-2 py-2 text-center w-24">E-Tiket</th>
-                <th className="px-2 py-2 text-center w-[85px]">Stock</th>
-                <th className="px-2 py-2 text-center w-[85px]">Abn</th>
-                <th className="px-2 py-2 text-center w-24">Aksi</th>
+              <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[10px] uppercase tracking-wider whitespace-nowrap select-none">
+                <th className="px-2 py-1.5 text-center w-8">No</th>
+                <th className="px-2.5 py-1.5">No. Reg</th>
+                <th className="px-2.5 py-1.5">Assy Part Name</th>
+                <th className="px-2.5 py-1.5">Line</th>
+                <th className="px-2.5 py-1.5">OP (Process)</th>
+                <th className="px-2 py-1.5 text-center w-12">Type</th>
+                <th className="px-2 py-1.5 text-center w-20">Lifecycle</th>
+                <th className="px-2 py-1.5 text-center w-20">E-Tiket</th>
+                <th className="px-2 py-1.5 text-center w-16">Stock</th>
+                <th className="px-2 py-1.5 text-center w-16">Abn</th>
+                <th className="px-2 py-1.5 text-center w-20">Aksi</th>
               </tr>
             </thead>
-            <tbody className="text-gray-700">
+            <tbody className="text-gray-700 divide-y divide-gray-100">
               {filteredItems.map((item, index) => {
                 const isRed = item.actualStock < item.minimumStock * 0.5;
                 const isYellow = item.actualStock < item.minimumStock && item.actualStock >= item.minimumStock * 0.5;
@@ -1126,9 +1126,9 @@ export function DesignPageContent() {
                   <React.Fragment key={item.id}>
                     <tr
                       onClick={() => router.push(`/design/${item.id}`)}
-                      className={`border-b border-gray-100 hover:bg-blue-50/40 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/20' : ''}`}
+                      className={`hover:bg-blue-50/50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/25' : ''}`}
                     >
-                      <td className="px-3 py-2 text-center font-bold text-gray-400" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2 py-1 text-center font-semibold text-gray-400" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-0.5">
                           {cellParts.length > 0 ? (
                             <button
@@ -1137,29 +1137,29 @@ export function DesignPageContent() {
                                 e.stopPropagation();
                                 toggleExpandRow(item.id);
                               }}
-                              className="p-1 hover:bg-blue-100 rounded text-blue-500 hover:text-blue-700 transition-colors cursor-pointer flex items-center justify-center"
+                              className="p-0.5 hover:bg-blue-100 rounded text-blue-500 hover:text-blue-700 transition-colors cursor-pointer flex items-center justify-center"
                               title={isExpanded ? 'Tutup daftar CellPart' : 'Buka daftar CellPart'}
                             >
-                              <span className={`material-symbols-outlined text-[13px] font-bold transition-transform ${isExpanded ? 'rotate-90 text-blue-600' : ''}`}>
+                              <span className={`material-symbols-outlined text-[12px] font-bold transition-transform ${isExpanded ? 'rotate-90 text-blue-600' : ''}`}>
                                 chevron_right
                               </span>
                             </button>
                           ) : (
-                            <span className="w-4 inline-block text-gray-300">•</span>
+                            <span className="w-3 inline-block text-gray-300 text-[10px]">•</span>
                           )}
                           <span className="text-[10px]">{index + 1}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2 font-mono font-bold text-blue-600">
+                      <td className="px-2.5 py-1 font-mono font-bold text-blue-600 whitespace-nowrap">
                         <div className="flex items-center gap-1.5 group">
                           <Link
                             href={`/design/${item.id}`}
                             onClick={(e) => e.stopPropagation()}
-                            className="hover:underline flex items-center gap-1"
-                            title="Buka Halaman Detail Desain"
+                            className="hover:underline flex items-center gap-0.5"
+                            title={item.noReg}
                           >
                             {item.noReg}
-                            <span className="material-symbols-outlined text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+                            <span className="material-symbols-outlined text-[9px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
                           </Link>
                           {cellParts.length > 0 && (
                             <button
@@ -1168,7 +1168,7 @@ export function DesignPageContent() {
                                 e.stopPropagation();
                                 toggleExpandRow(item.id);
                               }}
-                              className="text-[7px] bg-blue-100 hover:bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full font-bold transition-colors cursor-pointer"
+                              className="text-[7.5px] bg-blue-100 hover:bg-blue-200 text-blue-700 px-1 py-0.2 rounded-full font-bold transition-colors cursor-pointer leading-tight"
                               title="Klik untuk melihat sublist CellPart"
                             >
                               {cellParts.length} CP
@@ -1176,40 +1176,46 @@ export function DesignPageContent() {
                           )}
                         </div>
                       </td>
-                      <td className="px-2 py-2 font-medium text-gray-900">
+                      <td className="px-2.5 py-1 font-medium text-gray-900 whitespace-nowrap max-w-[220px] truncate" title={item.assyPartName}>
                         <Link
                           href={`/design/${item.id}`}
                           onClick={(e) => e.stopPropagation()}
                           className="hover:text-blue-600 hover:underline"
-                          title="Buka Halaman Detail Desain"
                         >
                           {item.assyPartName}
                         </Link>
                       </td>
-                      <td className="px-2 py-2 text-gray-550">{item.lineProduct}</td>
-                      <td className="px-2 py-2 text-gray-550">{item.process}</td>
-                      <td className="px-2 py-2 font-bold text-gray-500">{item.type}</td>
-                      <td className="px-2 py-2 text-center">
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${item.lifecycleStatus === 'UNDER_REPAIR' ? 'bg-orange-100 text-orange-700' :
+                      <td className="px-2.5 py-1 text-gray-600 whitespace-nowrap max-w-[140px] truncate" title={item.lineProduct}>
+                        {item.lineProduct}
+                      </td>
+                      <td className="px-2.5 py-1 text-gray-600 whitespace-nowrap max-w-[150px] truncate" title={item.process}>
+                        {item.process}
+                      </td>
+                      <td className="px-2 py-1 font-bold text-[10px] text-gray-500 text-center whitespace-nowrap">
+                        {item.type}
+                      </td>
+                      <td className="px-2 py-1 text-center whitespace-nowrap">
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                          item.lifecycleStatus === 'UNDER_REPAIR' ? 'bg-orange-100 text-orange-700' :
                           item.lifecycleStatus === 'UNDER_IMPROVEMENT' ? 'bg-blue-100 text-blue-700' :
-                            item.lifecycleStatus === 'OBSOLETE' ? 'bg-gray-100 text-gray-700' :
-                              item.lifecycleStatus === 'SCRAP' ? 'bg-red-100 text-red-700' :
-                                'bg-green-100 text-green-700'
-                          }`}>
+                          item.lifecycleStatus === 'OBSOLETE' ? 'bg-gray-100 text-gray-700' :
+                          item.lifecycleStatus === 'SCRAP' ? 'bg-red-100 text-red-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>
                           {item.lifecycleStatus || 'ACTIVE'}
                         </span>
                       </td>
-                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2 py-1 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         {(() => {
                           const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
                           if (doc?.approvedSignature || doc?.stampedPdfPath) {
                             return (
                               <Link
                                 href={`/design/${item.id}?tab=etiket`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 transition-colors shadow-3xs"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
                                 title="E-Tiket Resmi (Fully Approved - Siap Produksi)"
                               >
-                                <span className="material-symbols-outlined text-[10px]">verified</span>
+                                <span className="material-symbols-outlined text-[9px]">verified</span>
                                 Approved
                               </Link>
                             );
@@ -1218,10 +1224,10 @@ export function DesignPageContent() {
                             return (
                               <Link
                                 href={`/design/${item.id}?tab=etiket`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 hover:bg-indigo-200 transition-colors shadow-3xs"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
                                 title="E-Tiket: Checked by Section Head (Menunggu Dept Head)"
                               >
-                                <span className="material-symbols-outlined text-[10px]">rule</span>
+                                <span className="material-symbols-outlined text-[9px]">rule</span>
                                 Checked
                               </Link>
                             );
@@ -1230,23 +1236,11 @@ export function DesignPageContent() {
                             return (
                               <Link
                                 href={`/design/${item.id}?tab=etiket`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors shadow-3xs"
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
                                 title="E-Tiket: Drawn Signed (Menunggu Review Section Head)"
                               >
-                                <span className="material-symbols-outlined text-[10px]">draw</span>
+                                <span className="material-symbols-outlined text-[9px]">draw</span>
                                 Drawn
-                              </Link>
-                            );
-                          }
-                          if (doc?.loc2D) {
-                            return (
-                              <Link
-                                href={`/design/${item.id}?tab=etiket`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
-                                title="Draft Drawing: Belum Ditandatangani"
-                              >
-                                <span className="material-symbols-outlined text-[10px]">edit_note</span>
-                                Draft
                               </Link>
                             );
                           }
@@ -1255,30 +1249,47 @@ export function DesignPageContent() {
                           );
                         })()}
                       </td>
-                      <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${isRed ? 'bg-red-500 text-white' : isYellow ? 'bg-yellow-400 text-yellow-950' : 'bg-green-500 text-white'
-                        }`}>
-                        {isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'}
+                      <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center justify-center w-5 h-5 rounded-full ${
+                            isRed
+                              ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                              : isYellow
+                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                              : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                          }`}
+                          title={`Stok: ${isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'} (${item.actualStock}/${item.minimumStock})`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {isRed ? 'error' : isYellow ? 'warning' : 'check_circle'}
+                          </span>
+                        </span>
                       </td>
-                      <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${item.abnormalityStatus === 'RESOLVED' ? 'bg-green-500 text-white' :
-                        item.abnormalityStatus === 'IN_PROGRESS' ? 'bg-yellow-400 text-yellow-950' :
-                          'bg-red-500 text-white animate-pulse'
-                        }`}>
-                        {item.abnormalityStatus === 'RESOLVED' ? 'Aman' :
-                          item.abnormalityStatus === 'IN_PROGRESS' ? 'Monitoring' :
-                            'Anomali'}
+                      <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center justify-center w-5 h-5 rounded-full ${
+                            item.abnormalityStatus === 'RESOLVED'
+                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                              : item.abnormalityStatus === 'IN_PROGRESS'
+                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                              : 'bg-rose-100 text-rose-700 border border-rose-300 animate-pulse'
+                          }`}
+                          title={`Abnormality: ${item.abnormalityStatus === 'RESOLVED' ? 'Aman / Nihil' : item.abnormalityStatus === 'IN_PROGRESS' ? 'Dalam Monitoring' : 'Ada Anomali Terbuka'}`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {item.abnormalityStatus === 'RESOLVED'
+                              ? 'verified_user'
+                              : item.abnormalityStatus === 'IN_PROGRESS'
+                              ? 'pending'
+                              : 'report_problem'}
+                          </span>
+                        </span>
                       </td>
-                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Link
-                            href={`/design/${item.id}`}
-                            className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
-                            title="Buka Halaman Detail (Lihat Drawing 2D/3D CAD & E-Tiket)"
-                          >
-                            <span className="material-symbols-outlined text-[13px]">visibility</span>
-                          </Link>
+                      <td className="px-1.5 py-1 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-0.5">
                           <Link
                             href={`/design/${item.id}?tab=etiket`}
-                            className="text-indigo-600 hover:text-indigo-800 p-1 hover:bg-indigo-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                            className="text-indigo-600 hover:text-indigo-800 p-0.5 hover:bg-indigo-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                             title="Buka E-Tiket & Tanda Tangan Digital"
                           >
                             <span className="material-symbols-outlined text-[13px]">verified</span>
@@ -1290,20 +1301,20 @@ export function DesignPageContent() {
                                   e.stopPropagation();
                                   handleOpenEditModal(item);
                                 }}
-                                className="text-gray-650 hover:text-gray-900 p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                                className="text-gray-500 hover:text-gray-900 p-0.5 hover:bg-gray-100 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                                 title="Update Desain"
                               >
-                                <span className="material-symbols-outlined text-[11px]">edit</span>
+                                <span className="material-symbols-outlined text-[12px]">edit</span>
                               </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleOpenDeleteConfirm(item);
                                 }}
-                                className="text-gray-655 hover:text-red-650 p-1 hover:bg-red-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                                className="text-gray-400 hover:text-rose-600 p-0.5 hover:bg-rose-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
                                 title="Hapus Desain"
                               >
-                                <span className="material-symbols-outlined text-[11px]">delete</span>
+                                <span className="material-symbols-outlined text-[12px]">delete</span>
                               </button>
                             </>
                           )}
@@ -1364,16 +1375,17 @@ export function DesignPageContent() {
                                             </Link>
                                           </td>
                                           <td className="px-2 py-1.5 text-gray-700 font-medium">{cp.name}</td>
-                                          <td className="px-2 py-1.5 text-center">
+                                          <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                                             {cp.pdfPageIndex ? (
-                                              <Link
-                                                href={`/design/${item.id}`}
-                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
-                                                title="Buka drawing Jig di halaman ini"
+                                              <button
+                                                type="button"
+                                                onClick={() => downloadDesignPdfPage(item.id, cp.pdfPageIndex!, `${item.noReg}_CP_${cp.partNumber}_Hal_${cp.pdfPageIndex}.pdf`)}
+                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                                                title={`Unduh 1 Halaman Drawing PDF (${cp.partNumber})`}
                                               >
-                                                <span className="material-symbols-outlined text-[9px]">picture_as_pdf</span>
+                                                <span className="material-symbols-outlined text-[9px]">download</span>
                                                 <span>Hal {cp.pdfPageIndex}</span>
-                                              </Link>
+                                              </button>
                                             ) : (
                                               <span className="text-[8px] text-gray-400 italic">Standar</span>
                                             )}

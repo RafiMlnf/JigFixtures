@@ -46,6 +46,7 @@ export interface AuthUser {
   email: string;
   name: string;
   role: 'PE_JIG_FIXTURE' | 'PE_SECTION_HEAD' | 'PE_DEPT_HEAD' | 'TAMU';
+  npk?: string;
 }
 
 interface AppContextProps {

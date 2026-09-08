@@ -25,7 +25,7 @@ const ALL_MENU_ITEMS: MenuItem[] = [
     // visible to all roles
   },
   {
-    name: 'Design',
+    name: 'Master Data',
     icon: 'table_view',
     href: '/design',
     // visible to all roles

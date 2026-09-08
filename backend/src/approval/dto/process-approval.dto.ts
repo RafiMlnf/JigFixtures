@@ -3,4 +3,11 @@ export class ProcessApprovalDto {
   comment?: string;
   signatureData?: string;
   signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
+  placement?: {
+    pageIndex?: number;
+    xPercent: number;
+    yPercent: number;
+    widthPercent: number;
+    heightPercent: number;
+  };
 }

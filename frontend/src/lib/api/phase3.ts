@@ -179,7 +179,9 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
 export function getFileUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   if (path.startsWith('http')) return path;
-  return `http://localhost:3002${path}`;
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  const finalPath = clean.startsWith('/uploads/') ? clean : `/uploads${clean}`;
+  return `http://localhost:3002${finalPath}`;
 }
 
 /** Delete a design item and all related records */
@@ -363,14 +365,24 @@ export async function parseDrawingPdf(file: File): Promise<ParseDrawingResponse>
 }
 
 /** Drafter/PIC digitally signs the DRAWN slot of a released design document */
-export async function signDesignDrawn(designId: string, signatureData: string) {
+export async function signDesignDrawn(
+  designId: string,
+  signatureData: string,
+  placement?: {
+    pageIndex?: number;
+    xPercent: number;
+    yPercent: number;
+    widthPercent: number;
+    heightPercent: number;
+  },
+) {
   const res = await fetch(`${BASE}/api/design/${designId}/sign-drawn`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${getToken()}`,
     },
-    body: JSON.stringify({ signatureData }),
+    body: JSON.stringify({ signatureData, placement }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -401,6 +413,13 @@ export async function approveWithSignature(approvalId: string, data: {
   comment?: string;
   signatureData?: string;
   signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
+  placement?: {
+    pageIndex?: number;
+    xPercent: number;
+    yPercent: number;
+    widthPercent: number;
+    heightPercent: number;
+  };
 }) {
   const res = await fetch(`${BASE}/api/approvals/${approvalId}/approve`, {
     method: 'PATCH',
@@ -415,4 +434,32 @@ export async function approveWithSignature(approvalId: string, data: {
     throw new HttpError(err.message || 'Gagal menyetujui approval', res.status);
   }
   return res.json();
+}
+
+/** Download a single 1-page PDF for a design (Hal 1: Induk, Hal N: CellPart) */
+export async function downloadDesignPdfPage(designId: string, pageNumber: number, customFilename?: string) {
+  const res = await fetch(`${BASE}/api/design/${designId}/pdf-page/${pageNumber}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || `Gagal mengunduh Halaman ${pageNumber}`, res.status);
+  }
+
+  const disposition = res.headers.get('content-disposition');
+  let filename = customFilename || `Drawing_Hal_${pageNumber}.pdf`;
+  if (!customFilename && disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match?.[1]) filename = decodeURIComponent(match[1]);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }

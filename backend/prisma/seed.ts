@@ -97,7 +97,11 @@ async function main() {
   console.log('Default vendor seeded.');
 
   // 4. Parse Excel Master List
-  const excelPath = path.resolve(__dirname, '../../JIG & FIXTURE DESIGN MASTER LIST.xlsx');
+  let excelPath = path.resolve(__dirname, '../../JIG & FIXTURE DESIGN MASTER LIST.xlsx');
+  const fs = await import('fs');
+  if (!fs.existsSync(excelPath)) {
+    excelPath = path.resolve(__dirname, '../../00 DOKUMEN/JIG & FIXTURE DESIGN MASTER LIST.xlsx');
+  }
   console.log(`Loading Excel from: ${excelPath}`);
 
   const workbook = new ExcelJS.Workbook();

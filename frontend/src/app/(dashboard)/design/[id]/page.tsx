@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, use, lazy, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, deleteCellPart, signDesignDrawn } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, deleteCellPart, signDesignDrawn, downloadDesignPdfPage } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 import ETiketSignature from '@/components/design/ETiketSignature';
 
+const NitroPdfSignerModal = dynamic(() => import('@/components/design/NitroPdfSignerModal'), { ssr: false });
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
 interface DocumentInfo {
@@ -25,6 +27,7 @@ interface DocumentInfo {
   approvedByName?: string | null;
   approvedAt?: string | null;
   stampedPdfPath?: string | null;
+  updatedAt?: string | null;
 }
 
 interface RevHistoryInfo {
@@ -119,6 +122,7 @@ function DesignDetailPageContent({ params }: PageProps) {
   const [viewer3DUrl, setViewer3DUrl] = useState<string | null>(null);
   const [viewer3DName, setViewer3DName] = useState<string | undefined>();
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
+  const [directPdfSignerOpen, setDirectPdfSignerOpen] = useState(false);
 
   // Sync tab with URL query parameter ?tab=
   useEffect(() => {
@@ -214,6 +218,20 @@ function DesignDetailPageContent({ params }: PageProps) {
     }
   };
 
+  const [downloadingPage, setDownloadingPage] = useState<number | null>(null);
+
+  const handleDownloadSinglePage = async (pageNum: number, filename?: string) => {
+    if (!item) return;
+    setDownloadingPage(pageNum);
+    try {
+      await downloadDesignPdfPage(item.id, pageNum, filename);
+    } catch (err: any) {
+      alert(`Gagal mengunduh Halaman ${pageNum}: ${err.message || 'Error server'}`);
+    } finally {
+      setDownloadingPage(null);
+    }
+  };
+
   useEffect(() => { loadItem(); }, [id]);
 
   if (loading) {
@@ -268,9 +286,9 @@ function DesignDetailPageContent({ params }: PageProps) {
 
   const canSignDrawn = canEdit(user?.role);
 
-  const handleSignDrawn = async (sigData: string) => {
+  const handleSignDrawn = async (sigData: string, placement?: any) => {
     if (!item) return;
-    await signDesignDrawn(item.id, sigData);
+    await signDesignDrawn(item.id, sigData, placement);
     await loadItem();
   };
 
@@ -290,7 +308,7 @@ function DesignDetailPageContent({ params }: PageProps) {
               <span className="material-symbols-outlined text-sm font-bold">arrow_back</span>
             </Link>
             <div className="flex items-center gap-1.5 text-[10px] text-gray-400 truncate">
-              <span className="font-semibold">Design</span>
+              <Link href="/design" className="font-semibold hover:text-blue-600 transition-colors">Master Data</Link>
               <span className="material-symbols-outlined text-[10px] font-bold">chevron_right</span>
               <span className="font-mono text-gray-700 font-bold truncate">{item.noReg}</span>
               <span className="text-gray-300 mx-0.5">·</span>
@@ -310,10 +328,14 @@ function DesignDetailPageContent({ params }: PageProps) {
               Rev {item.revStatus}
             </span>
             <span
-              className="text-[9px] font-bold px-2 py-0.5 rounded-full"
-              style={{ background: stockColor + '12', color: stockColor, border: `1px solid ${stockColor}30` }}
+              className="text-[9px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+              style={{ background: stockColor + '15', color: stockColor, border: `1px solid ${stockColor}40` }}
+              title={`Status Stok: ${stockLabel} (${item.actualStock}/${item.minimumStock})`}
             >
-              Stok: {stockLabel}
+              <span className="material-symbols-outlined text-[11px]">
+                {isRed ? 'error' : isYellow ? 'warning' : 'check_circle'}
+              </span>
+              <span>{item.actualStock}/{item.minimumStock}</span>
             </span>
           </div>
 
@@ -335,25 +357,87 @@ function DesignDetailPageContent({ params }: PageProps) {
                     onClick={() => setDownloadDropdownOpen(false)}
                   ></div>
 
-                  <div className="absolute right-0 mt-1 w-28 bg-white border border-gray-300 rounded-lg shadow-lg z-50 py-1 text-[10px] text-gray-700">
+                  <div className="absolute right-0 mt-1 w-64 bg-white border border-gray-250 rounded-xl shadow-xl z-50 py-1.5 text-[10px] text-gray-700 max-h-80 overflow-y-auto no-scrollbar">
+                    {/* Header */}
+                    <div className="px-3 py-1 text-[8.5px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 flex items-center justify-between">
+                      <span>Pilihan Unduh</span>
+                      {downloadingPage && <span className="text-blue-600 animate-pulse font-bold">Mengunduh Hal {downloadingPage}...</span>}
+                    </div>
+
+                    {/* Full 2D Drawing */}
                     {activeDoc?.loc2D ? (
                       <a
                         href={activeDoc.loc2D}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={() => setDownloadDropdownOpen(false)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-gray-50 text-gray-700 font-bold transition-colors cursor-pointer"
+                        className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50/70 text-gray-800 font-semibold transition-colors cursor-pointer"
                       >
-                        <span className="material-symbols-outlined text-[12px] text-gray-550">picture_as_pdf</span>
-                        2D Drawing
+                        <span className="material-symbols-outlined text-[14px] text-blue-600">picture_as_pdf</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate font-bold">2D Drawing Lengkap</p>
+                          <p className="text-[8px] text-gray-400">Semua halaman dalam 1 PDF</p>
+                        </div>
                       </a>
                     ) : (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-gray-500 opacity-40 font-bold cursor-not-allowed select-none">
-                        <span className="material-symbols-outlined text-[12px]">picture_as_pdf</span>
-                        2D Drawing
+                      <div className="flex items-center gap-2 px-3 py-2 text-gray-400 opacity-50 font-medium cursor-not-allowed select-none">
+                        <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
+                        <span>2D Drawing Belum Tersedia</span>
                       </div>
                     )}
 
+                    {/* Single Page: Induk Jig (Hal 1) */}
+                    {activeDoc?.loc2D && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDownloadSinglePage(1, `${item.noReg}_Induk_Hal_1.pdf`);
+                          setDownloadDropdownOpen(false);
+                        }}
+                        disabled={downloadingPage !== null}
+                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50/70 text-left text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
+                      >
+                        <span className="material-symbols-outlined text-[14px] text-indigo-600">home</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate font-bold">Hal 1: Induk Jig (1 Halaman)</p>
+                          <p className="text-[8px] text-gray-400">Gambar teknik utama {item.noReg}</p>
+                        </div>
+                        <span className="material-symbols-outlined text-[12px] text-gray-400">file_download</span>
+                      </button>
+                    )}
+
+                    {/* Single Page: CellParts */}
+                    {activeDoc?.loc2D && item.cellParts && item.cellParts.length > 0 && (
+                      <>
+                        <div className="px-3 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 border-t border-b border-gray-100 mt-0.5">
+                          Cell Parts (1 Halaman)
+                        </div>
+                        {item.cellParts.map((cp, idx) => {
+                          const pageNum = cp.pdfPageIndex || (idx + 2);
+                          return (
+                            <button
+                              key={cp.id}
+                              type="button"
+                              onClick={() => {
+                                handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`);
+                                setDownloadDropdownOpen(false);
+                              }}
+                              disabled={downloadingPage !== null}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-blue-50/70 text-left text-gray-800 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[13px] text-blue-500">widgets</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="truncate font-bold text-[9px] font-mono">{cp.partNumber}</p>
+                                <p className="text-[8px] text-gray-400 truncate">Hal {pageNum} · {cp.name}</p>
+                              </div>
+                              <span className="material-symbols-outlined text-[11px] text-gray-400">file_download</span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {/* 3D Model CAD */}
                     {(() => {
                       const active3DRev = item.revisionHistories.find((rev) => rev.loc3D);
                       return active3DRev?.loc3D ? (
@@ -363,17 +447,15 @@ function DesignDetailPageContent({ params }: PageProps) {
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={() => setDownloadDropdownOpen(false)}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-gray-50 text-gray-700 font-bold transition-colors cursor-pointer border-t border-gray-100"
+                          className="flex items-center gap-2 px-3 py-2 hover:bg-purple-50/70 text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
                         >
-                          <span className="material-symbols-outlined text-[12px] text-gray-550">download</span>
-                          Unduh 3D
+                          <span className="material-symbols-outlined text-[14px] text-purple-600">deployed_code</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="truncate font-bold">Unduh 3D CAD</p>
+                            <p className="text-[8px] text-gray-400">File STEP / IGS</p>
+                          </div>
                         </a>
-                      ) : (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-gray-500 opacity-40 font-bold cursor-not-allowed select-none border-t border-gray-100">
-                          <span className="material-symbols-outlined text-[12px]">download</span>
-                          Unduh 3D
-                        </div>
-                      );
+                      ) : null;
                     })()}
                   </div>
                 </>
@@ -473,84 +555,97 @@ function DesignDetailPageContent({ params }: PageProps) {
                     }`}
                   />
                 </button>
-              </div>
 
-              {/* Multi-Page Navigation for Parent Jig & Child CellParts */}
-              {previewMode === '2D' && activeDoc?.loc2D && (
-                <div className="flex items-center gap-1 overflow-x-auto py-0.5 max-w-[65%] no-scrollbar">
-                  <span className="text-[8px] font-bold text-gray-400 uppercase shrink-0">Halaman:</span>
+                {/* Direct In-PDF Sign Button */}
+                {activeDoc?.loc2D && canSignDrawn && !activeDoc?.drawnSignature && (
                   <button
-                    onClick={() => setActivePdfPage(1)}
-                    className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
-                      activePdfPage === 1
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    }`}
-                    title={`Halaman 1: Induk Jig (${item.noReg})`}
+                    type="button"
+                    onClick={() => {
+                      setPreviewMode('2D');
+                      setDirectPdfSignerOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-bold transition-all cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-500 shadow-xs active:scale-98"
+                    title="Buka Mode Tanda Tangan Langsung di Dokumen PDF"
                   >
-                    <span className="material-symbols-outlined text-[10px]">home</span>
-                    <span>Hal 1: Induk ({item.noReg})</span>
+                    <span className="material-symbols-outlined text-xs animate-pulse">ink_pen</span>
+                    <span>Tanda Tangani di PDF</span>
                   </button>
-                  {item.cellParts?.map((cp, idx) => {
-                    const pageNum = cp.pdfPageIndex || (idx + 2);
-                    const isSelected = activePdfPage === pageNum;
-                    return (
-                      <button
-                        key={cp.id}
-                        onClick={() => setActivePdfPage(pageNum)}
-                        className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white shadow-2xs'
-                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                        }`}
-                        title={`Halaman ${pageNum}: ${cp.partNumber} - ${cp.name}`}
-                      >
-                        <span className="material-symbols-outlined text-[10px]">widgets</span>
-                        <span>Hal {pageNum}: {cp.partNumber}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                )}
+                {/* Lebarkan PDF / Toggle Sidebar Button */}
+                <button
+                  type="button"
+                  onClick={() => setInspectorOpen(!inspectorOpen)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-bold transition-all cursor-pointer ${
+                    !inspectorOpen
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                      : 'bg-white text-gray-750 border-gray-250 hover:bg-gray-100'
+                  }`}
+                  title={inspectorOpen ? 'Lebarkan PDF (Tutup sidebar inspector)' : 'Buka sidebar inspector'}
+                >
+                  <span className="material-symbols-outlined text-xs">
+                    {inspectorOpen ? 'fullscreen' : 'fullscreen_exit'}
+                  </span>
+                  <span>{inspectorOpen ? 'Lebarkan PDF' : 'Tampilkan Sidebar'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Canvas content */}
             <div className="flex-1 flex items-stretch min-h-0 bg-gray-100 relative">
               {previewMode === '2D' ? (
-                activeDoc?.loc2D ? (() => {
-                  const targetDocPath = activeDoc.stampedPdfPath || activeDoc.loc2D;
-                  const pdfUrl = getFileUrl(targetDocPath);
-                  const fullUrl = pdfUrl ? `${pdfUrl}#page=${activePdfPage}` : null;
-                  return fullUrl ? (
-                    <iframe
-                      key={`pdf-frame-page-${activePdfPage}`}
-                      src={fullUrl}
-                      className="flex-1 w-full border-0"
-                      title="2D Drawing PDF"
-                    />
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-3">
-                      <span className="material-symbols-outlined text-5xl text-gray-400">broken_image</span>
-                      <p className="text-xs text-gray-555 font-semibold text-center px-4">
-                        Drawing PDF tidak dapat dimuat (path tidak valid)
-                      </p>
-                      <div className="bg-white border border-gray-200 rounded px-2.5 py-1 text-[9px] font-mono text-gray-600 max-w-sm truncate shadow-2xs">
-                        {activeDoc.loc2D}
+                <>
+                  {activeDoc?.loc2D ? (() => {
+                    const targetDocPath = activeDoc.stampedPdfPath || activeDoc.loc2D;
+                    const pdfUrl = getFileUrl(targetDocPath);
+                    const cacheBuster = activeDoc.stampedPdfPath ? `?t=${encodeURIComponent(activeDoc.updatedAt || Date.now())}` : '';
+                    const fullUrl = pdfUrl
+                      ? `${pdfUrl}${cacheBuster}#page=${activePdfPage}&navpanes=0&pagemode=none&view=FitH`
+                      : null;
+                    return fullUrl ? (
+                      <iframe
+                        key={`pdf-frame-page-${activePdfPage}-${activeDoc.stampedPdfPath || 'orig'}`}
+                        src={fullUrl}
+                        className="flex-1 w-full border-0"
+                        title="2D Drawing PDF"
+                      />
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                        <span className="material-symbols-outlined text-5xl text-gray-400">broken_image</span>
+                        <p className="text-xs text-gray-555 font-semibold text-center px-4">
+                          Drawing PDF tidak dapat dimuat (path tidak valid)
+                        </p>
+                        <div className="bg-white border border-gray-200 rounded px-2.5 py-1 text-[9px] font-mono text-gray-600 max-w-sm truncate shadow-2xs">
+                          {activeDoc.loc2D}
+                        </div>
                       </div>
+                    );
+                  })() : (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                      <span className="material-symbols-outlined text-5xl text-gray-300">picture_as_pdf</span>
+                      <p className="text-xs text-gray-555 font-medium">File PDF 2D Drawing belum diunggah untuk item ini.</p>
+                      <Link
+                        href={`/update-design`}
+                        className="text-[10px] font-bold text-blue-650 hover:text-blue-800 border border-blue-300 hover:border-blue-500 px-3 py-1.5 rounded-lg bg-white shadow-2xs transition-all"
+                      >
+                        Unggah Drawing Sekarang →
+                      </Link>
                     </div>
-                  );
-                })() : (
-                  <div className="flex-1 flex flex-col items-center justify-center gap-3">
-                    <span className="material-symbols-outlined text-5xl text-gray-300">picture_as_pdf</span>
-                    <p className="text-xs text-gray-555 font-medium">File PDF 2D Drawing belum diunggah untuk item ini.</p>
-                    <Link
-                      href={`/update-design`}
-                      className="text-[10px] font-bold text-blue-650 hover:text-blue-800 border border-blue-300 hover:border-blue-500 px-3 py-1.5 rounded-lg bg-white shadow-2xs transition-all"
-                    >
-                      Unggah Drawing Sekarang →
-                    </Link>
-                  </div>
-                )
+                  )}
+
+                  {/* Nitro-Style Visual PDF Signer Modal */}
+                  <NitroPdfSignerModal
+                    isOpen={directPdfSignerOpen}
+                    onClose={() => setDirectPdfSignerOpen(false)}
+                    pdfUrl={getFileUrl(activeDoc?.loc2D || '') || ''}
+                    onApplySignature={async (sigData, placement) => {
+                      await handleSignDrawn(sigData, placement);
+                    }}
+                    roleLabel="Drafter"
+                    signerName={user?.name || 'Kukuh'}
+                    signerNpk={user?.npk || 'NPK001'}
+                    initialPageIndex={activePdfPage - 1}
+                  />
+                </>
               ) : (() => {
                 const active3DUrl = viewer3DUrl || getFileUrl(item.revisionHistories.find((rev) => rev.loc3D)?.loc3D || '');
                 const active3DName = viewer3DName || item.revisionHistories.find((rev) => rev.loc3D)?.path3D || undefined;
@@ -725,6 +820,10 @@ function DesignDetailPageContent({ params }: PageProps) {
                         stampedPdfPath={activeDoc?.stampedPdfPath}
                         canSignDrawn={canSignDrawn && !activeDoc?.drawnSignature}
                         onSignDrawn={handleSignDrawn}
+                        onOpenDirectSigner={() => {
+                          setPreviewMode('2D');
+                          setDirectPdfSignerOpen(true);
+                        }}
                         currentUser={user}
                       />
 
@@ -866,6 +965,19 @@ function DesignDetailPageContent({ params }: PageProps) {
                               >
                                 <span className="material-symbols-outlined text-[10px]">visibility</span>
                                 Lihat Drawing
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`)}
+                                disabled={downloadingPage !== null}
+                                className="py-1 px-2 rounded text-[8px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors flex items-center justify-center gap-0.5 cursor-pointer"
+                                title={`Unduh 1 Halaman PDF (${cp.partNumber})`}
+                              >
+                                <span className="material-symbols-outlined text-[10px]">
+                                  {downloadingPage === pageNum ? 'sync' : 'download'}
+                                </span>
+                                <span>Unduh 1 Hal</span>
                               </button>
 
                               <button

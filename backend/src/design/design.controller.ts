@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Request, Res, UseGuards } from '@nestjs/common';
 import { DesignService } from './design.service';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -57,14 +57,42 @@ export class DesignController {
     return this.designService.getDesignHistory(id);
   }
 
-  /** PIC / Drafter signs the 2D drawing E-Tiket */
+  /** PIC / Drafter signs the 2D drawing E-Tiket with optional visual placement */
   @Patch(':id/sign-drawn')
   signDrawn(
     @Param('id') id: string,
-    @Body() dto: { signatureData: string },
+    @Body()
+    dto: {
+      signatureData: string;
+      placement?: {
+        pageIndex?: number;
+        xPercent: number;
+        yPercent: number;
+        widthPercent: number;
+        heightPercent: number;
+      };
+    },
     @Request() req: any,
   ) {
-    return this.designService.signDocumentDrawn(id, dto.signatureData, req.user.id);
+    return this.designService.signDocumentDrawn(id, dto.signatureData, req.user.id, dto.placement);
+  }
+
+  /** Download single page (Hal 1 for Induk, Hal N for CellPart) as standalone PDF */
+  @Get(':id/pdf-page/:page')
+  async downloadPdfPage(
+    @Param('id') id: string,
+    @Param('page') page: string,
+    @Res() res: any,
+  ) {
+    const pageNum = parseInt(page, 10) || 1;
+    const { buffer, filename } = await this.designService.getSinglePagePdf(id, pageNum);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   /** Delete a design item and all its related records */

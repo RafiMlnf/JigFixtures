@@ -22,6 +22,7 @@ interface ETiketSignatureProps {
   onSignDrawn?: (signatureData: string) => Promise<void>;
   onSignChecked?: (signatureData: string) => Promise<void>;
   onSignApproved?: (signatureData: string) => Promise<void>;
+  onOpenDirectSigner?: () => void;
   currentUser?: { name: string; npk?: string; role?: string } | null;
 }
 
@@ -36,6 +37,7 @@ export default function ETiketSignature({
   onSignDrawn,
   onSignChecked,
   onSignApproved,
+  onOpenDirectSigner,
   currentUser,
 }: ETiketSignatureProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -43,6 +45,10 @@ export default function ETiketSignature({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleOpenSignModal = (slot: 'DRAWN' | 'CHECKED' | 'APPROVED') => {
+    if (onOpenDirectSigner) {
+      onOpenDirectSigner();
+      return;
+    }
     setActiveSlot(slot);
     setModalOpen(true);
   };

@@ -37,12 +37,29 @@ export class ApprovalController {
   @Patch(':id/approve')
   approve(
     @Param('id') id: string,
-    @Body() dto: { comment?: string; signatureData?: string; signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD' },
+    @Body() dto: {
+      comment?: string;
+      signatureData?: string;
+      signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
+      placement?: {
+        pageIndex?: number;
+        xPercent: number;
+        yPercent: number;
+        widthPercent: number;
+        heightPercent: number;
+      };
+    },
     @Request() req: any,
   ) {
     return this.approvalService.process(
       id,
-      { action: 'APPROVE', comment: dto.comment, signatureData: dto.signatureData, signatureType: dto.signatureType },
+      {
+        action: 'APPROVE',
+        comment: dto.comment,
+        signatureData: dto.signatureData,
+        signatureType: dto.signatureType,
+        placement: dto.placement,
+      },
       req.user.id,
       req.user.role,
     );
