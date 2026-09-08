@@ -37,15 +37,25 @@ export class ApprovalController {
   @Patch(':id/approve')
   approve(
     @Param('id') id: string,
-    @Body() dto: { comment?: string },
+    @Body() dto: { comment?: string; signatureData?: string; signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD' },
     @Request() req: any,
   ) {
     return this.approvalService.process(
       id,
-      { action: 'APPROVE', comment: dto.comment },
+      { action: 'APPROVE', comment: dto.comment, signatureData: dto.signatureData, signatureType: dto.signatureType },
       req.user.id,
       req.user.role,
     );
+  }
+
+  @Roles(UserRole.PE_JIG_FIXTURE)
+  @Patch(':id/sign-drawn')
+  signDrawn(
+    @Param('id') id: string,
+    @Body() dto: { signatureData: string },
+    @Request() req: any,
+  ) {
+    return this.approvalService.signDrawn(id, dto.signatureData, req.user.id);
   }
 
   @Roles(UserRole.PE_SECTION_HEAD, UserRole.PE_DEPT_HEAD)

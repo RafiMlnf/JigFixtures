@@ -302,3 +302,117 @@ export async function deleteCellPart(id: string) {
   }
   return res.json();
 }
+
+// ==========================================
+// DRAWING PARSER & DIGITAL SIGNATURE API
+// ==========================================
+
+export interface ParsedJigMetadata {
+  partName: string;
+  partNumber: string;
+  title: string;
+  model: string;
+  qty: string;
+  drawnBy?: string;
+  checkedBy?: string;
+  approvedBy?: string;
+  scale?: string;
+  format?: string;
+  weight?: string;
+}
+
+export interface ParsedCellPartItem {
+  itemNo: number;
+  name: string;
+  partNumber: string;
+  material?: string;
+  heatTreatment?: string;
+  hardness?: string;
+  qty: string;
+  pdfPageIndex?: number;
+  isStandardPart: boolean;
+  description?: string;
+}
+
+export interface ParseDrawingResponse {
+  url: string;
+  filename: string;
+  size: number;
+  parsed: {
+    jig: ParsedJigMetadata;
+    cellParts: ParsedCellPartItem[];
+    totalPages: number;
+    extractedTextSummary?: string;
+  };
+}
+
+/** Upload and analyze 2D Drawing PDF to extract E-Tiket and BOM table */
+export async function parseDrawingPdf(file: File): Promise<ParseDrawingResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/api/upload/parse-drawing`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menganalisis PDF drawing', res.status);
+  }
+  return res.json();
+}
+
+/** Drafter/PIC digitally signs the DRAWN slot of a released design document */
+export async function signDesignDrawn(designId: string, signatureData: string) {
+  const res = await fetch(`${BASE}/api/design/${designId}/sign-drawn`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ signatureData }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menandatangani drawing', res.status);
+  }
+  return res.json();
+}
+
+/** Drafter/PIC digitally signs the DRAWN slot of an approval revision */
+export async function signApprovalDrawn(approvalId: string, signatureData: string) {
+  const res = await fetch(`${BASE}/api/approvals/${approvalId}/sign-drawn`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ signatureData }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menandatangani approval', res.status);
+  }
+  return res.json();
+}
+
+/** Section Head or Dept Head approves with digital signature */
+export async function approveWithSignature(approvalId: string, data: {
+  comment?: string;
+  signatureData?: string;
+  signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
+}) {
+  const res = await fetch(`${BASE}/api/approvals/${approvalId}/approve`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menyetujui approval', res.status);
+  }
+  return res.json();
+}

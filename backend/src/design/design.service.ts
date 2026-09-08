@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateDesignDto } from './dto/update-design.dto';
+import { DrawingStamperService } from '../upload/drawing-stamper.service';
+import { join, extname, basename } from 'path';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 
 @Injectable()
 export class DesignService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private drawingStamperService: DrawingStamperService,
+  ) {}
 
   /**
    * Generate a unique registration number.
@@ -192,6 +198,16 @@ export class DesignService {
         path2D: doc.path2D,
         loc2D: doc.loc2D,
         approvalStatus: doc.approvalStatus,
+        drawnSignature: (doc as any).drawnSignature,
+        drawnByName: (doc as any).drawnByName,
+        drawnAt: (doc as any).drawnAt,
+        checkedSignature: (doc as any).checkedSignature,
+        checkedByName: (doc as any).checkedByName,
+        checkedAt: (doc as any).checkedAt,
+        approvedSignature: (doc as any).approvedSignature,
+        approvedByName: (doc as any).approvedByName,
+        approvedAt: (doc as any).approvedAt,
+        stampedPdfPath: (doc as any).stampedPdfPath,
       })),
       revisionHistories: d.revisionHistories.map((rev) => ({
         id: rev.id,
@@ -242,6 +258,8 @@ export class DesignService {
           minimumStock: cp.minimumStock,
           actualStock: cp.actualStock,
           pdfPageIndex: cp.pdfPageIndex,
+          material: cp.material,
+          qty: cp.qty || '1',
         };
       }) || [],
     }));
@@ -265,9 +283,9 @@ export class DesignService {
     let lineId = dto.lineId;
     if (!lineId && dto.lineName) {
       const lineName = dto.lineName.trim();
-      const lineCode = lineName.toUpperCase().replace(/\s+/g, '_');
+      const lineCode = lineName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
       let line = await this.prisma.line.findFirst({
-        where: { lineName },
+        where: { lineName: { equals: lineName, mode: 'insensitive' } },
       });
       if (!line) {
         line = await this.prisma.line.create({
@@ -276,13 +294,20 @@ export class DesignService {
       }
       lineId = line.id;
     }
+    if (!lineId) {
+      const defaultLine = (await this.prisma.line.findFirst()) ||
+        (await this.prisma.line.create({
+          data: { lineName: 'Default Line', lineCode: 'DEFAULT_LINE' },
+        }));
+      lineId = defaultLine.id;
+    }
 
     let processId = dto.processId;
     if (!processId && dto.processName) {
       const name = dto.processName.trim();
-      const code = name.toUpperCase().replace(/\s+/g, '_');
+      const code = name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
       let proc = await this.prisma.process.findFirst({
-        where: { name },
+        where: { name: { equals: name, mode: 'insensitive' } },
       });
       if (!proc) {
         proc = await this.prisma.process.create({
@@ -291,9 +316,12 @@ export class DesignService {
       }
       processId = proc.id;
     }
-
-    if (!lineId || !processId) {
-      throw new Error('Line and Process are required');
+    if (!processId) {
+      const defaultProc = (await this.prisma.process.findFirst()) ||
+        (await this.prisma.process.create({
+          data: { name: 'OP - General', code: 'OP_GENERAL' },
+        }));
+      processId = defaultProc.id;
     }
 
     // Auto-generate noReg if not provided
@@ -319,14 +347,48 @@ export class DesignService {
     });
 
     if (dto.docLocation2D) {
-      await this.prisma.document.create({
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const doc = await this.prisma.document.create({
         data: {
           designId: design.id,
           path2D: dto.docLocation2D,
           loc2D: dto.docLocation2D,
           approvalStatus: 'APPROVED',
+          drawnSignature: dto.drawnSignature || null,
+          drawnByName: dto.drawnSignature ? (user?.name || dto.drawnByName || 'Drafter') : null,
+          drawnAt: dto.drawnSignature ? new Date() : null,
         },
       });
+
+      if (dto.drawnSignature) {
+        await this.stampDocumentPdf(doc.id, design.id, userId);
+      }
+    }
+
+    // Bulk create CellParts if provided from drawing extraction
+    if (Array.isArray(dto.cellParts) && dto.cellParts.length > 0) {
+      for (const cp of dto.cellParts) {
+        if (!cp.partNumber || !cp.name) continue;
+        try {
+          await this.prisma.cellPart.create({
+            data: {
+              designId: design.id,
+              partNumber: cp.partNumber.trim(),
+              name: cp.name.trim(),
+              description: cp.description || null,
+              material: cp.material || null,
+              qty: String(cp.qty || '1'),
+              lifetimeDays: cp.lifetimeDays ? parseInt(String(cp.lifetimeDays), 10) : 180,
+              installDate: cp.installDate ? new Date(cp.installDate) : new Date(),
+              minimumStock: cp.minimumStock ? parseInt(String(cp.minimumStock), 10) : 0,
+              actualStock: cp.actualStock ? parseInt(String(cp.actualStock), 10) : (cp.qty ? parseInt(String(cp.qty), 10) || 1 : 1),
+              pdfPageIndex: cp.pdfPageIndex ? parseInt(String(cp.pdfPageIndex), 10) : null,
+            },
+          });
+        } catch (cpErr) {
+          console.warn(`Could not auto-create cellpart ${cp.partNumber}:`, cpErr);
+        }
+      }
     }
 
     await this.prisma.revisionHistory.create({
@@ -361,5 +423,81 @@ export class DesignService {
       this.prisma.notification.deleteMany({ where: { designId: id } }),
       this.prisma.design.delete({ where: { id } }),
     ]);
+  }
+
+  /**
+   * PIC signature on released document
+   */
+  async signDocumentDrawn(designId: string, signatureData: string, userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const doc = await this.prisma.document.findFirst({
+      where: { designId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!doc) throw new NotFoundException('Dokumen 2D drawing tidak ditemukan untuk desain ini');
+
+    const updated = await this.prisma.document.update({
+      where: { id: doc.id },
+      data: {
+        drawnSignature: signatureData,
+        drawnByName: user?.name || 'Drafter',
+        drawnAt: new Date(),
+      },
+    });
+
+    await this.stampDocumentPdf(doc.id, designId, userId);
+    return updated;
+  }
+
+  private async stampDocumentPdf(docId: string, designId: string, userId: string) {
+    try {
+      const doc = await this.prisma.document.findUnique({ where: { id: docId } });
+      if (!doc || !doc.loc2D) return;
+
+      const rawPath = doc.loc2D.startsWith('/uploads/') ? doc.loc2D.replace('/uploads/', '') : doc.loc2D;
+      const originalFilePath = join(process.cwd(), 'uploads', rawPath);
+      if (!existsSync(originalFilePath)) return;
+
+      const pdfBuffer = readFileSync(originalFilePath);
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+      const stampedBuffer = await this.drawingStamperService.stampSignatures(pdfBuffer, {
+        drawn: (doc.drawnByName || doc.drawnSignature)
+          ? {
+              name: doc.drawnByName || user?.name || 'Drafter',
+              date: (doc.drawnAt || new Date()).toISOString(),
+              signatureData: doc.drawnSignature || undefined,
+              npk: user?.npk,
+            }
+          : undefined,
+        checked: (doc.checkedByName || doc.checkedSignature)
+          ? {
+              name: doc.checkedByName || 'Section Head',
+              date: (doc.checkedAt || new Date()).toISOString(),
+              signatureData: doc.checkedSignature || undefined,
+            }
+          : undefined,
+        approved: (doc.approvedByName || doc.approvedSignature)
+          ? {
+              name: doc.approvedByName || 'Dept Head',
+              date: (doc.approvedAt || new Date()).toISOString(),
+              signatureData: doc.approvedSignature || undefined,
+            }
+          : undefined,
+      });
+
+      const ext = extname(rawPath);
+      const baseName = basename(rawPath, ext);
+      const stampedFilename = `${baseName}_signed${ext}`;
+      const stampedFilePath = join(process.cwd(), 'uploads', stampedFilename);
+      writeFileSync(stampedFilePath, stampedBuffer);
+
+      await this.prisma.document.update({
+        where: { id: docId },
+        data: { stampedPdfPath: `/uploads/${stampedFilename}` },
+      });
+    } catch (err) {
+      console.error('Failed to stamp PDF in design service:', err);
+    }
   }
 }

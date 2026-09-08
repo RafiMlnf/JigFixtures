@@ -57,6 +57,16 @@ export class DesignController {
     return this.designService.getDesignHistory(id);
   }
 
+  /** PIC / Drafter signs the 2D drawing E-Tiket */
+  @Patch(':id/sign-drawn')
+  signDrawn(
+    @Param('id') id: string,
+    @Body() dto: { signatureData: string },
+    @Request() req: any,
+  ) {
+    return this.designService.signDocumentDrawn(id, dto.signatureData, req.user.id);
+  }
+
   /** Delete a design item and all its related records */
   @Delete(':id')
   deleteDesign(@Param('id') id: string) {

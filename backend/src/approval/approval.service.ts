@@ -2,10 +2,16 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { ProcessApprovalDto } from './dto/process-approval.dto';
+import { DrawingStamperService } from '../upload/drawing-stamper.service';
+import { join, extname, basename } from 'path';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 
 @Injectable()
 export class ApprovalService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private drawingStamperService: DrawingStamperService,
+  ) {}
 
   async submit(dto: SubmitApprovalDto, userId: string) {
     const item = await this.prisma.design.findUnique({
@@ -24,6 +30,7 @@ export class ApprovalService {
     });
 
     // 1. Create Approval record
+    const submitter = await this.prisma.user.findUnique({ where: { id: userId } });
     const approval = await this.prisma.approval.create({
       data: {
         type: dto.type,
@@ -36,12 +43,19 @@ export class ApprovalService {
         sectionStatus: 'WAITING',
         deptStatus: 'WAITING',
         finalStatus: 'WAITING',
+        drawnSignature: dto.drawnSignature || null,
+        drawnByName: dto.drawnSignature ? (submitter?.name || 'Drafter') : null,
+        drawnAt: dto.drawnSignature ? new Date() : null,
       },
       include: {
         design: true,
         submittedBy: true,
       },
     });
+
+    if (dto.drawnSignature) {
+      await this.stampApprovalDocument(approval.id);
+    }
 
     // 2. Notify Section Heads
     const sectionHeads = await this.prisma.user.findMany({
@@ -167,7 +181,7 @@ export class ApprovalService {
     }));
   }
 
-  async process(id: string, dto: { action: 'APPROVE' | 'REJECT'; comment?: string }, userId: string, role: string) {
+  async process(id: string, dto: ProcessApprovalDto, userId: string, role: string) {
     const approval = await this.prisma.approval.findUnique({
       where: { id },
       include: { design: true, submittedBy: true },
@@ -184,6 +198,7 @@ export class ApprovalService {
 
     if (role === 'PE_SECTION_HEAD') {
       if (dto.action === 'APPROVE') {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
         const updated = await this.prisma.approval.update({
           where: { id },
           data: {
@@ -191,9 +206,15 @@ export class ApprovalService {
             sectionStatus: 'APPROVED',
             sectionComment: comment,
             sectionAt: new Date(),
+            checkedSignature: dto.signatureData || null,
+            checkedByName: user?.name || 'Section Head',
+            checkedAt: new Date(),
           },
           include: { design: { include: { line: true, process: true, vendor: true } }, submittedBy: true, sectionHead: true, deptHead: true },
         });
+
+        // Stamp PDF with updated Checked signature
+        await this.stampApprovalDocument(id);
 
         // Notify Dept Heads
         const deptHeads = await this.prisma.user.findMany({
@@ -264,6 +285,7 @@ export class ApprovalService {
 
       if (dto.action === 'APPROVE') {
         // Final Approval
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
         const updated = await this.prisma.approval.update({
           where: { id },
           data: {
@@ -274,9 +296,15 @@ export class ApprovalService {
             status: 'APPROVED',
             finalStatus: 'APPROVED',
             finalComment: comment,
+            approvedSignature: dto.signatureData || null,
+            approvedByName: user?.name || 'Dept Head',
+            approvedAt: new Date(),
           },
           include: { design: { include: { line: true, process: true, vendor: true } }, submittedBy: true, sectionHead: true, deptHead: true },
         });
+
+        // Stamp PDF with Approved signature
+        await this.stampApprovalDocument(id);
 
         // Update the item revision status in the main master list
         const latestHistory = await this.prisma.revisionHistory.findFirst({
@@ -367,6 +395,117 @@ export class ApprovalService {
       }
     } else {
       throw new BadRequestException('Only Section Heads or Dept Heads can approve/reject.');
+    }
+  }
+
+  /**
+   * Allow Drafter / PIC to digitally sign the DRAWN column of an approval
+   */
+  async signDrawn(id: string, signatureData: string, userId: string) {
+    const approval = await this.prisma.approval.findUnique({
+      where: { id },
+      include: { submittedBy: true },
+    });
+    if (!approval) throw new NotFoundException(`Approval ${id} not found`);
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const updated = await this.prisma.approval.update({
+      where: { id },
+      data: {
+        drawnSignature: signatureData,
+        drawnByName: user?.name || approval.submittedBy.name,
+        drawnAt: new Date(),
+      },
+    });
+
+    await this.stampApprovalDocument(id);
+    return updated;
+  }
+
+  /**
+   * Stamp official signatures onto the PDF drawing if present
+   */
+  async stampApprovalDocument(approvalId: string) {
+    try {
+      const approval = await this.prisma.approval.findUnique({
+        where: { id: approvalId },
+        include: {
+          design: { include: { documents: true } },
+          submittedBy: true,
+          sectionHead: true,
+          deptHead: true,
+        },
+      });
+      if (!approval || !approval.design) return;
+
+      const doc = approval.design.documents.find((d) => d.loc2D) || approval.design.documents[0];
+      if (!doc || !doc.loc2D) return;
+
+      // Local file resolution
+      const rawPath = doc.loc2D.startsWith('/uploads/') ? doc.loc2D.replace('/uploads/', '') : doc.loc2D;
+      const originalFilePath = join(process.cwd(), 'uploads', rawPath);
+      if (!existsSync(originalFilePath)) return;
+
+      const pdfBuffer = readFileSync(originalFilePath);
+
+      const stampedBuffer = await this.drawingStamperService.stampSignatures(pdfBuffer, {
+        drawn: (approval.drawnByName || approval.drawnSignature)
+          ? {
+              name: approval.drawnByName || approval.submittedBy?.name || 'Drafter',
+              date: (approval.drawnAt || approval.submittedAt).toISOString(),
+              signatureData: approval.drawnSignature || undefined,
+              npk: approval.submittedBy?.npk,
+            }
+          : undefined,
+        checked: (approval.checkedByName || approval.checkedSignature)
+          ? {
+              name: approval.checkedByName || approval.sectionHead?.name || 'Section Head',
+              date: (approval.checkedAt || new Date()).toISOString(),
+              signatureData: approval.checkedSignature || undefined,
+              npk: approval.sectionHead?.npk,
+            }
+          : undefined,
+        approved: (approval.approvedByName || approval.approvedSignature)
+          ? {
+              name: approval.approvedByName || approval.deptHead?.name || 'Dept Head',
+              date: (approval.approvedAt || new Date()).toISOString(),
+              signatureData: approval.approvedSignature || undefined,
+              npk: approval.deptHead?.npk,
+            }
+          : undefined,
+      });
+
+      // Save stamped PDF
+      const ext = extname(rawPath);
+      const baseName = basename(rawPath, ext);
+      const stampedFilename = `${baseName}_signed${ext}`;
+      const stampedFilePath = join(process.cwd(), 'uploads', stampedFilename);
+      writeFileSync(stampedFilePath, stampedBuffer);
+
+      const stampedUrl = `/uploads/${stampedFilename}`;
+
+      await this.prisma.approval.update({
+        where: { id: approvalId },
+        data: { stampedPdfPath: stampedUrl },
+      });
+
+      await this.prisma.document.update({
+        where: { id: doc.id },
+        data: {
+          stampedPdfPath: stampedUrl,
+          drawnSignature: approval.drawnSignature,
+          drawnByName: approval.drawnByName,
+          drawnAt: approval.drawnAt,
+          checkedSignature: approval.checkedSignature,
+          checkedByName: approval.checkedByName,
+          checkedAt: approval.checkedAt,
+          approvedSignature: approval.approvedSignature,
+          approvedByName: approval.approvedByName,
+          approvedAt: approval.approvedAt,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to stamp PDF drawing:', err);
     }
   }
 }

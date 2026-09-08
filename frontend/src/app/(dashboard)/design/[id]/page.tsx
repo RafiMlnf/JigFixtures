@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect, use, lazy, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, deleteCellPart } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, deleteCellPart, signDesignDrawn } from '@/lib/api/phase3';
+import { canEdit } from '@/lib/rbac';
+import ETiketSignature from '@/components/design/ETiketSignature';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -13,6 +15,16 @@ interface DocumentInfo {
   path2D: string | null;
   loc2D: string | null;
   approvalStatus: string;
+  drawnSignature?: string | null;
+  drawnByName?: string | null;
+  drawnAt?: string | null;
+  checkedSignature?: string | null;
+  checkedByName?: string | null;
+  checkedAt?: string | null;
+  approvedSignature?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  stampedPdfPath?: string | null;
 }
 
 interface RevHistoryInfo {
@@ -91,13 +103,14 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-type InspectorTab = 'info' | 'rev' | 'cost' | 'stock' | 'abn' | 'cellpart';
+type InspectorTab = 'info' | 'etiket' | 'cellpart' | 'rev' | 'cost' | 'stock' | 'abn';
 
-export default function DesignDetailPage({ params }: PageProps) {
+function DesignDetailPageContent({ params }: PageProps) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
   const router = useRouter();
-  const { logout } = useApp();
+  const searchParams = useSearchParams();
+  const { logout, user, approvals } = useApp();
   const [item, setItem] = useState<MasterItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<InspectorTab>('info');
@@ -106,6 +119,15 @@ export default function DesignDetailPage({ params }: PageProps) {
   const [viewer3DUrl, setViewer3DUrl] = useState<string | null>(null);
   const [viewer3DName, setViewer3DName] = useState<string | undefined>();
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
+
+  // Sync tab with URL query parameter ?tab=
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as InspectorTab | null;
+    if (tabParam && ['info', 'etiket', 'cellpart', 'rev', 'cost', 'stock', 'abn'].includes(tabParam)) {
+      setActiveTab(tabParam);
+      setInspectorOpen(true);
+    }
+  }, [searchParams]);
 
   // Multi-page 2D drawing state (Page 1 = Parent Jig, Page 2+ = Child CellParts)
   const [activePdfPage, setActivePdfPage] = useState<number>(1);
@@ -236,12 +258,21 @@ export default function DesignDetailPage({ params }: PageProps) {
 
   const inspectorTabs: { key: InspectorTab; icon: string; label: string }[] = [
     { key: 'info', icon: 'info', label: 'Info' },
+    { key: 'etiket', icon: 'verified', label: 'E-Tiket' },
     { key: 'cellpart', icon: 'account_tree', label: 'CellPart' },
     { key: 'rev', icon: 'history', label: 'Revisi' },
     { key: 'cost', icon: 'monetization_on', label: 'Cost' },
     { key: 'stock', icon: 'inventory', label: 'Stok' },
     { key: 'abn', icon: 'report_problem', label: 'Anomali' },
   ];
+
+  const canSignDrawn = canEdit(user?.role);
+
+  const handleSignDrawn = async (sigData: string) => {
+    if (!item) return;
+    await signDesignDrawn(item.id, sigData);
+    await loadItem();
+  };
 
   return (
     <>
@@ -415,6 +446,33 @@ export default function DesignDetailPage({ params }: PageProps) {
                     3D Model Preview
                   </button>
                 )}
+
+                {/* E-Tiket Quick Action */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectorOpen(true);
+                    setActiveTab('etiket');
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9px] font-bold transition-all cursor-pointer ${
+                    activeTab === 'etiket' && inspectorOpen
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                      : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                  }`}
+                  title="Buka Panel E-Tiket & Tanda Tangan"
+                >
+                  <span className="material-symbols-outlined text-xs">verified</span>
+                  <span>E-Tiket</span>
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      activeDoc?.approvedSignature
+                        ? 'bg-emerald-500'
+                        : activeDoc?.drawnSignature
+                        ? 'bg-amber-500'
+                        : 'bg-gray-300'
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Multi-Page Navigation for Parent Jig & Child CellParts */}
@@ -460,7 +518,8 @@ export default function DesignDetailPage({ params }: PageProps) {
             <div className="flex-1 flex items-stretch min-h-0 bg-gray-100 relative">
               {previewMode === '2D' ? (
                 activeDoc?.loc2D ? (() => {
-                  const pdfUrl = getFileUrl(activeDoc.loc2D);
+                  const targetDocPath = activeDoc.stampedPdfPath || activeDoc.loc2D;
+                  const pdfUrl = getFileUrl(targetDocPath);
                   const fullUrl = pdfUrl ? `${pdfUrl}#page=${activePdfPage}` : null;
                   return fullUrl ? (
                     <iframe
@@ -601,6 +660,111 @@ export default function DesignDetailPage({ params }: PageProps) {
                     </div>
                   </div>
                 )}
+
+                {/* ─ E-TIKET TAB ─ */}
+                {activeTab === 'etiket' && (() => {
+                  const waitingApproval = item ? approvals?.find((a) => a.noReg === item.noReg && a.status === 'WAITING') : null;
+                  return (
+                    <div className="space-y-3 text-[10px]">
+                      {waitingApproval && (
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold flex items-center gap-1.5 text-[10px]">
+                              <span className="material-symbols-outlined text-sm text-amber-600 animate-pulse">pending</span>
+                              Proses Approval Sedang Berjalan
+                            </span>
+                            <Link
+                              href={`/approval-center/${waitingApproval.id}`}
+                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>Review &amp; Tanda Tangan</span>
+                              <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
+                            </Link>
+                          </div>
+                          <p className="text-[8px] text-amber-700 font-medium">
+                            Tahap saat ini: {waitingApproval.sectionStatus !== 'APPROVED' ? 'Menunggu Tanda Tangan Section Head (Checked)' : 'Menunggu Tanda Tangan Dept Head (Approved)'}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest">E-Tiket Drawing</p>
+                          <p className="text-[9px] text-gray-500 font-semibold">Tanda Tangan &amp; Stempel Digital 3 Kolom</p>
+                        </div>
+                        {activeDoc?.stampedPdfPath && (
+                          <a
+                            href={getFileUrl(activeDoc.stampedPdfPath) || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100 rounded text-[9px] font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                            title="Buka PDF resmi bertanda tangan"
+                          >
+                            <span className="material-symbols-outlined text-xs">download</span>
+                            Stempel PDF
+                          </a>
+                        )}
+                      </div>
+
+                      <ETiketSignature
+                        drawn={{
+                          name: activeDoc?.drawnByName || 'Drafter PE',
+                          date: activeDoc?.drawnAt ? new Date(activeDoc.drawnAt).toLocaleDateString('id-ID') : null,
+                          signature: activeDoc?.drawnSignature,
+                        }}
+                        checked={{
+                          name: activeDoc?.checkedByName || 'Section Head',
+                          date: activeDoc?.checkedAt ? new Date(activeDoc.checkedAt).toLocaleDateString('id-ID') : null,
+                          signature: activeDoc?.checkedSignature,
+                        }}
+                        approved={{
+                          name: activeDoc?.approvedByName || 'Dept Head',
+                          date: activeDoc?.approvedAt ? new Date(activeDoc.approvedAt).toLocaleDateString('id-ID') : null,
+                          signature: activeDoc?.approvedSignature,
+                        }}
+                        stampedPdfPath={activeDoc?.stampedPdfPath}
+                        canSignDrawn={canSignDrawn && !activeDoc?.drawnSignature}
+                        onSignDrawn={handleSignDrawn}
+                        currentUser={user}
+                      />
+
+                      {/* Metadata E-Tiket block */}
+                      <div className="bg-white p-2.5 rounded-xl border border-gray-200 shadow-2xs space-y-1.5 text-[9px]">
+                        <span className="text-[8px] font-bold uppercase text-gray-400 block mb-1">Informasi E-Tiket Induk</span>
+                        <div className="flex justify-between border-b border-gray-100 pb-1">
+                          <span className="text-gray-400">Part Name:</span>
+                          <span className="font-bold text-gray-800 text-right truncate max-w-[140px]">{item.assyPartName}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-gray-100 pb-1">
+                          <span className="text-gray-400">Part Number:</span>
+                          <span className="font-mono font-bold text-gray-800">{item.noItem || item.noReg}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-gray-100 pb-1">
+                          <span className="text-gray-400">Model / Line:</span>
+                          <span className="font-semibold text-gray-800">{item.lineProduct}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-gray-100 pb-1">
+                          <span className="text-gray-400">Revisi:</span>
+                          <span className="font-mono font-bold text-blue-600">Rev {item.revStatus}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-0.5">
+                          <span className="text-gray-400">Status Legalitas:</span>
+                          <span className={`font-bold px-1.5 py-0.5 rounded text-[8px] ${
+                            activeDoc?.approvedSignature
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : activeDoc?.checkedSignature
+                              ? 'bg-blue-100 text-blue-800'
+                              : activeDoc?.drawnSignature
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {activeDoc?.approvedSignature ? 'Resmi (Fully Approved)' : activeDoc?.checkedSignature ? 'Checked (Review Dept)' : activeDoc?.drawnSignature ? 'Drawn (Menunggu Check)' : 'Draft (Belum Ditandatangani)'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ─ CELLPART TAB ─ */}
                 {activeTab === 'cellpart' && (
@@ -1100,6 +1264,23 @@ export default function DesignDetailPage({ params }: PageProps) {
         </div>
       )}
     </>
+  );
+}
+
+export default function DesignDetailPage(props: PageProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center p-6 bg-white">
+          <div className="text-center">
+            <span className="material-symbols-outlined animate-spin text-2xl text-blue-600">sync</span>
+            <p className="text-xs text-gray-500 mt-2 font-medium">Memuat data desain &amp; E-Tiket...</p>
+          </div>
+        </div>
+      }
+    >
+      <DesignDetailPageContent {...props} />
+    </Suspense>
   );
 }
 

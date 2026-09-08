@@ -4,14 +4,26 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, deleteCellPart } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
+import SignaturePadModal from '@/components/design/SignaturePadModal';
+import ETiketSignature from '@/components/design/ETiketSignature';
 
 interface DocumentInfo {
   id: string;
   path2D: string | null;
   loc2D: string | null;
   approvalStatus: string;
+  drawnSignature?: string | null;
+  drawnByName?: string | null;
+  drawnAt?: string | null;
+  checkedSignature?: string | null;
+  checkedByName?: string | null;
+  checkedAt?: string | null;
+  approvedSignature?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  stampedPdfPath?: string | null;
 }
 
 interface RevHistoryInfo {
@@ -277,6 +289,15 @@ export function DesignPageContent() {
   const [processInput, setProcessInput] = useState('');
   const [lifetimeDaysInput, setLifetimeDaysInput] = useState(180);
 
+  // Drawing PDF Extraction & BOM states
+  const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
+  const [extractedJig, setExtractedJig] = useState<ParsedJigMetadata | null>(null);
+  const [extractedCellParts, setExtractedCellParts] = useState<ParsedCellPartItem[]>([]);
+  const [selectedCpKeys, setSelectedCpKeys] = useState<Set<number>>(new Set());
+  const [showExtractedBOM, setShowExtractedBOM] = useState(true);
+  const [drawnSignatureData, setDrawnSignatureData] = useState<string | null>(null);
+  const [showDrawnSignatureModal, setShowDrawnSignatureModal] = useState(false);
+
   // Shared / Edit Form Fields
   const [revStatus, setRevStatus] = useState('1');
   const [designDateNew, setDesignDateNew] = useState(new Date().toISOString().split('T')[0]);
@@ -383,6 +404,10 @@ export function DesignPageContent() {
     setPoNumber('');
     setCost(0);
     setLeadTime(1);
+    setExtractedJig(null);
+    setExtractedCellParts([]);
+    setSelectedCpKeys(new Set());
+    setDrawnSignatureData(null);
     setToast(null);
     setShowCreateModal(true);
   };
@@ -494,6 +519,14 @@ export function DesignPageContent() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!lineInput.trim()) {
+      setToast({ type: 'error', msg: 'Harap pilih atau isi Line Produksi sebelum menyimpan.' });
+      return;
+    }
+    if (!processInput.trim()) {
+      setToast({ type: 'error', msg: 'Harap pilih atau isi OP / Proses sebelum menyimpan.' });
+      return;
+    }
     setSubmitting(true);
     try {
       const matchedLine = lines.find((l) => l.lineName.toLowerCase().trim() === lineInput.toLowerCase().trim());
@@ -503,6 +536,20 @@ export function DesignPageContent() {
       const matchedProcess = processes.find((p) => p.name.toLowerCase().trim() === processInput.toLowerCase().trim());
       const processId = matchedProcess ? matchedProcess.id : undefined;
       const processName = matchedProcess ? undefined : processInput.trim();
+
+      const cellPartsToCreate = extractedCellParts
+        .filter((cp) => selectedCpKeys.has(cp.itemNo))
+        .map((cp) => ({
+          partNumber: cp.partNumber,
+          name: cp.name,
+          description: cp.description,
+          material: cp.material,
+          qty: cp.qty,
+          pdfPageIndex: cp.pdfPageIndex,
+          lifetimeDays: 180,
+          minimumStock: 0,
+          actualStock: parseInt(String(cp.qty), 10) || 1,
+        }));
 
       await createDesignItem({
         noReg,
@@ -526,9 +573,11 @@ export function DesignPageContent() {
         poNumber: poNumber || undefined,
         cost: cost ? parseFloat(String(cost)) : undefined,
         leadTime: leadTime ? parseInt(String(leadTime), 10) : undefined,
+        drawnSignature: drawnSignatureData || undefined,
+        cellParts: cellPartsToCreate.length > 0 ? cellPartsToCreate : undefined,
       });
 
-      setToast({ type: 'success', msg: `Desain baru ${noReg} (${assyPartName}) berhasil dibuat!` });
+      setToast({ type: 'success', msg: `Desain baru ${noReg} (${assyPartName}) beserta ${cellPartsToCreate.length} CellPart berhasil dibuat!` });
       setShowCreateModal(false);
       loadData();
     } catch (err: any) {
@@ -1060,9 +1109,10 @@ export function DesignPageContent() {
                 <th className="px-2 py-2">OP (Process)</th>
                 <th className="px-2 py-2">Type</th>
                 <th className="px-2 py-2 text-center">Lifecycle</th>
+                <th className="px-2 py-2 text-center w-24">E-Tiket</th>
                 <th className="px-2 py-2 text-center w-[85px]">Stock</th>
                 <th className="px-2 py-2 text-center w-[85px]">Abn</th>
-                {isPic && <th className="px-2 py-2 text-center w-20">Aksi</th>}
+                <th className="px-2 py-2 text-center w-24">Aksi</th>
               </tr>
             </thead>
             <tbody className="text-gray-700">
@@ -1075,26 +1125,67 @@ export function DesignPageContent() {
                 return (
                   <React.Fragment key={item.id}>
                     <tr
-                      onClick={() => toggleExpandRow(item.id)}
-                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/40' : ''}`}
+                      onClick={() => router.push(`/design/${item.id}`)}
+                      className={`border-b border-gray-100 hover:bg-blue-50/40 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/20' : ''}`}
                     >
-                      <td className="px-3 py-2 text-center font-bold text-gray-400">
+                      <td className="px-3 py-2 text-center font-bold text-gray-400" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-0.5">
-                          <span className={`material-symbols-outlined text-[10px] transition-transform ${isExpanded ? 'rotate-90' : ''} ${cellParts.length > 0 ? 'text-blue-500' : 'text-gray-300'}`}>
-                            chevron_right
-                          </span>
+                          {cellParts.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpandRow(item.id);
+                              }}
+                              className="p-1 hover:bg-blue-100 rounded text-blue-500 hover:text-blue-700 transition-colors cursor-pointer flex items-center justify-center"
+                              title={isExpanded ? 'Tutup daftar CellPart' : 'Buka daftar CellPart'}
+                            >
+                              <span className={`material-symbols-outlined text-[13px] font-bold transition-transform ${isExpanded ? 'rotate-90 text-blue-600' : ''}`}>
+                                chevron_right
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="w-4 inline-block text-gray-300">•</span>
+                          )}
                           <span className="text-[10px]">{index + 1}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2 font-mono font-bold text-gray-900">
-                        <div className="flex items-center gap-1">
-                          {item.noReg}
+                      <td className="px-2 py-2 font-mono font-bold text-blue-600">
+                        <div className="flex items-center gap-1.5 group">
+                          <Link
+                            href={`/design/${item.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="hover:underline flex items-center gap-1"
+                            title="Buka Halaman Detail Desain"
+                          >
+                            {item.noReg}
+                            <span className="material-symbols-outlined text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>
+                          </Link>
                           {cellParts.length > 0 && (
-                            <span className="text-[7px] bg-blue-100 text-blue-600 px-1 py-0.5 rounded-full font-bold">{cellParts.length}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpandRow(item.id);
+                              }}
+                              className="text-[7px] bg-blue-100 hover:bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full font-bold transition-colors cursor-pointer"
+                              title="Klik untuk melihat sublist CellPart"
+                            >
+                              {cellParts.length} CP
+                            </button>
                           )}
                         </div>
                       </td>
-                      <td className="px-2 py-2 font-medium">{item.assyPartName}</td>
+                      <td className="px-2 py-2 font-medium text-gray-900">
+                        <Link
+                          href={`/design/${item.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-blue-600 hover:underline"
+                          title="Buka Halaman Detail Desain"
+                        >
+                          {item.assyPartName}
+                        </Link>
+                      </td>
                       <td className="px-2 py-2 text-gray-550">{item.lineProduct}</td>
                       <td className="px-2 py-2 text-gray-550">{item.process}</td>
                       <td className="px-2 py-2 font-bold text-gray-500">{item.type}</td>
@@ -1108,6 +1199,62 @@ export function DesignPageContent() {
                           {item.lifecycleStatus || 'ACTIVE'}
                         </span>
                       </td>
+                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
+                          if (doc?.approvedSignature || doc?.stampedPdfPath) {
+                            return (
+                              <Link
+                                href={`/design/${item.id}?tab=etiket`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200 transition-colors shadow-3xs"
+                                title="E-Tiket Resmi (Fully Approved - Siap Produksi)"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">verified</span>
+                                Approved
+                              </Link>
+                            );
+                          }
+                          if (doc?.checkedSignature) {
+                            return (
+                              <Link
+                                href={`/design/${item.id}?tab=etiket`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 hover:bg-indigo-200 transition-colors shadow-3xs"
+                                title="E-Tiket: Checked by Section Head (Menunggu Dept Head)"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">rule</span>
+                                Checked
+                              </Link>
+                            );
+                          }
+                          if (doc?.drawnSignature) {
+                            return (
+                              <Link
+                                href={`/design/${item.id}?tab=etiket`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors shadow-3xs"
+                                title="E-Tiket: Drawn Signed (Menunggu Review Section Head)"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">draw</span>
+                                Drawn
+                              </Link>
+                            );
+                          }
+                          if (doc?.loc2D) {
+                            return (
+                              <Link
+                                href={`/design/${item.id}?tab=etiket`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                                title="Draft Drawing: Belum Ditandatangani"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">edit_note</span>
+                                Draft
+                              </Link>
+                            );
+                          }
+                          return (
+                            <span className="text-[8px] text-gray-300 font-medium">—</span>
+                          );
+                        })()}
+                      </td>
                       <td className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider border-r-2 border-white ${isRed ? 'bg-red-500 text-white' : isYellow ? 'bg-yellow-400 text-yellow-950' : 'bg-green-500 text-white'
                         }`}>
                         {isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'}
@@ -1120,38 +1267,54 @@ export function DesignPageContent() {
                           item.abnormalityStatus === 'IN_PROGRESS' ? 'Monitoring' :
                             'Anomali'}
                       </td>
-                      {isPic && (
-                        <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenEditModal(item);
-                              }}
-                              className="text-gray-650 hover:text-gray-900 transition-colors cursor-pointer inline-flex items-center justify-center"
-                              title="Update Desain"
-                            >
-                              <span className="material-symbols-outlined text-[11px]">edit</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenDeleteConfirm(item);
-                              }}
-                              className="text-gray-655 hover:text-red-650 transition-colors cursor-pointer inline-flex items-center justify-center"
-                              title="Hapus Desain"
-                            >
-                              <span className="material-symbols-outlined text-[11px]">delete</span>
-                            </button>
-                          </div>
-                        </td>
-                      )}
+                      <td className="px-2 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Link
+                            href={`/design/${item.id}`}
+                            className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title="Buka Halaman Detail (Lihat Drawing 2D/3D CAD & E-Tiket)"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">visibility</span>
+                          </Link>
+                          <Link
+                            href={`/design/${item.id}?tab=etiket`}
+                            className="text-indigo-600 hover:text-indigo-800 p-1 hover:bg-indigo-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title="Buka E-Tiket & Tanda Tangan Digital"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">verified</span>
+                          </Link>
+                          {isPic && (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditModal(item);
+                                }}
+                                className="text-gray-650 hover:text-gray-900 p-1 hover:bg-gray-100 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                                title="Update Desain"
+                              >
+                                <span className="material-symbols-outlined text-[11px]">edit</span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenDeleteConfirm(item);
+                                }}
+                                className="text-gray-655 hover:text-red-650 p-1 hover:bg-red-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                                title="Hapus Desain"
+                              >
+                                <span className="material-symbols-outlined text-[11px]">delete</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
 
                     {/* CellPart Expanded Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-50/80">
-                        <td colSpan={isPic ? 10 : 9} className="px-4 py-3">
+                        <td colSpan={11} className="px-4 py-3">
                           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             {/* Sub-header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
@@ -1171,75 +1334,103 @@ export function DesignPageContent() {
                               )}
                             </div>
 
-                            {cellParts.length === 0 ? (
-                              <div className="text-center py-6 text-gray-400 text-[10px]">
-                                <span className="material-symbols-outlined text-lg mb-1 block">widgets</span>
-                                Belum ada CellPart. Klik "Tambah CellPart" untuk menambahkan.
-                              </div>
-                            ) : (
-                              <table className="w-full text-[10px]">
-                                <thead>
-                                  <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-150">
-                                    <th className="px-3 py-1.5 text-left">Part Number</th>
-                                    <th className="px-2 py-1.5 text-left">Nama</th>
-                                    <th className="px-2 py-1.5 text-center">Lifetime</th>
-                                    <th className="px-2 py-1.5 text-center">Due Date</th>
-                                    <th className="px-2 py-1.5 text-center">Stock</th>
-                                    {isPic && <th className="px-2 py-1.5 text-center w-20">Aksi</th>}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {cellParts.map((cp) => {
-                                    const cpStockRed = cp.actualStock === 0;
-                                    const cpStockYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
-                                    return (
-                                      <tr key={cp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                                        <td className="px-3 py-1.5 font-mono font-bold text-gray-800">{cp.partNumber}</td>
-                                        <td className="px-2 py-1.5 text-gray-700 font-medium">{cp.name}</td>
-                                        <td className="px-2 py-1.5 text-center">
-                                          <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
-                                            cp.lifetimeStatus === 'OVERDUE' ? 'bg-red-100 text-red-700' :
-                                            cp.lifetimeStatus === 'WARNING' ? 'bg-amber-100 text-amber-700' :
-                                            'bg-green-100 text-green-700'
-                                          }`}>
-                                            <span className="material-symbols-outlined text-[8px]">
-                                              {cp.lifetimeStatus === 'OVERDUE' ? 'error' : cp.lifetimeStatus === 'WARNING' ? 'warning' : 'check_circle'}
+                              {cellParts.length === 0 ? (
+                                <div className="text-center py-6 text-gray-400 text-[10px]">
+                                  <span className="material-symbols-outlined text-lg mb-1 block">widgets</span>
+                                  Belum ada CellPart. Klik "Tambah CellPart" untuk menambahkan.
+                                </div>
+                              ) : (
+                                <table className="w-full text-[10px]">
+                                  <thead>
+                                    <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-150">
+                                      <th className="px-3 py-1.5 text-left">Part Number</th>
+                                      <th className="px-2 py-1.5 text-left">Nama</th>
+                                      <th className="px-2 py-1.5 text-center">Hal Drawing</th>
+                                      <th className="px-2 py-1.5 text-center">Lifetime</th>
+                                      <th className="px-2 py-1.5 text-center">Due Date</th>
+                                      <th className="px-2 py-1.5 text-center">Stock</th>
+                                      <th className="px-2 py-1.5 text-center w-20">Aksi</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {cellParts.map((cp) => {
+                                      const cpStockRed = cp.actualStock === 0;
+                                      const cpStockYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
+                                      return (
+                                        <tr key={cp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                                          <td className="px-3 py-1.5 font-mono font-bold text-gray-800">
+                                            <Link href={`/design/${item.id}`} className="hover:text-blue-600 hover:underline">
+                                              {cp.partNumber}
+                                            </Link>
+                                          </td>
+                                          <td className="px-2 py-1.5 text-gray-700 font-medium">{cp.name}</td>
+                                          <td className="px-2 py-1.5 text-center">
+                                            {cp.pdfPageIndex ? (
+                                              <Link
+                                                href={`/design/${item.id}`}
+                                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                                                title="Buka drawing Jig di halaman ini"
+                                              >
+                                                <span className="material-symbols-outlined text-[9px]">picture_as_pdf</span>
+                                                <span>Hal {cp.pdfPageIndex}</span>
+                                              </Link>
+                                            ) : (
+                                              <span className="text-[8px] text-gray-400 italic">Standar</span>
+                                            )}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-center">
+                                            <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                                              cp.lifetimeStatus === 'OVERDUE' ? 'bg-red-100 text-red-700' :
+                                              cp.lifetimeStatus === 'WARNING' ? 'bg-amber-100 text-amber-700' :
+                                              'bg-green-100 text-green-700'
+                                            }`}>
+                                              <span className="material-symbols-outlined text-[8px]">
+                                                {cp.lifetimeStatus === 'OVERDUE' ? 'error' : cp.lifetimeStatus === 'WARNING' ? 'warning' : 'check_circle'}
+                                              </span>
+                                              {cp.lifetimeStatus === 'OVERDUE' ? 'OVERDUE' : `${cp.daysRemaining}d`}
                                             </span>
-                                            {cp.lifetimeStatus === 'OVERDUE' ? 'OVERDUE' : `${cp.daysRemaining}d`}
-                                          </span>
-                                        </td>
-                                        <td className="px-2 py-1.5 text-center text-gray-500 text-[9px]">
-                                          {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-center">
-                                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
-                                            cpStockRed ? 'bg-red-100 text-red-700' : cpStockYellow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                                          }`}>
-                                            {cp.actualStock}/{cp.minimumStock}
-                                          </span>
-                                        </td>
-                                        {isPic && (
+                                          </td>
+                                          <td className="px-2 py-1.5 text-center text-gray-500 text-[9px]">
+                                            {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-center">
+                                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                                              cpStockRed ? 'bg-red-100 text-red-700' : cpStockYellow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                                            }`}>
+                                              {cp.actualStock}/{cp.minimumStock}
+                                            </span>
+                                          </td>
                                           <td className="px-2 py-1.5 text-center">
                                             <div className="flex items-center justify-center gap-1">
-                                              <button
-                                                onClick={() => handleRenewCellPart(cp.id, cp.name)}
-                                                className="text-blue-500 hover:text-blue-700 transition-colors cursor-pointer"
-                                                title="Renew Lifetime"
+                                              <Link
+                                                href={`/design/${item.id}`}
+                                                className="text-blue-600 hover:text-blue-800 p-0.5 rounded hover:bg-blue-50 transition-colors inline-flex items-center justify-center"
+                                                title="Buka Halaman Detail Desain"
                                               >
-                                                <span className="material-symbols-outlined text-[12px]">autorenew</span>
-                                              </button>
-                                              <button
-                                                onClick={() => handleDeleteCellPart(cp.id, cp.name)}
-                                                className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
-                                                title="Hapus CellPart"
-                                              >
-                                                <span className="material-symbols-outlined text-[12px]">delete</span>
-                                              </button>
+                                                <span className="material-symbols-outlined text-[13px]">visibility</span>
+                                              </Link>
+                                              {isPic && (
+                                                <>
+                                                  <button
+                                                    onClick={() => handleRenewCellPart(cp.id, cp.name)}
+                                                    className="text-blue-500 hover:text-blue-700 transition-colors cursor-pointer p-0.5 rounded hover:bg-blue-50"
+                                                    title="Renew Lifetime"
+                                                  >
+                                                    <span className="material-symbols-outlined text-[12px]">autorenew</span>
+                                                  </button>
+                                                  <button
+                                                    onClick={() => handleDeleteCellPart(cp.id, cp.name)}
+                                                    className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-0.5 rounded hover:bg-red-50"
+                                                    title="Hapus CellPart"
+                                                  >
+                                                    <span className="material-symbols-outlined text-[12px]">delete</span>
+                                                  </button>
+                                                </>
+                                              )}
                                             </div>
                                           </td>
-                                        )}
-                                      </tr>
-                                    );
+                                        </tr>
+                                      );
                                   })}
                                 </tbody>
                               </table>
@@ -1253,7 +1444,7 @@ export function DesignPageContent() {
               })}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={isPic ? 10 : 9} className="text-center py-12 text-gray-400">
+                  <td colSpan={10} className="text-center py-12 text-gray-400">
                     Tidak ada data master Jig &amp; Fixture yang cocok dengan filter pencarian.
                   </td>
                 </tr>
@@ -1405,33 +1596,276 @@ export function DesignPageContent() {
                   <p className="text-[8px] text-gray-400 mt-0.5">Default: 180 hari. Reminder 5 minggu sebelum habis.</p>
                 </div>
 
-                {/* 2D drawing upload */}
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Drawing 2D (PDF) *</label>
-                  <label className="flex flex-col items-center justify-center border border-dashed border-gray-300 rounded-xl p-2 cursor-pointer hover:bg-blue-50/50 hover:border-[#0063ff] transition-all h-20 bg-white text-center shadow-3xs">
+                {/* 2D drawing upload with AI / PDF extraction */}
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[9px] font-bold text-gray-500 uppercase">Drawing 2D (PDF Multi-Halaman) *</label>
+                    {isAnalyzingPdf && (
+                      <span className="text-[9px] font-bold text-blue-600 flex items-center gap-1 animate-pulse">
+                        <span className="material-symbols-outlined text-[12px] animate-spin">sync</span>
+                        Menganalisis E-Tiket & Tabel BOM...
+                      </span>
+                    )}
+                  </div>
+                  <label className="flex flex-col items-center justify-center border border-dashed border-gray-300 rounded-xl p-2.5 cursor-pointer hover:bg-blue-50/50 hover:border-[#0063ff] transition-all bg-white text-center shadow-3xs relative">
                     <input
                       type="file"
                       accept=".pdf"
                       required={!docLocation2D}
                       className="hidden"
+                      disabled={isAnalyzingPdf}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
+                        setIsAnalyzingPdf(true);
                         try {
-                          const result = await uploadFile(file);
+                          const result = await parseDrawingPdf(file);
                           setDocLocation2D(result.url);
-                        } catch {
-                          alert('Gagal upload file 2D. Coba lagi.');
+                          if (result.parsed) {
+                            const { jig, cellParts } = result.parsed;
+                            setExtractedJig(jig);
+                            setExtractedCellParts(cellParts);
+                            setSelectedCpKeys(new Set(cellParts.map((c) => c.itemNo)));
+                            setShowExtractedBOM(true);
+
+                            // Auto-fill Jig Form
+                            if (jig.partName) setAssyPartName(jig.partName);
+                            if (jig.partNumber) {
+                              setNoItem(jig.partNumber);
+                              if (!noReg) setNoReg(jig.partNumber);
+                            }
+                            if (jig.model) {
+                              const matchedLine = lines.find(
+                                (l) =>
+                                  l.lineName.toLowerCase().includes(jig.model.toLowerCase()) ||
+                                  jig.model.toLowerCase().includes(l.lineName.toLowerCase()),
+                              );
+                              setLineInput(matchedLine ? matchedLine.lineName : jig.model);
+                            }
+                            if (jig.qty) setQty(jig.qty);
+
+                            // Auto-detect OP / Process from filename and drawing title
+                            const fn = file.name;
+                            const opMatch =
+                              fn.match(/OP\s*[-_#]?\s*(\d+[A-Za-z]?)/i) ||
+                              (jig.title || '').match(/OP\s*[-_#]?\s*(\d+[A-Za-z]?)/i);
+                            if (opMatch) {
+                              const opNum = opMatch[1];
+                              const matchedProc = processes.find(
+                                (p) =>
+                                  p.name.toUpperCase().includes(`OP#${opNum}`) ||
+                                  p.name.toUpperCase().includes(`OP ${opNum}`) ||
+                                  p.name.toUpperCase().includes(`OP${opNum}`),
+                              );
+                              setProcessInput(matchedProc ? matchedProc.name : `OP#${opNum}`);
+                            } else if (
+                              fn.toLowerCase().includes('drill') ||
+                              (jig.title || '').toLowerCase().includes('drill')
+                            ) {
+                              const drillProc = processes.find((p) => p.name.toLowerCase().includes('drill'));
+                              if (drillProc) setProcessInput(drillProc.name);
+                            }
+                          }
+                        } catch (err: any) {
+                          console.error('Extraction error, falling back to simple upload:', err);
+                          try {
+                            const result = await uploadFile(file);
+                            setDocLocation2D(result.url);
+                          } catch {
+                            alert('Gagal upload file 2D. Coba lagi.');
+                          }
+                        } finally {
+                          setIsAnalyzingPdf(false);
                         }
                       }}
                     />
-                    <span className="material-symbols-outlined text-red-500 text-xl mb-0.5">picture_as_pdf</span>
-                    <span className="text-[9px] font-bold text-gray-700">Upload 2D PDF</span>
-                    <span className="text-[8px] text-gray-400 truncate max-w-[150px] mt-0.5 font-semibold">
-                      {docLocation2D ? docLocation2D.replace('/uploads/', '') : 'Pilih file PDF...'}
+                    <span className="material-symbols-outlined text-red-500 text-2xl mb-0.5">picture_as_pdf</span>
+                    <span className="text-[10px] font-bold text-gray-700">Upload PDF Drawing (Auto-Extract Jig & CellParts)</span>
+                    <span className="text-[8px] text-gray-400 truncate max-w-[280px] mt-0.5 font-semibold">
+                      {docLocation2D ? docLocation2D.replace('/uploads/', '') : 'Pilih file PDF (Hal 1: Induk, Hal 2..N: CellPart)...'}
                     </span>
                   </label>
                 </div>
+
+                {/* Extracted Drawing Summary & BOM Checklist */}
+                {extractedJig && (
+                  <div className="col-span-2 border border-blue-200 rounded-xl p-3 bg-blue-50/40 space-y-3">
+                    <div className="flex items-center justify-between border-b border-blue-150 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-blue-600 text-base">auto_awesome</span>
+                        <div>
+                          <span className="text-[10px] font-bold text-blue-900 block">Ekstraksi Otomatis Dokumen Berhasil</span>
+                          <span className="text-[8px] text-blue-600">Terdeteksi data E-Tiket Induk & {extractedCellParts.length} Komponen BOM</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {drawnSignatureData ? (
+                          <span className="text-[8px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                            Drawn Signed
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setShowDrawnSignatureModal(true)}
+                            className="text-[9px] font-bold bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[11px]">draw</span>
+                            Tanda Tangani (Drawn)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Jig Extracted Overview */}
+                    <div className="grid grid-cols-3 gap-2 bg-white border border-blue-100 rounded-lg p-2 text-[9px]">
+                      <div>
+                        <span className="text-gray-400 font-medium block">Part Name (Induk):</span>
+                        <span className="font-bold text-gray-800 truncate block">{extractedJig.partName || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-medium block">Part Number / No Item:</span>
+                        <span className="font-mono font-bold text-gray-800 truncate block">{extractedJig.partNumber || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 font-medium block">Model / Line:</span>
+                        <span className="font-bold text-gray-800 truncate block">{extractedJig.model || '—'}</span>
+                      </div>
+                    </div>
+
+                    {/* E-Tiket 3-Column Block with Live Signing */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                          <span className="material-symbols-outlined text-blue-600 text-xs">verified</span>
+                          E-Tiket Drawing 3-Kolom (Drawn, Checked, Approved)
+                        </span>
+                        {drawnSignatureData ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowDrawnSignatureModal(true)}
+                            className="text-[8px] font-bold text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">edit</span>
+                            Ubah Tanda Tangan
+                          </button>
+                        ) : (
+                          <span className="text-[8px] text-amber-600 font-semibold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[10px]">info</span>
+                            Klik "Tanda Tangani" pada kolom Drawn
+                          </span>
+                        )}
+                      </div>
+
+                      <ETiketSignature
+                        drawn={{
+                          name: extractedJig.drawnBy || user?.name || 'Drafter PE',
+                          date: drawnSignatureData ? new Date().toLocaleDateString('id-ID') : null,
+                          signature: drawnSignatureData,
+                        }}
+                        checked={{
+                          name: extractedJig.checkedBy || 'Section Head',
+                          date: null,
+                          signature: null,
+                        }}
+                        approved={{
+                          name: extractedJig.approvedBy || 'Dept Head',
+                          date: null,
+                          signature: null,
+                        }}
+                        canSignDrawn={true}
+                        onSignDrawn={async (sig) => {
+                          setDrawnSignatureData(sig);
+                        }}
+                        currentUser={user}
+                      />
+                    </div>
+
+                    {/* BOM CellPart Table */}
+                    {extractedCellParts.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[9px]">
+                          <span className="font-bold text-gray-700 uppercase tracking-wider">
+                            Daftar CellPart dari Tabel BOM ({selectedCpKeys.size}/{extractedCellParts.length} Dipilih)
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCpKeys(new Set(extractedCellParts.map((c) => c.itemNo)))}
+                              className="text-[8px] font-bold text-blue-600 hover:underline"
+                            >
+                              Pilih Semua
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCpKeys(new Set())}
+                              className="text-[8px] font-bold text-gray-500 hover:underline"
+                            >
+                              Batal Semua
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="max-h-36 overflow-y-auto border border-gray-200 rounded-lg bg-white no-scrollbar">
+                          <table className="w-full text-left border-collapse text-[9px]">
+                            <thead className="bg-gray-50 text-gray-500 sticky top-0 border-b border-gray-200 font-bold uppercase text-[8px]">
+                              <tr>
+                                <th className="p-1.5 w-6 text-center">✓</th>
+                                <th className="p-1.5 w-8 text-center">Item</th>
+                                <th className="p-1.5">Part Name</th>
+                                <th className="p-1.5">Part Number</th>
+                                <th className="p-1.5">Material</th>
+                                <th className="p-1.5 text-center">Qty</th>
+                                <th className="p-1.5 text-center">Hal PDF</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {extractedCellParts.map((cp) => {
+                                const isChecked = selectedCpKeys.has(cp.itemNo);
+                                return (
+                                  <tr
+                                    key={cp.itemNo}
+                                    className={`hover:bg-blue-50/40 cursor-pointer transition-colors ${isChecked ? 'bg-white' : 'bg-gray-50/60 opacity-60'}`}
+                                    onClick={() => {
+                                      const next = new Set(selectedCpKeys);
+                                      if (next.has(cp.itemNo)) next.delete(cp.itemNo);
+                                      else next.add(cp.itemNo);
+                                      setSelectedCpKeys(next);
+                                    }}
+                                  >
+                                    <td className="p-1.5 text-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {}}
+                                        className="rounded text-blue-600 focus:ring-blue-500"
+                                      />
+                                    </td>
+                                    <td className="p-1.5 text-center font-bold text-gray-500">{cp.itemNo}</td>
+                                    <td className="p-1.5 font-bold text-gray-800">{cp.name}</td>
+                                    <td className="p-1.5 font-mono text-gray-600">{cp.partNumber}</td>
+                                    <td className="p-1.5 text-gray-500">{cp.material || 'STD'}</td>
+                                    <td className="p-1.5 text-center font-bold">{cp.qty}</td>
+                                    <td className="p-1.5 text-center">
+                                      {cp.pdfPageIndex ? (
+                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-blue-100 text-blue-800">
+                                          Hal {cp.pdfPageIndex}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[8px] text-gray-400 italic">Standar</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 3D upload */}
                 <div>
@@ -1554,6 +1988,20 @@ export function DesignPageContent() {
           </div>
         </div>
       )}
+
+      {/* PIC / DRAFTER SIGNATURE MODAL */}
+      <SignaturePadModal
+        isOpen={showDrawnSignatureModal}
+        onClose={() => setShowDrawnSignatureModal(false)}
+        onConfirm={(sigData) => {
+          setDrawnSignatureData(sigData);
+          setShowDrawnSignatureModal(false);
+        }}
+        title="Tanda Tangan PIC (Dibuat / Drawn)"
+        roleLabel="Drafter"
+        signerName={user?.name || extractedJig?.drawnBy || 'PIC Engineering'}
+        signerNpk={(user as any)?.npk || 'NPK001'}
+      />
 
       {/* DELETE CONFIRMATION MODAL */}
       {showDeleteConfirmModal && itemToDelete && (

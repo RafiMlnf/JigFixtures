@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { canApprove } from '@/lib/rbac';
-import { getFileUrl } from '@/lib/api/phase3';
+import { getFileUrl, approveWithSignature } from '@/lib/api/phase3';
+import ETiketSignature from '@/components/design/ETiketSignature';
+import SignaturePadModal from '@/components/design/SignaturePadModal';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -50,6 +52,9 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
+  const [approvalDetail, setApprovalDetail] = useState<any>(null);
+  const [signatureData, setSignatureData] = useState<string | null>(null);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   // Fetch approval detail directly from backend (includes design.revisionHistories)
   useEffect(() => {
@@ -60,7 +65,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        // data.item includes design with revisionHistories (added in backend findOne)
+        setApprovalDetail(data);
         const design = data.design || data.item;
         if (design?.revisionHistories) {
           setFullItem({
@@ -102,13 +107,21 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     );
   }
 
-  const handleApproveSubmit = (e: React.FormEvent) => {
+  const handleApproveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    processApproval(approval.id, 'APPROVE', comment);
-    setToastMessage('Request has been APPROVED successfully!');
-    setShowApproveModal(false);
-    setComment('');
-    setTimeout(() => { router.push('/approval-center'); }, 1500);
+    try {
+      await approveWithSignature(approval.id, {
+        comment,
+        signatureData: signatureData || undefined,
+        signatureType: signatureData ? 'STAMP' : undefined,
+      });
+      setToastMessage('Request has been APPROVED with Digital Signature!');
+      setShowApproveModal(false);
+      setComment('');
+      setTimeout(() => { router.push('/approval-center'); }, 1500);
+    } catch (err: any) {
+      alert(err.message || 'Gagal memproses approval');
+    }
   };
 
   const handleRejectSubmit = (e: React.FormEvent) => {
@@ -125,7 +138,8 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const revWith2D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc2D);
   const revWith3D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc3D);
   const latestRev = revWith2D ?? revWith3D ?? fullItem?.revisionHistories?.[fullItem.revisionHistories.length - 1];
-  const pdf2DUrl = revWith2D?.loc2D ? getFileUrl(revWith2D.loc2D) : null;
+  const targetPdf = approvalDetail?.stampedPdfPath || revWith2D?.loc2D;
+  const pdf2DUrl = targetPdf ? getFileUrl(targetPdf) : null;
   const model3DUrl = revWith3D?.loc3D ? getFileUrl(revWith3D.loc3D) : null;
 
   // Use fullItem if loaded, fallback to baseItem for basic fields
@@ -255,6 +269,27 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               ))}
             </div>
           </div>
+
+          {/* E-Tiket Digital Approval Block */}
+          <ETiketSignature
+            drawn={{
+              name: approvalDetail?.drawnByName || approval.author,
+              date: approvalDetail?.drawnAt || approval.date,
+              signature: approvalDetail?.drawnSignature,
+            }}
+            checked={{
+              name: approvalDetail?.checkedByName,
+              date: approvalDetail?.checkedAt,
+              signature: approvalDetail?.checkedSignature,
+            }}
+            approved={{
+              name: approvalDetail?.approvedByName,
+              date: approvalDetail?.approvedAt,
+              signature: approvalDetail?.approvedSignature,
+            }}
+            stampedPdfPath={approvalDetail?.stampedPdfPath}
+            currentUser={user}
+          />
 
           {/* Revision note */}
           <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -426,24 +461,64 @@ export default function ReviewApprovalPage({ params }: PageProps) {
           <form onSubmit={handleApproveSubmit} className="max-w-xs w-full bg-white border border-gray-300 rounded-2xl p-5 text-gray-800 shadow-2xl">
             <h3 className="font-bold text-xs text-green-600 mb-1.5 flex items-center gap-1 border-b border-gray-100 pb-2">
               <span className="material-symbols-outlined text-sm">check_circle</span>
-              Approve Request
+              Approve Request dengan Tanda Tangan Digital
             </h3>
-            <p className="text-[9px] text-gray-500 mb-2 leading-tight">
-              Berikan catatan persetujuan (opsional).
+
+            {/* Signature Slot Preview */}
+            <div className="mb-3 p-2.5 bg-blue-50/50 border border-blue-200 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-blue-600 text-lg">verified</span>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-800 block">
+                    Stempel Resmi: {user?.name}
+                  </span>
+                  <span className="text-[8px] text-gray-500">
+                    {user?.role === 'PE_SECTION_HEAD' ? 'Checked Column' : 'Approved Column'} &bull; {(user as any)?.npk || 'NPK'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSignatureModal(true)}
+                className="text-[9px] font-bold text-blue-700 bg-white border border-blue-300 hover:bg-blue-100 px-2 py-1 rounded transition-colors"
+              >
+                {signatureData ? 'Ganti Tanda Tangan' : 'Kustomisasi'}
+              </button>
+            </div>
+
+            <p className="text-[9px] text-gray-500 mb-1 leading-tight">
+              Berikan catatan persetujuan (opsional):
             </p>
             <textarea
-              className="w-full border border-gray-300 rounded-lg p-2 text-[10px] h-20 outline-none focus:ring-1 focus:ring-green-500 text-gray-700 placeholder-gray-400 resize-none"
-              placeholder="Contoh: Desain disetujui, siap fabrikasi..."
+              className="w-full border border-gray-300 rounded-lg p-2 text-[10px] h-16 outline-none focus:ring-1 focus:ring-green-500 text-gray-700 placeholder-gray-400 resize-none"
+              placeholder="Contoh: Desain telah diverifikasi, siap proses fabrikasi..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
             <div className="flex gap-2 mt-3">
               <button type="button" onClick={() => setShowApproveModal(false)} className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 transition-colors cursor-pointer">Batal</button>
-              <button type="submit" className="flex-1 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer">Approve</button>
+              <button type="submit" className="flex-1 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer flex items-center justify-center gap-1">
+                <span className="material-symbols-outlined text-xs">draw</span>
+                Setujui & Stempel
+              </button>
             </div>
           </form>
         </div>
       )}
+
+      {/* Signature Customization Modal */}
+      <SignaturePadModal
+        isOpen={showSignatureModal}
+        onClose={() => setShowSignatureModal(false)}
+        onConfirm={(sigData) => {
+          setSignatureData(sigData);
+          setShowSignatureModal(false);
+        }}
+        title="Pilih Stempel / Tanda Tangan Approver"
+        roleLabel={user?.role === 'PE_SECTION_HEAD' ? 'Checked (Section Head)' : 'Approved (Dept Head)'}
+        signerName={user?.name || 'Approver'}
+        signerNpk={(user as any)?.npk || 'NPK002'}
+      />
 
     </div>
   );

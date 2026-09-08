@@ -4,4 +4,5 @@ export class SubmitApprovalDto {
   itemId!: string;
   type!: ApprovalType;
   revisionNote?: string;
+  drawnSignature?: string;
 }
