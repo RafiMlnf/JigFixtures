@@ -8,6 +8,7 @@ export interface VisualPlacement {
   yPercent: number;     // 0.0 - 1.0 from top
   widthPercent: number; // 0.0 - 1.0
   heightPercent: number;// 0.0 - 1.0
+  allPages?: boolean;   // Apply to both Induk Jig and all Child Cell Parts
 }
 
 interface Point {
@@ -75,6 +76,7 @@ export default function NitroPdfSignerModal({
   } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [applyToAllPages, setApplyToAllPages] = useState<boolean>(true);
 
   // Canvas Refs
   const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -104,7 +106,7 @@ export default function NitroPdfSignerModal({
 
     const loadPdfDoc = async () => {
       try {
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js');
+        const pdfjsLib = await import('pdfjs-dist');
         // Configure worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
@@ -563,6 +565,7 @@ export default function NitroPdfSignerModal({
         yPercent: stampPos.yPercent,
         widthPercent: stampPos.widthPercent,
         heightPercent: stampPos.heightPercent,
+        allPages: applyToAllPages,
       };
 
       await onApplySignature(dataUrl, placement, type);
@@ -848,6 +851,28 @@ export default function NitroPdfSignerModal({
                 <span>W: {Math.round(stampPos.widthPercent * 100)}%</span>
                 <span>H: {Math.round(stampPos.heightPercent * 100)}%</span>
               </div>
+            </div>
+            {/* Multi-page Apply Toggle (Induk Jig & Cell Parts) */}
+            <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-2.5 space-y-1.5 shadow-inner">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={applyToAllPages}
+                  onChange={(e) => setApplyToAllPages(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-600 text-blue-500 focus:ring-blue-500 bg-slate-700 cursor-pointer accent-blue-600"
+                />
+                <span className="text-[10.5px] font-bold text-white flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm text-emerald-400">auto_awesome_motion</span>
+                  Terapkan ke Semua Halaman
+                </span>
+              </label>
+              <p className="text-[8.5px] text-slate-400 leading-tight pl-6">
+                {applyToAllPages ? (
+                  <>Membubuhkan tanda tangan ke <strong>Induk Jig (Hal 1)</strong> dan <strong>seluruh Child Cell Part (Hal 2 s/d {numPages})</strong> pada posisi etiket yang sama.</>
+                ) : (
+                  <>Tanda tangan hanya dibubuhkan pada <strong>Halaman {currentPage}</strong> saja.</>
+                )}
+              </p>
             </div>
           </div>
 

@@ -122,12 +122,6 @@ export default function Sidebar() {
         isCollapsed ? 'w-16' : 'w-56'
       } bg-surface-container-low flex flex-col h-full z-10 shrink-0 transition-all duration-300 relative`}
     >
-      {/* Import ENOCH Font */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        @import url('https://fonts.cdnfonts.com/css/enoch');
-      `}} />
-
       {/* SVG Outline Filter */}
       <svg width="0" height="0" className="absolute pointer-events-none">
         <filter id="white-outline">
@@ -152,10 +146,10 @@ export default function Sidebar() {
               }`}
             >
               <h1
-                className="text-[21px] text-on-surface leading-[0.92] text-left font-normal tracking-wide whitespace-nowrap"
-                style={{ fontFamily: "'ENOCH', sans-serif", fontWeight: 'normal' }}
+                className="text-[22px] text-on-surface leading-none text-left font-normal tracking-wide whitespace-nowrap"
+                style={{ fontFamily: "'rubintek', sans-serif", fontWeight: 'normal' }}
               >
-                JIG<br />FIXTURES
+                Jig Fixtures
               </h1>
             </div>
 

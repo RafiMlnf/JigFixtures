@@ -1,3 +1,4 @@
+@import url('https://fonts.cdnfonts.com/css/rubintek');
 @import "tailwindcss";
 
 @theme {
@@ -36,6 +37,7 @@
 
   /* Google Sans as universal app font */
   --font-sans: 'Google Sans', 'Roboto', sans-serif;
+  --font-rubintek: 'rubintek', sans-serif;
   --font-mono: 'Google Sans Mono', 'Google Sans', monospace;
 
   /* Consistent border-radius system for all cards and buttons */

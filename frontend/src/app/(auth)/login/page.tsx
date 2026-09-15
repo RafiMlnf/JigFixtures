@@ -55,12 +55,6 @@ export default function LoginPage() {
   return (
     <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/50 to-slate-100 h-full w-full p-4 select-none relative overflow-hidden">
 
-      {/* Import ENOCH Font */}
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        @import url('https://fonts.cdnfonts.com/css/enoch');
-      `}} />
-
       {/* Background Image with 40% Opacity */}
       <div
         className="absolute inset-0 bg-cover bg-center pointer-events-none z-0"
@@ -75,11 +69,8 @@ export default function LoginPage() {
         {/* Left Side: Brand info */}
         <div className="w-1/2 flex flex-col justify-center items-start border-r border-gray-150 pr-8">
           <div className="text-left w-full pl-2">
-            <h1 className="text-5xl font-normal tracking-tight text-gray-900 leading-none" style={{ fontFamily: "'ENOCH', sans-serif" }}>
-              JIG
-            </h1>
-            <h1 className="text-5xl font-normal tracking-tight text-gray-900 leading-none mt-1.5 mb-3.5" style={{ fontFamily: "'ENOCH', sans-serif" }}>
-              FIXTURES
+            <h1 className="text-5xl font-normal tracking-wide text-gray-900 leading-none mb-3 whitespace-nowrap" style={{ fontFamily: "'rubintek', sans-serif" }}>
+              Jig Fixtures
             </h1>
             <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">
               Management System

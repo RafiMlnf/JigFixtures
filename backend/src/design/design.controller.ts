@@ -70,6 +70,7 @@ export class DesignController {
         yPercent: number;
         widthPercent: number;
         heightPercent: number;
+        allPages?: boolean;
       };
     },
     @Request() req: any,

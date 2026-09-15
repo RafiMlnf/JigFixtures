@@ -75,6 +75,8 @@ export class ApprovalService {
   }
 
   async findAll(userId: string, role: string) {
+    await this.ensureApprovalsForUnlinkedDesigns();
+
     const include = {
       design: { include: { line: true, process: true, vendor: true } },
       submittedBy: true,
@@ -433,6 +435,7 @@ export class ApprovalService {
       yPercent: number;
       widthPercent: number;
       heightPercent: number;
+      allPages?: boolean;
     },
     role?: string,
   ) {
@@ -467,6 +470,7 @@ export class ApprovalService {
       const pdfBuffer = readFileSync(originalFilePath);
 
       const stampedBuffer = await this.drawingStamperService.stampSignatures(pdfBuffer, {
+        allPages: true,
         drawn: (approval.drawnByName || approval.drawnSignature)
           ? {
               name: approval.drawnByName || approval.submittedBy?.name || 'Drafter',
@@ -528,4 +532,60 @@ export class ApprovalService {
       console.error('Failed to stamp PDF drawing:', err);
     }
   }
+
+  private async ensureApprovalsForUnlinkedDesigns() {
+    try {
+      const unlinkedDesigns = await this.prisma.design.findMany({
+        where: {
+          approvals: {
+            none: {},
+          },
+        },
+        include: {
+          documents: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+
+      if (unlinkedDesigns.length === 0) return;
+
+      const sectionHead = await this.prisma.user.findFirst({
+        where: { role: { name: 'PE_SECTION_HEAD' } },
+      });
+      const deptHead = await this.prisma.user.findFirst({
+        where: { role: { name: 'PE_DEPT_HEAD' } },
+      });
+      const defaultSubmitter =
+        (await this.prisma.user.findFirst({
+          where: { role: { name: 'PE_JIG_FIXTURE' } },
+        })) || sectionHead;
+
+      if (!defaultSubmitter) return;
+
+      for (const design of unlinkedDesigns) {
+        const latestDoc = design.documents[0];
+        await this.prisma.approval.create({
+          data: {
+            type: 'DESIGN_REVISION',
+            status: 'WAITING',
+            designId: design.id,
+            revisionNote: `Pengajuan approval untuk desain ${design.noReg} — Rev ${design.revStatus || '0'}`,
+            submittedById: defaultSubmitter.id,
+            sectionHeadId: sectionHead?.id,
+            deptHeadId: deptHead?.id,
+            sectionStatus: 'WAITING',
+            deptStatus: 'WAITING',
+            finalStatus: 'WAITING',
+            drawnSignature: latestDoc?.drawnSignature || null,
+            drawnByName: latestDoc?.drawnByName || defaultSubmitter.name || 'Drafter',
+            drawnAt: latestDoc?.drawnAt || new Date(),
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('[ApprovalService] Failed to auto-sync unlinked designs:', err);
+    }
+  }
 }
+

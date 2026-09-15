@@ -346,23 +346,70 @@ export class DesignService {
       },
     });
 
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    // Find approver users based on Role model name
+    const sectionHead = await this.prisma.user.findFirst({
+      where: { role: { name: 'PE_SECTION_HEAD' } },
+    });
+    const deptHead = await this.prisma.user.findFirst({
+      where: { role: { name: 'PE_DEPT_HEAD' } },
+    });
+
+    // 1. Create Document if 2D drawing provided (status WAITING for approval)
+    let docId: string | null = null;
     if (dto.docLocation2D) {
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
       const doc = await this.prisma.document.create({
         data: {
           designId: design.id,
           path2D: dto.docLocation2D,
           loc2D: dto.docLocation2D,
-          approvalStatus: 'APPROVED',
+          approvalStatus: 'WAITING',
           drawnSignature: dto.drawnSignature || null,
           drawnByName: dto.drawnSignature ? (user?.name || dto.drawnByName || 'Drafter') : null,
           drawnAt: dto.drawnSignature ? new Date() : null,
         },
       });
+      docId = doc.id;
 
       if (dto.drawnSignature) {
         await this.stampDocumentPdf(doc.id, design.id, userId);
       }
+    }
+
+    // 2. Auto-create Approval request so Section Head & Dept Head see it in Approval Center
+    const approval = await this.prisma.approval.create({
+      data: {
+        type: 'DESIGN_REVISION',
+        status: 'WAITING',
+        designId: design.id,
+        revisionNote: dto.revisionNote || `Rilis desain baru ${design.noReg} — Rev ${dto.revStatus || '0'}`,
+        submittedById: userId,
+        sectionHeadId: sectionHead?.id,
+        deptHeadId: deptHead?.id,
+        sectionStatus: 'WAITING',
+        deptStatus: 'WAITING',
+        finalStatus: 'WAITING',
+        drawnSignature: dto.drawnSignature || null,
+        drawnByName: dto.drawnSignature ? (user?.name || dto.drawnByName || 'Drafter') : null,
+        drawnAt: dto.drawnSignature ? new Date() : null,
+      },
+    });
+
+    // 3. Notify Section Heads for Checked signature review
+    const sectionHeads = await this.prisma.user.findMany({
+      where: { role: { name: 'PE_SECTION_HEAD' } },
+    });
+    if (sectionHeads.length > 0) {
+      await this.prisma.notification.createMany({
+        data: sectionHeads.map((sh) => ({
+          type: 'WAITING_APPROVAL',
+          title: '📋 Approval Waiting: Section Head',
+          message: `${user?.name || 'Drafter'} telah menambahkan desain baru untuk item ${design.noReg}. Silakan periksa dan tandatangani (Checked).`,
+          designId: design.id,
+          userId: sh.id,
+        })),
+      });
     }
 
     // Bulk create CellParts if provided from drawing extraction
@@ -438,6 +485,7 @@ export class DesignService {
       yPercent: number;
       widthPercent: number;
       heightPercent: number;
+      allPages?: boolean;
     },
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -449,6 +497,16 @@ export class DesignService {
 
     const updated = await this.prisma.document.update({
       where: { id: doc.id },
+      data: {
+        drawnSignature: signatureData,
+        drawnByName: user?.name || 'Drafter',
+        drawnAt: new Date(),
+      },
+    });
+
+    // Also sync drawn signature to any pending approval record
+    await this.prisma.approval.updateMany({
+      where: { designId, status: 'WAITING' },
       data: {
         drawnSignature: signatureData,
         drawnByName: user?.name || 'Drafter',
@@ -470,6 +528,7 @@ export class DesignService {
       yPercent: number;
       widthPercent: number;
       heightPercent: number;
+      allPages?: boolean;
     },
   ) {
     try {

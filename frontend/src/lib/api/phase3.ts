@@ -374,6 +374,7 @@ export async function signDesignDrawn(
     yPercent: number;
     widthPercent: number;
     heightPercent: number;
+    allPages?: boolean;
   },
 ) {
   const res = await fetch(`${BASE}/api/design/${designId}/sign-drawn`, {
@@ -419,6 +420,7 @@ export async function approveWithSignature(approvalId: string, data: {
     yPercent: number;
     widthPercent: number;
     heightPercent: number;
+    allPages?: boolean;
   };
 }) {
   const res = await fetch(`${BASE}/api/approvals/${approvalId}/approve`, {

@@ -506,6 +506,46 @@ function DesignDetailPageContent({ params }: PageProps) {
                   2D Drawing
                 </button>
 
+                {/* Multi-page Navigation: Induk Jig (Hal 1) + Child CellParts (Hal 2+) */}
+                {previewMode === '2D' && item.cellParts && item.cellParts.length > 0 && (
+                  <div className="flex items-center gap-1 pl-2 border-l border-gray-300 ml-1 overflow-x-auto no-scrollbar py-0.5">
+                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mr-0.5">Lembar:</span>
+                    <button
+                      type="button"
+                      onClick={() => setActivePdfPage(1)}
+                      className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
+                        activePdfPage === 1
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                      }`}
+                      title="Halaman 1: Gambar Teknik Induk Jig"
+                    >
+                      <span className="material-symbols-outlined text-[11px]">home</span>
+                      <span>Hal 1: Induk Jig</span>
+                    </button>
+                    {item.cellParts.map((cp, idx) => {
+                      const pageNum = cp.pdfPageIndex || (idx + 2);
+                      const isSelected = activePdfPage === pageNum;
+                      return (
+                        <button
+                          key={cp.id}
+                          type="button"
+                          onClick={() => setActivePdfPage(pageNum)}
+                          className={`px-2 py-0.5 rounded text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                          }`}
+                          title={`Halaman ${pageNum}: ${cp.name} (${cp.partNumber})`}
+                        >
+                          <span className="material-symbols-outlined text-[11px]">widgets</span>
+                          <span className="truncate max-w-[120px]">Hal {pageNum}: {cp.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Tab 3D */}
                 {(item.revisionHistories.some((rev) => rev.loc3D) || viewer3DUrl) && (
                   <button
