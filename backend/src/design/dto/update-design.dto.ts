@@ -9,4 +9,9 @@ export class UpdateDesignDto {
   poNumber?: string;
   cost?: number;
   leadTime?: number;
+
+  lifetimeDays?: number;
+  lifetimeType?: string;
+  maxUsage?: number;
+  currentUsage?: number;
 }

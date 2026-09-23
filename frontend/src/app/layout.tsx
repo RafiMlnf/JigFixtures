@@ -2,8 +2,13 @@ import './globals.css';
 import { AppProvider } from '@/context/AppContext';
 
 export const metadata = {
-  title: 'PE-Machining: Jig & Fixture Management',
-  description: 'Jig and Fixture Management Dashboard',
+  title: 'Jig & Fixtures',
+  description: 'Jig & Fixtures Management Dashboard',
+  icons: {
+    icon: '/assets/img/logoapp.png',
+    shortcut: '/assets/img/logoapp.png',
+    apple: '/assets/img/logoapp.png',
+  },
 };
 
 export default function RootLayout({

@@ -15,6 +15,114 @@ export class InventoryService {
     return 'RED';
   }
 
+  private enrichCellPart(cp: any) {
+    const baseDate = cp.lastRenewalDate || cp.installDate || new Date();
+    const lifetimeDays = cp.lifetimeDays ?? 180;
+    const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
+    const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+    const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+      daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
+
+    const maxUsage = cp.maxUsage ?? 500;
+    const currentUsage = cp.currentUsage ?? 0;
+    const usageRemaining = Math.max(0, maxUsage - currentUsage);
+    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
+    const usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+      currentUsage >= maxUsage ? 'OVERDUE' : usagePercent >= 85 || (maxUsage - currentUsage) <= 50 ? 'WARNING' : 'SAFE';
+
+    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = cp.lifetimeType || 'DUAL';
+    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
+
+    if (lifetimeType === 'DAYS') {
+      lifetimeStatus = dayStatus;
+      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
+    } else if (lifetimeType === 'USAGE') {
+      lifetimeStatus = usageStatus;
+      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
+    } else {
+      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
+        lifetimeStatus = 'OVERDUE';
+        triggerReason = dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE' ? 'BOTH' : dayStatus === 'OVERDUE' ? 'DAYS' : 'USAGE';
+      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+        lifetimeStatus = 'WARNING';
+        triggerReason = dayStatus === 'WARNING' && usageStatus === 'WARNING' ? 'BOTH' : dayStatus === 'WARNING' ? 'DAYS' : 'USAGE';
+      } else {
+        lifetimeStatus = 'SAFE';
+        triggerReason = 'NONE';
+      }
+    }
+
+    return {
+      ...cp,
+      indicator: this.getIndicator(cp.actualStock, cp.minimumStock),
+      lifetimeType,
+      maxUsage,
+      currentUsage,
+      usageRemaining,
+      usagePercent,
+      dueDate: dueDate.toISOString(),
+      daysRemaining,
+      dayStatus,
+      usageStatus,
+      lifetimeStatus,
+      triggerReason,
+    };
+  }
+
+  private enrichDesignLifetime(item: any) {
+    const baseDate = item.designDateNew || item.createdAt || new Date();
+    const lifetimeDays = item.lifetimeDays ?? 180;
+    const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
+    const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+    const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+      daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
+
+    const maxUsage = item.maxUsage ?? 500;
+    const currentUsage = item.currentUsage ?? 0;
+    const usageRemaining = Math.max(0, maxUsage - currentUsage);
+    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
+    const usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+      currentUsage >= maxUsage ? 'OVERDUE' : usagePercent >= 85 || (maxUsage - currentUsage) <= 50 ? 'WARNING' : 'SAFE';
+
+    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = item.lifetimeType || 'DUAL';
+    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
+
+    if (lifetimeType === 'DAYS') {
+      lifetimeStatus = dayStatus;
+      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
+    } else if (lifetimeType === 'USAGE') {
+      lifetimeStatus = usageStatus;
+      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
+    } else {
+      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
+        lifetimeStatus = 'OVERDUE';
+        triggerReason = dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE' ? 'BOTH' : dayStatus === 'OVERDUE' ? 'DAYS' : 'USAGE';
+      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+        lifetimeStatus = 'WARNING';
+        triggerReason = dayStatus === 'WARNING' && usageStatus === 'WARNING' ? 'BOTH' : dayStatus === 'WARNING' ? 'DAYS' : 'USAGE';
+      } else {
+        lifetimeStatus = 'SAFE';
+        triggerReason = 'NONE';
+      }
+    }
+
+    return {
+      lifetimeType,
+      maxUsage,
+      currentUsage,
+      usageRemaining,
+      usagePercent,
+      dueDate: dueDate.toISOString(),
+      daysRemaining,
+      dayStatus,
+      usageStatus,
+      lifetimeStatus,
+      triggerReason,
+    };
+  }
+
   async findAll(query: FilterInventoryDto) {
     const where: any = {};
 
@@ -47,18 +155,8 @@ export class InventoryService {
       lineProduct: item.line.lineName,
       process: item.process.name,
       indicator: this.getIndicator(item.actualStock, item.minimumStock),
-      cellParts: (item as any).cellParts?.map((cp: any) => {
-        const baseDate = cp.lastRenewalDate || cp.installDate;
-        const dueDate = new Date(new Date(baseDate).getTime() + cp.lifetimeDays * 86400000);
-        const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
-        return {
-          ...cp,
-          indicator: this.getIndicator(cp.actualStock, cp.minimumStock),
-          dueDate: dueDate.toISOString(),
-          daysRemaining,
-          lifetimeStatus: daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE',
-        };
-      }) || [],
+      ...this.enrichDesignLifetime(item),
+      cellParts: (item as any).cellParts?.map((cp: any) => this.enrichCellPart(cp)) || [],
     }));
 
     if (query.indicator) {
@@ -96,6 +194,8 @@ export class InventoryService {
       lineProduct: item.line.lineName,
       process: item.process.name,
       indicator: this.getIndicator(item.actualStock, item.minimumStock),
+      ...this.enrichDesignLifetime(item),
+      cellParts: (item as any).cellParts?.map((cp: any) => this.enrichCellPart(cp)) || [],
     };
   }
 

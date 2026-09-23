@@ -29,30 +29,7 @@ function getLocalNotifications(): NotificationItem[] {
   if (typeof window === 'undefined') return [];
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
-    // Initial mock notifications
-    const initial: NotificationItem[] = [
-      {
-        id: 'notif-1',
-        type: 'INVENTORY_RED',
-        title: 'Critical Stock Alert',
-        message: 'Pin Locator (TXMACH-ASAU010102) is out of stock (0 items).',
-        isRead: false,
-        itemId: '3',
-        userId: 'user-1',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'notif-2',
-        type: 'WAITING_APPROVAL',
-        title: 'Pending Approval',
-        message: 'Azka A. submitted design revision for Sub Assy 1.',
-        isRead: false,
-        userId: 'user-1',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      }
-    ];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-    return initial;
+    return [];
   }
   return JSON.parse(stored);
 }

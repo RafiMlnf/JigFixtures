@@ -37,19 +37,7 @@ export class ApprovalController {
   @Patch(':id/approve')
   approve(
     @Param('id') id: string,
-    @Body() dto: {
-      comment?: string;
-      signatureData?: string;
-      signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
-      placement?: {
-        pageIndex?: number;
-        xPercent: number;
-        yPercent: number;
-        widthPercent: number;
-        heightPercent: number;
-        allPages?: boolean;
-      };
-    },
+    @Body() dto: { comment?: string },
     @Request() req: any,
   ) {
     return this.approvalService.process(
@@ -57,23 +45,10 @@ export class ApprovalController {
       {
         action: 'APPROVE',
         comment: dto.comment,
-        signatureData: dto.signatureData,
-        signatureType: dto.signatureType,
-        placement: dto.placement,
       },
       req.user.id,
       req.user.role,
     );
-  }
-
-  @Roles(UserRole.PE_JIG_FIXTURE)
-  @Patch(':id/sign-drawn')
-  signDrawn(
-    @Param('id') id: string,
-    @Body() dto: { signatureData: string },
-    @Request() req: any,
-  ) {
-    return this.approvalService.signDrawn(id, dto.signatureData, req.user.id);
   }
 
   @Roles(UserRole.PE_SECTION_HEAD, UserRole.PE_DEPT_HEAD)

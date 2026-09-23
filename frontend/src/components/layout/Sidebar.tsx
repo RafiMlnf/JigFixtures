@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { canEdit, type AppRole } from '@/lib/rbac';
-import logoImg from '../../../assets/img/mtmwide.png';
+import logoImg from '../../../assets/img/logoapp.png';
 
 interface MenuItem {
   name: string;
@@ -136,43 +136,32 @@ export default function Sidebar() {
       </svg>
 
       {/* Header */}
-      <div className={`border-b border-outline-variant h-[80px] flex items-center justify-between overflow-hidden relative ${isCollapsed ? 'px-2 justify-center' : 'p-4 py-5'}`}>
+      <div className={`border-b border-outline-variant h-[80px] flex items-center justify-between overflow-hidden relative ${isCollapsed ? 'px-1 justify-center' : 'px-2 py-1'}`}>
         {!isCollapsed ? (
-          <div className="relative w-full h-[42px] flex items-center justify-start px-2">
-            {/* Logo Text */}
-            <div
-              className={`absolute inset-y-0 left-2 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${
-                showLogoImage ? 'opacity-0 -translate-x-8 pointer-events-none' : 'opacity-100 translate-x-0'
-              }`}
-            >
-              <h1
-                className="text-[22px] text-on-surface leading-none text-left font-normal tracking-wide whitespace-nowrap"
-                style={{ fontFamily: "'rubintek', sans-serif", fontWeight: 'normal' }}
-              >
-                Jig Fixtures
-              </h1>
-            </div>
-
-            {/* Logo Image */}
-            <div
-              className={`absolute inset-y-0 left-0 right-0 transition-all duration-1000 ease-in-out flex items-center justify-start ${
-                showLogoImage ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8 pointer-events-none'
-              }`}
-            >
+          <div className="relative w-full h-[68px] flex items-center justify-start gap-1">
+            <div className="w-[64px] h-[64px] flex items-center justify-center shrink-0">
               <Image
                 src={logoImg}
-                alt="MTM Logo"
-                className="h-8 w-auto object-contain"
-                style={{
-                  filter: 'url(#white-outline)',
-                }}
+                alt="Logo Jig & Fixtures"
+                className="max-h-[64px] max-w-[64px] object-contain drop-shadow-md"
                 priority
               />
             </div>
+            <h1
+              className="text-[23px] text-on-surface leading-none text-left font-bold italic tracking-tighter whitespace-nowrap truncate -ml-0.5"
+              style={{ fontFamily: "'Arial Narrow', Arial, sans-serif" }}
+            >
+              Jig &amp; Fixtures
+            </h1>
           </div>
         ) : (
-          <div className="flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary text-2xl font-bold">build_circle</span>
+          <div className="flex items-center justify-center p-0.5" title="Jig & Fixtures">
+            <Image
+              src={logoImg}
+              alt="Logo Jig & Fixtures"
+              className="w-[52px] h-[52px] object-contain drop-shadow-md"
+              priority
+            />
           </div>
         )}
       </div>

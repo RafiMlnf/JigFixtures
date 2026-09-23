@@ -50,35 +50,93 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  async saveFile(file: Express.Multer.File): Promise<string> {
-    const sanitizedFilename = file.originalname.replace(/\s+/g, '_');
+  async saveBuffer(buffer: Buffer, filename: string, mimetype: string = 'application/pdf'): Promise<string> {
+    const sanitizedFilename = filename.replace(/\s+/g, '_');
 
     if (this.useMinio && this.minioClient) {
       try {
         await this.minioClient.putObject(
           this.bucketName,
           sanitizedFilename,
-          file.buffer,
-          file.size,
-          { 'Content-Type': file.mimetype }
+          buffer,
+          buffer.length,
+          { 'Content-Type': mimetype }
         );
         const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
         const host = process.env.MINIO_ENDPOINT || 'localhost';
         const port = process.env.MINIO_PORT || '9000';
         return `${protocol}://${host}:${port}/${this.bucketName}/${sanitizedFilename}`;
       } catch (err) {
-        console.error('MinIO upload error:', err);
-        throw new InternalServerErrorException('Gagal upload ke object storage');
+        console.error('MinIO upload buffer error:', err);
+        throw new InternalServerErrorException('Gagal upload buffer ke object storage');
       }
     } else {
-      // Local storage fallback
       const uploadsDir = join(process.cwd(), 'uploads');
       if (!existsSync(uploadsDir)) {
         mkdirSync(uploadsDir, { recursive: true });
       }
       const filePath = join(uploadsDir, sanitizedFilename);
-      writeFileSync(filePath, file.buffer);
+      writeFileSync(filePath, buffer);
       return `/uploads/${sanitizedFilename}`;
     }
   }
+
+  async getFileBuffer(pathOrUrl: string): Promise<Buffer | null> {
+    if (!pathOrUrl) return null;
+
+    // 1. Cek jika MinIO
+    if (this.useMinio && this.minioClient) {
+      try {
+        let objectName = pathOrUrl;
+        if (objectName.includes(`/${this.bucketName}/`)) {
+          objectName = objectName.split(`/${this.bucketName}/`)[1];
+        } else if (objectName.startsWith('/uploads/')) {
+          objectName = objectName.replace('/uploads/', '');
+        }
+        objectName = decodeURIComponent(objectName);
+
+        const dataStream = await this.minioClient.getObject(this.bucketName, objectName);
+        return new Promise((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          dataStream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+          dataStream.on('end', () => resolve(Buffer.concat(chunks)));
+          dataStream.on('error', reject);
+        });
+      } catch (e) {
+        // Fallback jika belum ada di MinIO
+      }
+    }
+
+    // 2. Cek jika URL HTTP
+    if (pathOrUrl.startsWith('http')) {
+      try {
+        const resp = await fetch(pathOrUrl);
+        if (resp.ok) {
+          const arr = await resp.arrayBuffer();
+          return Buffer.from(arr);
+        }
+      } catch (e) {}
+    }
+
+    // 3. Cek local uploads folder
+    const rawPath = pathOrUrl.startsWith('/uploads/') ? pathOrUrl.replace('/uploads/', '') : pathOrUrl;
+    const localFilePath = join(process.cwd(), 'uploads', rawPath);
+    if (existsSync(localFilePath)) {
+      const fs = await import('fs');
+      return fs.readFileSync(localFilePath);
+    }
+
+    const altPath = join(process.cwd(), '..', 'frontend', 'assets', 'pdf', rawPath);
+    if (existsSync(altPath)) {
+      const fs = await import('fs');
+      return fs.readFileSync(altPath);
+    }
+
+    return null;
+  }
+
+  async saveFile(file: Express.Multer.File): Promise<string> {
+    return this.saveBuffer(file.buffer, file.originalname, file.mimetype);
+  }
 }
+

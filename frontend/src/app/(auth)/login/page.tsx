@@ -69,8 +69,15 @@ export default function LoginPage() {
         {/* Left Side: Brand info */}
         <div className="w-1/2 flex flex-col justify-center items-start border-r border-gray-150 pr-8">
           <div className="text-left w-full pl-2">
-            <h1 className="text-5xl font-normal tracking-wide text-gray-900 leading-none mb-3 whitespace-nowrap" style={{ fontFamily: "'rubintek', sans-serif" }}>
-              Jig Fixtures
+            <div className="mb-4">
+              <img
+                src="/assets/img/logoapp.png"
+                alt="Logo Jig & Fixtures"
+                className="h-28 w-auto object-contain drop-shadow-md mb-2"
+              />
+            </div>
+            <h1 className="text-5xl font-bold italic tracking-tight text-gray-900 leading-none mb-3 whitespace-nowrap" style={{ fontFamily: "'Arial Narrow', Arial, sans-serif" }}>
+              Jig &amp; Fixtures
             </h1>
             <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">
               Management System

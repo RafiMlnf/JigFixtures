@@ -60,6 +60,10 @@ export async function submitDesignUpdate(itemId: string, data: {
   poNumber?: string;
   cost?: number;
   leadTime?: number;
+  lifetimeDays?: number;
+  lifetimeType?: string;
+  maxUsage?: number;
+  currentUsage?: number;
 }) {
   const res = await fetch(`${BASE}/api/design/${itemId}`, {
     method: 'PATCH',
@@ -175,10 +179,10 @@ export async function uploadFile(file: File): Promise<{ url: string; filename: s
   return res.json();
 }
 
-/** Build a full URL for a stored file path like /uploads/foo.pdf */
+/** Build a full URL for a stored file path like MinIO url or /uploads/foo.pdf */
 export function getFileUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith('http')) return path;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
   const clean = path.startsWith('/') ? path : `/${path}`;
   const finalPath = clean.startsWith('/uploads/') ? clean : `/uploads${clean}`;
   return `http://localhost:3002${finalPath}`;
@@ -228,6 +232,9 @@ export async function createCellPart(data: {
   name: string;
   description?: string;
   lifetimeDays?: number;
+  lifetimeType?: string;
+  maxUsage?: number;
+  currentUsage?: number;
   installDate?: string;
   minimumStock?: number;
   actualStock?: number;
@@ -254,6 +261,9 @@ export async function updateCellPart(id: string, data: {
   name?: string;
   description?: string;
   lifetimeDays?: number;
+  lifetimeType?: string;
+  maxUsage?: number;
+  currentUsage?: number;
   installDate?: string;
   minimumStock?: number;
   actualStock?: number;
@@ -274,18 +284,59 @@ export async function updateCellPart(id: string, data: {
   return res.json();
 }
 
-/** Renew a CellPart's lifetime (reset install date to now) */
-export async function renewCellPart(id: string) {
+/** Renew a CellPart's lifetime (reset install date and/or reset currentUsage) */
+export async function renewCellPart(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
   const res = await fetch(`${BASE}/api/cell-part/${id}/renew`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${getToken()}`,
     },
+    body: JSON.stringify(options),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new HttpError(err.message || 'Failed to renew cell part', res.status);
+  }
+  return res.json();
+}
+
+/** Renew a Design item's lifetime */
+export async function renewDesign(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
+  const res = await fetch(`${BASE}/api/design/${id}/renew`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to renew design item', res.status);
+  }
+  return res.json();
+}
+
+/** Record or log usage count for a Design item or CellPart */
+export async function recordUsage(
+  target: 'design' | 'cell-part',
+  id: string,
+  amount: number,
+  mode: 'ADD' | 'SET' = 'ADD',
+) {
+  const endpoint = target === 'design' ? `${BASE}/api/design/${id}/usage` : `${BASE}/api/cell-part/${id}/usage`;
+  const res = await fetch(endpoint, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ amount, mode }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to record usage', res.status);
   }
   return res.json();
 }
@@ -364,72 +415,15 @@ export async function parseDrawingPdf(file: File): Promise<ParseDrawingResponse>
   return res.json();
 }
 
-/** Drafter/PIC digitally signs the DRAWN slot of a released design document */
-export async function signDesignDrawn(
-  designId: string,
-  signatureData: string,
-  placement?: {
-    pageIndex?: number;
-    xPercent: number;
-    yPercent: number;
-    widthPercent: number;
-    heightPercent: number;
-    allPages?: boolean;
-  },
-) {
-  const res = await fetch(`${BASE}/api/design/${designId}/sign-drawn`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
-    },
-    body: JSON.stringify({ signatureData, placement }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new HttpError(err.message || 'Gagal menandatangani drawing', res.status);
-  }
-  return res.json();
-}
-
-/** Drafter/PIC digitally signs the DRAWN slot of an approval revision */
-export async function signApprovalDrawn(approvalId: string, signatureData: string) {
-  const res = await fetch(`${BASE}/api/approvals/${approvalId}/sign-drawn`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
-    },
-    body: JSON.stringify({ signatureData }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new HttpError(err.message || 'Gagal menandatangani approval', res.status);
-  }
-  return res.json();
-}
-
-/** Section Head or Dept Head approves with digital signature */
-export async function approveWithSignature(approvalId: string, data: {
-  comment?: string;
-  signatureData?: string;
-  signatureType?: 'DRAW' | 'STAMP' | 'UPLOAD';
-  placement?: {
-    pageIndex?: number;
-    xPercent: number;
-    yPercent: number;
-    widthPercent: number;
-    heightPercent: number;
-    allPages?: boolean;
-  };
-}) {
+/** Section Head or Dept Head approves an item revision */
+export async function approveRevision(approvalId: string, data?: { comment?: string }) {
   const res = await fetch(`${BASE}/api/approvals/${approvalId}/approve`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${getToken()}`,
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify(data || {}),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

@@ -5,11 +5,14 @@ import { DrawingStamperService } from '../upload/drawing-stamper.service';
 import { join, extname, basename } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 
+import { StorageService } from '../upload/storage.service';
+
 @Injectable()
 export class DesignService {
   constructor(
     private prisma: PrismaService,
     private drawingStamperService: DrawingStamperService,
+    private storageService: StorageService,
   ) {}
 
   /**
@@ -77,6 +80,10 @@ export class DesignService {
       data: {
         revStatus: dto.revStatus,
         designDateNew: dto.designDateNew ? new Date(dto.designDateNew) : undefined,
+        lifetimeDays: dto.lifetimeDays !== undefined ? parseInt(String(dto.lifetimeDays), 10) : undefined,
+        lifetimeType: dto.lifetimeType,
+        maxUsage: dto.maxUsage !== undefined ? parseInt(String(dto.maxUsage), 10) : undefined,
+        currentUsage: dto.currentUsage !== undefined ? parseInt(String(dto.currentUsage), 10) : undefined,
       },
     });
 
@@ -190,6 +197,13 @@ export class DesignService {
       actualStock: d.actualStock,
       designDateNew: d.designDateNew,
       revStatus: d.revStatus,
+      ...this.calculateLifetime({
+        installDate: d.designDateNew || (d as any).createdAt,
+        lifetimeDays: d.lifetimeDays,
+        lifetimeType: (d as any).lifetimeType,
+        maxUsage: (d as any).maxUsage,
+        currentUsage: (d as any).currentUsage,
+      }),
       lineProduct: d.line.lineName,
       process: d.process.name,
       vendor: d.vendor ? { id: d.vendor.id, name: d.vendor.name } : null,
@@ -198,16 +212,6 @@ export class DesignService {
         path2D: doc.path2D,
         loc2D: doc.loc2D,
         approvalStatus: doc.approvalStatus,
-        drawnSignature: (doc as any).drawnSignature,
-        drawnByName: (doc as any).drawnByName,
-        drawnAt: (doc as any).drawnAt,
-        checkedSignature: (doc as any).checkedSignature,
-        checkedByName: (doc as any).checkedByName,
-        checkedAt: (doc as any).checkedAt,
-        approvedSignature: (doc as any).approvedSignature,
-        approvedByName: (doc as any).approvedByName,
-        approvedAt: (doc as any).approvedAt,
-        stampedPdfPath: (doc as any).stampedPdfPath,
       })),
       revisionHistories: d.revisionHistories.map((rev) => ({
         id: rev.id,
@@ -241,20 +245,22 @@ export class DesignService {
         reportedBy: abn.reportedBy.name,
       })),
       cellParts: (d as any).cellParts?.map((cp: any) => {
-        const baseDate = cp.lastRenewalDate || cp.installDate;
-        const dueDate = new Date(new Date(baseDate).getTime() + cp.lifetimeDays * 86400000);
-        const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+        const lifetime = this.calculateLifetime({
+          installDate: cp.installDate,
+          lastRenewalDate: cp.lastRenewalDate,
+          lifetimeDays: cp.lifetimeDays,
+          lifetimeType: cp.lifetimeType,
+          maxUsage: cp.maxUsage,
+          currentUsage: cp.currentUsage,
+        });
         return {
           id: cp.id,
           partNumber: cp.partNumber,
           name: cp.name,
           description: cp.description,
-          lifetimeDays: cp.lifetimeDays,
           installDate: cp.installDate,
           lastRenewalDate: cp.lastRenewalDate,
-          dueDate: dueDate.toISOString(),
-          daysRemaining,
-          lifetimeStatus: daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE',
+          ...lifetime,
           minimumStock: cp.minimumStock,
           actualStock: cp.actualStock,
           pdfPageIndex: cp.pdfPageIndex,
@@ -339,6 +345,9 @@ export class DesignService {
         minimumStock: dto.minimumStock ? parseInt(String(dto.minimumStock), 10) : 0,
         actualStock: dto.actualStock ? parseInt(String(dto.actualStock), 10) : 0,
         lifetimeDays: dto.lifetimeDays ? parseInt(String(dto.lifetimeDays), 10) : 180,
+        lifetimeType: dto.lifetimeType || 'DUAL',
+        maxUsage: dto.maxUsage !== undefined ? parseInt(String(dto.maxUsage), 10) : 500,
+        currentUsage: dto.currentUsage !== undefined ? parseInt(String(dto.currentUsage), 10) : 0,
         revStatus: dto.revStatus || '0',
         lifecycleStatus: dto.lifecycleStatus || 'ACTIVE',
         vendorId: dto.vendorId || undefined,
@@ -365,16 +374,9 @@ export class DesignService {
           path2D: dto.docLocation2D,
           loc2D: dto.docLocation2D,
           approvalStatus: 'WAITING',
-          drawnSignature: dto.drawnSignature || null,
-          drawnByName: dto.drawnSignature ? (user?.name || dto.drawnByName || 'Drafter') : null,
-          drawnAt: dto.drawnSignature ? new Date() : null,
         },
       });
       docId = doc.id;
-
-      if (dto.drawnSignature) {
-        await this.stampDocumentPdf(doc.id, design.id, userId);
-      }
     }
 
     // 2. Auto-create Approval request so Section Head & Dept Head see it in Approval Center
@@ -390,9 +392,6 @@ export class DesignService {
         sectionStatus: 'WAITING',
         deptStatus: 'WAITING',
         finalStatus: 'WAITING',
-        drawnSignature: dto.drawnSignature || null,
-        drawnByName: dto.drawnSignature ? (user?.name || dto.drawnByName || 'Drafter') : null,
-        drawnAt: dto.drawnSignature ? new Date() : null,
       },
     });
 
@@ -426,6 +425,9 @@ export class DesignService {
               material: cp.material || null,
               qty: String(cp.qty || '1'),
               lifetimeDays: cp.lifetimeDays ? parseInt(String(cp.lifetimeDays), 10) : 180,
+              lifetimeType: cp.lifetimeType || 'DUAL',
+              maxUsage: cp.maxUsage !== undefined ? parseInt(String(cp.maxUsage), 10) : 500,
+              currentUsage: cp.currentUsage !== undefined ? parseInt(String(cp.currentUsage), 10) : 0,
               installDate: cp.installDate ? new Date(cp.installDate) : new Date(),
               minimumStock: cp.minimumStock ? parseInt(String(cp.minimumStock), 10) : 0,
               actualStock: cp.actualStock ? parseInt(String(cp.actualStock), 10) : (cp.qty ? parseInt(String(cp.qty), 10) || 1 : 1),
@@ -473,126 +475,6 @@ export class DesignService {
   }
 
   /**
-   * PIC signature on released document with Nitro visual placement support
-   */
-  async signDocumentDrawn(
-    designId: string,
-    signatureData: string,
-    userId: string,
-    placement?: {
-      pageIndex?: number;
-      xPercent: number;
-      yPercent: number;
-      widthPercent: number;
-      heightPercent: number;
-      allPages?: boolean;
-    },
-  ) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const doc = await this.prisma.document.findFirst({
-      where: { designId },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!doc) throw new NotFoundException('Dokumen 2D drawing tidak ditemukan untuk desain ini');
-
-    const updated = await this.prisma.document.update({
-      where: { id: doc.id },
-      data: {
-        drawnSignature: signatureData,
-        drawnByName: user?.name || 'Drafter',
-        drawnAt: new Date(),
-      },
-    });
-
-    // Also sync drawn signature to any pending approval record
-    await this.prisma.approval.updateMany({
-      where: { designId, status: 'WAITING' },
-      data: {
-        drawnSignature: signatureData,
-        drawnByName: user?.name || 'Drafter',
-        drawnAt: new Date(),
-      },
-    });
-
-    await this.stampDocumentPdf(doc.id, designId, userId, placement);
-    return updated;
-  }
-
-  private async stampDocumentPdf(
-    docId: string,
-    designId: string,
-    userId: string,
-    placement?: {
-      pageIndex?: number;
-      xPercent: number;
-      yPercent: number;
-      widthPercent: number;
-      heightPercent: number;
-      allPages?: boolean;
-    },
-  ) {
-    try {
-      const doc = await this.prisma.document.findUnique({ where: { id: docId } });
-      if (!doc || !doc.loc2D) return;
-
-      const rawPath = doc.loc2D.startsWith('/uploads/') ? doc.loc2D.replace('/uploads/', '') : doc.loc2D;
-      let originalFilePath = join(process.cwd(), 'uploads', rawPath);
-      if (!existsSync(originalFilePath)) {
-        const altPath = join(process.cwd(), '..', 'frontend', 'assets', 'pdf', rawPath);
-        if (existsSync(altPath)) {
-          originalFilePath = altPath;
-        } else {
-          console.warn(`[DrawingStamper] Original drawing file not found at: ${originalFilePath}`);
-          return;
-        }
-      }
-
-      const pdfBuffer = readFileSync(originalFilePath);
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-      const stampedBuffer = await this.drawingStamperService.stampSignatures(pdfBuffer, {
-        drawn: (doc.drawnByName || doc.drawnSignature)
-          ? {
-              name: doc.drawnByName || user?.name || 'Drafter',
-              date: (doc.drawnAt || new Date()).toISOString(),
-              signatureData: doc.drawnSignature || undefined,
-              npk: user?.npk,
-              placement: placement,
-            }
-          : undefined,
-        checked: (doc.checkedByName || doc.checkedSignature)
-          ? {
-              name: doc.checkedByName || 'Section Head',
-              date: (doc.checkedAt || new Date()).toISOString(),
-              signatureData: doc.checkedSignature || undefined,
-            }
-          : undefined,
-        approved: (doc.approvedByName || doc.approvedSignature)
-          ? {
-              name: doc.approvedByName || 'Dept Head',
-              date: (doc.approvedAt || new Date()).toISOString(),
-              signatureData: doc.approvedSignature || undefined,
-            }
-          : undefined,
-      });
-
-      const ext = extname(rawPath);
-      const baseName = basename(rawPath, ext);
-      const stampedFilename = `${baseName}_signed${ext}`;
-      const stampedFilePath = join(process.cwd(), 'uploads', stampedFilename);
-      writeFileSync(stampedFilePath, stampedBuffer);
-
-      await this.prisma.document.update({
-        where: { id: docId },
-        data: { stampedPdfPath: `/uploads/${stampedFilename}` },
-      });
-      console.log(`[DrawingStamper] Successfully stamped and saved to: ${stampedFilePath}`);
-    } catch (err) {
-      console.error('Failed to stamp PDF in design service:', err);
-    }
-  }
-
-  /**
    * Extract a single page of 2D drawing (Hal 1 for Induk Jig, Hal N for CellPart)
    */
   async getSinglePagePdf(designId: string, pageNumber: number) {
@@ -605,28 +487,16 @@ export class DesignService {
     });
     if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);
 
-    const doc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && (d.stampedPdfPath || d.loc2D))
-      || design.documents.find((d) => d.stampedPdfPath || d.loc2D)
+    const doc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && d.loc2D)
+      || design.documents.find((d) => d.loc2D)
       || design.documents[0];
 
     if (!doc) throw new NotFoundException('Tidak ada dokumen PDF untuk item ini.');
 
-    const targetPath = doc.stampedPdfPath || doc.loc2D;
+    const targetPath = doc.loc2D;
     if (!targetPath) throw new NotFoundException('Path PDF tidak ditemukan.');
 
-    let pdfBuffer: Buffer | null = null;
-    const rawPath = targetPath.startsWith('/uploads/') ? targetPath.replace('/uploads/', '') : targetPath;
-    const localFilePath = join(process.cwd(), 'uploads', rawPath);
-
-    if (existsSync(localFilePath)) {
-      pdfBuffer = readFileSync(localFilePath);
-    } else if (targetPath.startsWith('http')) {
-      const resp = await fetch(targetPath);
-      if (resp.ok) {
-        const arr = await resp.arrayBuffer();
-        pdfBuffer = Buffer.from(arr);
-      }
-    }
+    const pdfBuffer = await this.storageService.getFileBuffer(targetPath);
 
     if (!pdfBuffer) {
       throw new NotFoundException(`File PDF tidak dapat ditemukan di penyimpanan.`);
@@ -650,6 +520,148 @@ export class DesignService {
     return {
       buffer: singlePageBuffer,
       filename,
+    };
+  }
+
+  /** Log or set usage for a Design (Jig) item */
+  async logUsage(itemId: string, amount: number, mode: 'ADD' | 'SET' = 'ADD') {
+    const existing = await this.prisma.design.findUnique({ where: { id: itemId } });
+    if (!existing) {
+      throw new NotFoundException(`Item ${itemId} not found`);
+    }
+
+    const current = (existing as any).currentUsage ?? 0;
+    const newUsage = mode === 'ADD' ? Math.max(0, current + amount) : Math.max(0, amount);
+
+    const updated = await this.prisma.design.update({
+      where: { id: itemId },
+      data: { currentUsage: newUsage },
+    });
+
+    return {
+      ...updated,
+      ...this.calculateLifetime({
+        installDate: updated.designDateNew || (updated as any).createdAt,
+        lifetimeDays: updated.lifetimeDays,
+        lifetimeType: (updated as any).lifetimeType,
+        maxUsage: (updated as any).maxUsage,
+        currentUsage: (updated as any).currentUsage,
+      }),
+    };
+  }
+
+  /** Renew a Design item's lifetime */
+  async renewLifetime(itemId: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
+    const existing = await this.prisma.design.findUnique({ where: { id: itemId } });
+    if (!existing) {
+      throw new NotFoundException(`Item ${itemId} not found`);
+    }
+
+    const resetDays = options.resetDays !== false;
+    const resetUsage = options.resetUsage !== false;
+
+    const dataToUpdate: any = {};
+    if (resetDays) {
+      dataToUpdate.designDateNew = new Date();
+    }
+    if (resetUsage) {
+      dataToUpdate.currentUsage = 0;
+    }
+
+    const updated = await this.prisma.design.update({
+      where: { id: itemId },
+      data: dataToUpdate,
+    });
+
+    return {
+      ...updated,
+      ...this.calculateLifetime({
+        installDate: updated.designDateNew || (updated as any).createdAt,
+        lifetimeDays: updated.lifetimeDays,
+        lifetimeType: (updated as any).lifetimeType,
+        maxUsage: (updated as any).maxUsage,
+        currentUsage: (updated as any).currentUsage,
+      }),
+    };
+  }
+
+  /** Compute 2-way lifetime metrics */
+  private calculateLifetime(item: {
+    installDate?: Date | string | null;
+    lastRenewalDate?: Date | string | null;
+    lifetimeDays?: number | null;
+    lifetimeType?: string | null;
+    maxUsage?: number | null;
+    currentUsage?: number | null;
+  }) {
+    const baseDate = item.lastRenewalDate || item.installDate || new Date();
+    const lifetimeDays = item.lifetimeDays ?? 180;
+    const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
+    const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+
+    const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+      daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
+
+    const maxUsage = item.maxUsage ?? 500;
+    const currentUsage = item.currentUsage ?? 0;
+    const usageRemaining = Math.max(0, maxUsage - currentUsage);
+    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
+
+    let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    if (currentUsage >= maxUsage) {
+      usageStatus = 'OVERDUE';
+    } else if (usagePercent >= 85 || (maxUsage - currentUsage) <= 50) {
+      usageStatus = 'WARNING';
+    } else {
+      usageStatus = 'SAFE';
+    }
+
+    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = (item.lifetimeType as any) || 'DUAL';
+    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
+
+    if (lifetimeType === 'DAYS') {
+      lifetimeStatus = dayStatus;
+      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
+    } else if (lifetimeType === 'USAGE') {
+      lifetimeStatus = usageStatus;
+      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
+    } else {
+      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
+        lifetimeStatus = 'OVERDUE';
+        triggerReason =
+          dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE'
+            ? 'BOTH'
+            : dayStatus === 'OVERDUE'
+            ? 'DAYS'
+            : 'USAGE';
+      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+        lifetimeStatus = 'WARNING';
+        triggerReason =
+          dayStatus === 'WARNING' && usageStatus === 'WARNING'
+            ? 'BOTH'
+            : dayStatus === 'WARNING'
+            ? 'DAYS'
+            : 'USAGE';
+      } else {
+        lifetimeStatus = 'SAFE';
+        triggerReason = 'NONE';
+      }
+    }
+
+    return {
+      lifetimeDays,
+      lifetimeType,
+      maxUsage,
+      currentUsage,
+      usageRemaining,
+      usagePercent,
+      dueDate: dueDate.toISOString(),
+      daysRemaining,
+      dayStatus,
+      usageStatus,
+      lifetimeStatus,
+      triggerReason,
     };
   }
 }

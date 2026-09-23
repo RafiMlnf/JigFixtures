@@ -51,31 +51,28 @@ export class DesignController {
     return this.designService.updateDesignRevision(id, dto, req.user.id);
   }
 
+  /** Log or set usage counter for a Design (Jig) item */
+  @Patch(':id/usage')
+  logUsage(
+    @Param('id') id: string,
+    @Body() body: { amount: number; mode?: 'ADD' | 'SET' },
+  ) {
+    return this.designService.logUsage(id, body.amount, body.mode || 'ADD');
+  }
+
+  /** Renew a Design item's lifetime */
+  @Patch(':id/renew')
+  renew(
+    @Param('id') id: string,
+    @Body() body?: { resetDays?: boolean; resetUsage?: boolean },
+  ) {
+    return this.designService.renewLifetime(id, body);
+  }
+
   /** Get revision history for a specific item */
   @Get(':id/history')
   getHistory(@Param('id') id: string) {
     return this.designService.getDesignHistory(id);
-  }
-
-  /** PIC / Drafter signs the 2D drawing E-Tiket with optional visual placement */
-  @Patch(':id/sign-drawn')
-  signDrawn(
-    @Param('id') id: string,
-    @Body()
-    dto: {
-      signatureData: string;
-      placement?: {
-        pageIndex?: number;
-        xPercent: number;
-        yPercent: number;
-        widthPercent: number;
-        heightPercent: number;
-        allPages?: boolean;
-      };
-    },
-    @Request() req: any,
-  ) {
-    return this.designService.signDocumentDrawn(id, dto.signatureData, req.user.id, dto.placement);
   }
 
   /** Download single page (Hal 1 for Induk, Hal N for CellPart) as standalone PDF */

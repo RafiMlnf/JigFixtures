@@ -110,6 +110,9 @@ model Design {
   designDateNew     DateTime?      @map("design_date_new")
   newVisualDesign   String?        @map("new_visual_design")
   lifetimeDays      Int            @default(180) @map("lifetime_days")
+  lifetimeType      String         @default("DUAL") @map("lifetime_type") // DUAL / USAGE / DAYS
+  maxUsage          Int            @default(500) @map("max_usage") // Batas aus siklus pemakaian (default 500x)
+  currentUsage      Int            @default(0) @map("current_usage") // Counter pemakaian aktual
 
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
@@ -139,18 +142,6 @@ model Document {
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
   approvalStatus String         @default("APPROVED") @map("approval_status")
-
-  // Digital Signatures (E-Tiket)
-  drawnSignature    String?       @map("drawn_signature")
-  drawnByName       String?       @map("drawn_by_name")
-  drawnAt           DateTime?     @map("drawn_at")
-  checkedSignature  String?       @map("checked_signature")
-  checkedByName     String?       @map("checked_by_name")
-  checkedAt         DateTime?     @map("checked_at")
-  approvedSignature String?       @map("approved_signature")
-  approvedByName    String?       @map("approved_by_name")
-  approvedAt        DateTime?     @map("approved_at")
-  stampedPdfPath    String?       @map("stamped_pdf_path")
 
   @@map("document")
 }
@@ -270,18 +261,6 @@ model Approval {
   finalStatus    ApprovalStatus @default(WAITING) @map("final_status")
   finalComment   String?        @map("final_comment")
 
-  // Digital Signatures (E-Tiket)
-  drawnSignature    String?       @map("drawn_signature")
-  drawnByName       String?       @map("drawn_by_name")
-  drawnAt           DateTime?     @map("drawn_at")
-  checkedSignature  String?       @map("checked_signature")
-  checkedByName     String?       @map("checked_by_name")
-  checkedAt         DateTime?     @map("checked_at")
-  approvedSignature String?       @map("approved_signature")
-  approvedByName    String?       @map("approved_by_name")
-  approvedAt        DateTime?     @map("approved_at")
-  stampedPdfPath    String?       @map("stamped_pdf_path")
-
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -324,6 +303,9 @@ model CellPart {
 
   // Lifetime tracking
   lifetimeDays    Int       @default(180) @map("lifetime_days")
+  lifetimeType    String    @default("DUAL") @map("lifetime_type") // DUAL / USAGE / DAYS
+  maxUsage        Int       @default(500) @map("max_usage") // Batas aus siklus pemakaian (default 500x)
+  currentUsage    Int       @default(0) @map("current_usage") // Counter pemakaian aktual
   installDate     DateTime  @default(now()) @map("install_date")
   lastRenewalDate DateTime? @map("last_renewal_date")
   reminderSent    Boolean   @default(false) @map("reminder_sent")

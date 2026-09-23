@@ -5,12 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { canApprove } from '@/lib/rbac';
-import { getFileUrl, approveWithSignature } from '@/lib/api/phase3';
-import ETiketSignature from '@/components/design/ETiketSignature';
-import SignaturePadModal from '@/components/design/SignaturePadModal';
-import dynamic from 'next/dynamic';
+import { getFileUrl, approveRevision } from '@/lib/api/phase3';
 
-const NitroPdfSignerModal = dynamic(() => import('@/components/design/NitroPdfSignerModal'), { ssr: false });
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
 interface RevHistoryInfo {
@@ -55,9 +51,6 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
   const [approvalDetail, setApprovalDetail] = useState<any>(null);
-  const [signatureData, setSignatureData] = useState<string | null>(null);
-  const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [directPdfSignerOpen, setDirectPdfSignerOpen] = useState(false);
 
   // Fetch approval detail directly from backend (includes design.revisionHistories)
   useEffect(() => {
@@ -113,15 +106,13 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const handleApproveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await approveWithSignature(approval.id, {
-        comment,
-        signatureData: signatureData || undefined,
-        signatureType: signatureData ? 'STAMP' : undefined,
+      await approveRevision(approval.id, {
+        comment: comment.trim() || undefined,
       });
-      setToastMessage('Request has been APPROVED with Digital Signature!');
+      setToastMessage('Persetujuan berhasil diproses!');
       setShowApproveModal(false);
       setComment('');
-      setTimeout(() => { router.push('/approval-center'); }, 1500);
+      setTimeout(() => { router.push('/approval-center'); }, 1200);
     } catch (err: any) {
       alert(err.message || 'Gagal memproses approval');
     }
@@ -141,7 +132,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const revWith2D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc2D);
   const revWith3D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc3D);
   const latestRev = revWith2D ?? revWith3D ?? fullItem?.revisionHistories?.[fullItem.revisionHistories.length - 1];
-  const targetPdf = approvalDetail?.stampedPdfPath || revWith2D?.loc2D;
+  const targetPdf = revWith2D?.loc2D;
   const pdf2DUrl = targetPdf ? getFileUrl(targetPdf) : null;
   const model3DUrl = revWith3D?.loc3D ? getFileUrl(revWith3D.loc3D) : null;
 
@@ -218,61 +209,24 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               <span className="material-symbols-outlined text-[12px]">deployed_code</span>
               3D Model
             </button>
-            <div className="flex-1" />
-            {approval.status === 'WAITING' && isApprover && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewMode('2D');
-                  setDirectPdfSignerOpen(true);
-                }}
-                className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[9px] font-bold shadow-xs cursor-pointer active:scale-98 transition-all mr-2 animate-pulse"
-                title="Tanda Tangan & Setujui Langsung di PDF"
-              >
-                <span className="material-symbols-outlined text-xs">ink_pen</span>
-                <span>Tanda Tangani di PDF</span>
-              </button>
-            )}
             <span className="text-[8px] font-mono text-gray-400 font-bold uppercase">{item.noReg}</span>
           </div>
 
           {/* Viewer Content */}
           <div className="flex-1 relative min-h-0">
             {previewMode === '2D' ? (
-              <>
-                {pdf2DUrl ? (
-                  <iframe
-                    src={`${pdf2DUrl}#navpanes=0&pagemode=none&view=FitH`}
-                    className="w-full h-full border-0"
-                    title="2D Drawing PDF"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400">
-                    <span className="material-symbols-outlined text-4xl">picture_as_pdf</span>
-                    <p className="text-[10px] font-medium">File PDF 2D Drawing belum tersedia.</p>
-                  </div>
-                )}
-
-                {/* Nitro-Style Visual PDF Signer Modal */}
-                <NitroPdfSignerModal
-                  isOpen={directPdfSignerOpen}
-                  onClose={() => setDirectPdfSignerOpen(false)}
-                  pdfUrl={pdf2DUrl || ''}
-                  onApplySignature={async (sigData, placement, sigType) => {
-                    await approveWithSignature(approval.id, {
-                      comment: 'Approved & digitally signed visually on PDF drawing.',
-                      signatureData: sigData,
-                      signatureType: sigType,
-                      placement,
-                    });
-                    setToastMessage('Dokumen berhasil disetujui & ditandatangani di dalam PDF!');
-                    setTimeout(() => { router.push('/approval-center'); }, 1200);
-                  }}
-                  roleLabel={user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'}
-                  signerName={user?.name || (user?.role === 'PE_DEPT_HEAD' ? 'Rahmat K.' : 'M. Fariedl')}
-                  signerNpk={user?.npk || 'NPK001'}
+              pdf2DUrl ? (
+                <iframe
+                  src={`${pdf2DUrl}#navpanes=0&pagemode=none&view=FitH`}
+                  className="w-full h-full border-0"
+                  title="2D Drawing PDF"
                 />
-              </>
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-gray-400">
+                  <span className="material-symbols-outlined text-4xl">picture_as_pdf</span>
+                  <p className="text-[10px] font-medium">File PDF 2D Drawing belum tersedia.</p>
+                </div>
+              )
             ) : (
               model3DUrl ? (
                 <Suspense fallback={
@@ -313,26 +267,39 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* E-Tiket Digital Approval Block */}
-          <ETiketSignature
-            drawn={{
-              name: approvalDetail?.drawnByName || approval.author,
-              date: approvalDetail?.drawnAt || approval.date,
-              signature: approvalDetail?.drawnSignature,
-            }}
-            checked={{
-              name: approvalDetail?.checkedByName,
-              date: approvalDetail?.checkedAt,
-              signature: approvalDetail?.checkedSignature,
-            }}
-            approved={{
-              name: approvalDetail?.approvedByName,
-              date: approvalDetail?.approvedAt,
-              signature: approvalDetail?.approvedSignature,
-            }}
-            stampedPdfPath={approvalDetail?.stampedPdfPath}
-            currentUser={user}
-          />
+          {/* Approval Sign-off Status Card */}
+          <div className="border border-gray-200 rounded-xl p-3 bg-white space-y-2">
+            <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest flex items-center gap-1">
+              <span className="material-symbols-outlined text-blue-600 text-xs">verified</span>
+              Persetujuan Berjenjang
+            </p>
+            <div className="space-y-1.5 text-[9px]">
+              <div className="flex items-center justify-between border-b border-gray-50 pb-1">
+                <span className="text-gray-500">Drafter / Submitter:</span>
+                <span className="font-bold text-gray-800">{approval.author}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-gray-50 pb-1">
+                <span className="text-gray-500">Section Head:</span>
+                <span className={`font-bold px-1.5 py-0.2 rounded text-[8px] ${
+                  approval.sectionStatus === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                  approval.sectionStatus === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                  'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {approval.sectionStatus || 'WAITING'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Dept Head:</span>
+                <span className={`font-bold px-1.5 py-0.2 rounded text-[8px] ${
+                  approval.deptStatus === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                  approval.deptStatus === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                  'bg-gray-100 text-gray-500'
+                }`}>
+                  {approval.deptStatus || 'PENDING'}
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* Revision note */}
           <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -504,36 +471,18 @@ export default function ReviewApprovalPage({ params }: PageProps) {
           <form onSubmit={handleApproveSubmit} className="max-w-xs w-full bg-white border border-gray-300 rounded-2xl p-5 text-gray-800 shadow-2xl">
             <h3 className="font-bold text-xs text-green-600 mb-1.5 flex items-center gap-1 border-b border-gray-100 pb-2">
               <span className="material-symbols-outlined text-sm">check_circle</span>
-              Approve Request dengan Tanda Tangan Digital
+              Setujui Permintaan Desain
             </h3>
 
-            {/* Signature Slot Preview */}
-            <div className="mb-3 p-2.5 bg-blue-50/50 border border-blue-200 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-blue-600 text-lg">verified</span>
-                <div>
-                  <span className="text-[10px] font-bold text-gray-800 block">
-                    Stempel Resmi: {user?.name}
-                  </span>
-                  <span className="text-[8px] text-gray-500">
-                    {user?.role === 'PE_SECTION_HEAD' ? 'Checked Column' : 'Approved Column'} &bull; {(user as any)?.npk || 'NPK'}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSignatureModal(true)}
-                className="text-[9px] font-bold text-blue-700 bg-white border border-blue-300 hover:bg-blue-100 px-2 py-1 rounded transition-colors"
-              >
-                {signatureData ? 'Ganti Tanda Tangan' : 'Kustomisasi'}
-              </button>
-            </div>
+            <p className="text-[9px] text-gray-600 mb-2 leading-relaxed">
+              Anda menyetujui dokumen ini sebagai <span className="font-bold text-gray-800">{user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'}</span> ({user?.name || 'User'}).
+            </p>
 
             <p className="text-[9px] text-gray-500 mb-1 leading-tight">
-              Berikan catatan persetujuan (opsional):
+              Catatan persetujuan (opsional):
             </p>
             <textarea
-              className="w-full border border-gray-300 rounded-lg p-2 text-[10px] h-16 outline-none focus:ring-1 focus:ring-green-500 text-gray-700 placeholder-gray-400 resize-none"
+              className="w-full border border-gray-300 rounded-lg p-2 text-[10px] h-20 outline-none focus:ring-1 focus:ring-green-500 text-gray-700 placeholder-gray-400 resize-none"
               placeholder="Contoh: Desain telah diverifikasi, siap proses fabrikasi..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
@@ -541,27 +490,13 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             <div className="flex gap-2 mt-3">
               <button type="button" onClick={() => setShowApproveModal(false)} className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 transition-colors cursor-pointer">Batal</button>
               <button type="submit" className="flex-1 py-1.5 bg-green-600 text-white rounded-lg text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer flex items-center justify-center gap-1">
-                <span className="material-symbols-outlined text-xs">draw</span>
-                Setujui & Stempel
+                <span className="material-symbols-outlined text-xs">check</span>
+                Konfirmasi Setuju
               </button>
             </div>
           </form>
         </div>
       )}
-
-      {/* Signature Customization Modal */}
-      <SignaturePadModal
-        isOpen={showSignatureModal}
-        onClose={() => setShowSignatureModal(false)}
-        onConfirm={(sigData) => {
-          setSignatureData(sigData);
-          setShowSignatureModal(false);
-        }}
-        title="Pilih Stempel / Tanda Tangan Approver"
-        roleLabel={user?.role === 'PE_SECTION_HEAD' ? 'Checked (Section Head)' : 'Approved (Dept Head)'}
-        signerName={user?.name || 'Approver'}
-        signerNpk={(user as any)?.npk || 'NPK002'}
-      />
 
     </div>
   );

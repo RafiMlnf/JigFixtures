@@ -44,8 +44,20 @@ export class CellPartController {
 
   /** Renew a CellPart's lifetime */
   @Patch(':id/renew')
-  renew(@Param('id') id: string) {
-    return this.cellPartService.renew(id);
+  renew(
+    @Param('id') id: string,
+    @Body() body?: { resetDays?: boolean; resetUsage?: boolean },
+  ) {
+    return this.cellPartService.renew(id, body);
+  }
+
+  /** Log or set usage for a CellPart */
+  @Patch(':id/usage')
+  logUsage(
+    @Param('id') id: string,
+    @Body() body: { amount: number; mode?: 'ADD' | 'SET' },
+  ) {
+    return this.cellPartService.logUsage(id, body.amount, body.mode || 'ADD');
   }
 
   /** Delete a CellPart */

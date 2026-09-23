@@ -66,6 +66,9 @@ export class CellPartService {
         name: dto.name,
         description: dto.description || null,
         lifetimeDays: dto.lifetimeDays || 180,
+        lifetimeType: dto.lifetimeType || 'DUAL',
+        maxUsage: dto.maxUsage ?? 500,
+        currentUsage: dto.currentUsage ?? 0,
         installDate: dto.installDate ? new Date(dto.installDate) : new Date(),
         minimumStock: dto.minimumStock ?? 0,
         actualStock: dto.actualStock ?? 0,
@@ -106,6 +109,9 @@ export class CellPartService {
         name: dto.name,
         description: dto.description,
         lifetimeDays: dto.lifetimeDays,
+        lifetimeType: dto.lifetimeType,
+        maxUsage: dto.maxUsage,
+        currentUsage: dto.currentUsage,
         installDate: dto.installDate ? new Date(dto.installDate) : undefined,
         minimumStock: dto.minimumStock,
         actualStock: dto.actualStock,
@@ -116,19 +122,50 @@ export class CellPartService {
     return this.enrichWithLifetime(updated);
   }
 
-  /** Renew a CellPart's lifetime — reset installDate to now */
-  async renew(id: string) {
+  /** Log or set usage for a CellPart */
+  async logUsage(id: string, amount: number, mode: 'ADD' | 'SET' = 'ADD') {
     const existing = await this.prisma.cellPart.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException(`CellPart ${id} not found`);
     }
 
+    const current = (existing as any).currentUsage ?? 0;
+    const newUsage = mode === 'ADD' ? Math.max(0, current + amount) : Math.max(0, amount);
+
     const updated = await this.prisma.cellPart.update({
       where: { id },
       data: {
-        lastRenewalDate: new Date(),
-        reminderSent: false,
+        currentUsage: newUsage,
       },
+    });
+
+    return this.enrichWithLifetime(updated);
+  }
+
+  /** Renew a CellPart's lifetime — reset installDate and/or currentUsage to 0 */
+  async renew(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
+    const existing = await this.prisma.cellPart.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`CellPart ${id} not found`);
+    }
+
+    const resetDays = options.resetDays !== false; // default true
+    const resetUsage = options.resetUsage !== false; // default true
+
+    const dataToUpdate: any = {
+      reminderSent: false,
+    };
+
+    if (resetDays) {
+      dataToUpdate.lastRenewalDate = new Date();
+    }
+    if (resetUsage) {
+      dataToUpdate.currentUsage = 0;
+    }
+
+    const updated = await this.prisma.cellPart.update({
+      where: { id },
+      data: dataToUpdate,
     });
 
     return this.enrichWithLifetime(updated);
@@ -144,30 +181,90 @@ export class CellPartService {
     return this.prisma.cellPart.delete({ where: { id } });
   }
 
-  /** Enrich a CellPart record with computed lifetime fields */
-  private enrichWithLifetime(part: any) {
-    const baseDate = part.lastRenewalDate || part.installDate;
+  /** Enrich a CellPart record with computed 2-way lifetime fields */
+  public enrichWithLifetime(part: any) {
+    const baseDate = part.lastRenewalDate || part.installDate || new Date();
+    const lifetimeDays = part.lifetimeDays ?? 180;
     const dueDate = new Date(
-      new Date(baseDate).getTime() + part.lifetimeDays * 86400000,
+      new Date(baseDate).getTime() + lifetimeDays * 86400000,
     );
     const daysRemaining = Math.ceil(
       (dueDate.getTime() - Date.now()) / 86400000,
     );
 
-    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    // Day status
+    let dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
     if (daysRemaining <= 0) {
-      lifetimeStatus = 'OVERDUE';
+      dayStatus = 'OVERDUE';
     } else if (daysRemaining <= 35) {
-      lifetimeStatus = 'WARNING';
+      dayStatus = 'WARNING';
     } else {
-      lifetimeStatus = 'SAFE';
+      dayStatus = 'SAFE';
+    }
+
+    // Usage status
+    const maxUsage = part.maxUsage ?? 500;
+    const currentUsage = part.currentUsage ?? 0;
+    const usageRemaining = Math.max(0, maxUsage - currentUsage);
+    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
+
+    let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    if (currentUsage >= maxUsage) {
+      usageStatus = 'OVERDUE';
+    } else if (usagePercent >= 85 || (maxUsage - currentUsage) <= 50) {
+      usageStatus = 'WARNING';
+    } else {
+      usageStatus = 'SAFE';
+    }
+
+    // Combined 2-Way Evaluation
+    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = part.lifetimeType || 'DUAL';
+    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
+
+    if (lifetimeType === 'DAYS') {
+      lifetimeStatus = dayStatus;
+      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
+    } else if (lifetimeType === 'USAGE') {
+      lifetimeStatus = usageStatus;
+      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
+    } else {
+      // DUAL (2-Way: whichever limit is reached first)
+      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
+        lifetimeStatus = 'OVERDUE';
+        triggerReason =
+          dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE'
+            ? 'BOTH'
+            : dayStatus === 'OVERDUE'
+            ? 'DAYS'
+            : 'USAGE';
+      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+        lifetimeStatus = 'WARNING';
+        triggerReason =
+          dayStatus === 'WARNING' && usageStatus === 'WARNING'
+            ? 'BOTH'
+            : dayStatus === 'WARNING'
+            ? 'DAYS'
+            : 'USAGE';
+      } else {
+        lifetimeStatus = 'SAFE';
+        triggerReason = 'NONE';
+      }
     }
 
     return {
       ...part,
+      lifetimeType,
+      maxUsage,
+      currentUsage,
+      usageRemaining,
+      usagePercent,
       dueDate: dueDate.toISOString(),
       daysRemaining,
+      dayStatus,
+      usageStatus,
       lifetimeStatus,
+      triggerReason,
     };
   }
 }
