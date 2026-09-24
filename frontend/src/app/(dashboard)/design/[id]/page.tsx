@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, downloadDesignPdfPage } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, downloadDesignPdfPage, downloadDesignPdfFull } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
@@ -312,6 +312,7 @@ function DesignDetailPageContent({ params }: PageProps) {
   };
 
   const [downloadingPage, setDownloadingPage] = useState<number | null>(null);
+  const [downloadingFull, setDownloadingFull] = useState(false);
 
   const handleDownloadSinglePage = async (pageNum: number, filename?: string) => {
     if (!item) return;
@@ -322,6 +323,18 @@ function DesignDetailPageContent({ params }: PageProps) {
       alert(`Gagal mengunduh Halaman ${pageNum}: ${err.message || 'Error server'}`);
     } finally {
       setDownloadingPage(null);
+    }
+  };
+
+  const handleDownloadFullPdf = async (filename?: string) => {
+    if (!item) return;
+    setDownloadingFull(true);
+    try {
+      await downloadDesignPdfFull(item.id, filename);
+    } catch (err: any) {
+      alert(`Gagal mengunduh PDF Lengkap Resmi: ${err.message || 'Error server'}`);
+    } finally {
+      setDownloadingFull(false);
     }
   };
 
@@ -357,6 +370,7 @@ function DesignDetailPageContent({ params }: PageProps) {
   const activeDoc = reversedDocs.find((d) => d.approvalStatus === 'APPROVED' && d.loc2D)
     || reversedDocs.find((d) => d.loc2D)
     || reversedDocs[0];
+  const isDrawingApproved = activeDoc?.approvalStatus === 'APPROVED';
 
   const lifecycleBadge: Record<string, { color: string; label: string }> = {
     ACTIVE: { color: '#16a34a', label: 'Active' },
@@ -427,124 +441,181 @@ function DesignDetailPageContent({ params }: PageProps) {
           {/* Right: actions */}
           <div className="flex items-center gap-1.5 shrink-0 relative">
             <div className="relative">
-              <button
-                onClick={() => setDownloadDropdownOpen(!downloadDropdownOpen)}
-                className={`flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-gray-150 text-gray-500 ${downloadDropdownOpen ? 'bg-gray-150 text-gray-800' : ''}`}
-                title="Unduh Dokumen"
-              >
-                <span className="material-symbols-outlined text-[16px]">download</span>
-              </button>
+              {/* Download Dropdown */}
+              {(() => {
+                const isDrawingApproved = activeDoc?.approvalStatus === 'APPROVED';
 
-              {downloadDropdownOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setDownloadDropdownOpen(false)}
-                  ></div>
+                return (
+                  <>
+                    <button
+                      onClick={() => setDownloadDropdownOpen(!downloadDropdownOpen)}
+                      className={`flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-gray-150 text-gray-500 ${downloadDropdownOpen ? 'bg-gray-150 text-gray-800' : ''}`}
+                      title={isDrawingApproved ? 'Unduh Dokumen Gambar Kerja (Resmi)' : 'Unduh Dokumen (Menunggu Approval)'}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isDrawingApproved ? 'download' : 'download'}
+                      </span>
+                    </button>
 
-                  <div className="absolute right-0 mt-1 w-64 bg-white border border-gray-250 rounded-xl shadow-xl z-50 py-1.5 text-[10px] text-gray-700 max-h-80 overflow-y-auto no-scrollbar">
-                    {/* Header */}
-                    <div className="px-3 py-1 text-[8.5px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 flex items-center justify-between">
-                      <span>Pilihan Unduh</span>
-                      {downloadingPage && <span className="text-blue-600 animate-pulse font-bold">Mengunduh Hal {downloadingPage}...</span>}
-                    </div>
-
-                    {/* Full 2D Drawing */}
-                    {activeDoc?.loc2D ? (
-                      <a
-                        href={activeDoc.loc2D}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setDownloadDropdownOpen(false)}
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-blue-50/70 text-gray-800 font-semibold transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[14px] text-blue-600">picture_as_pdf</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate font-bold">2D Drawing Lengkap</p>
-                          <p className="text-[8px] text-gray-400">Semua halaman dalam 1 PDF</p>
-                        </div>
-                      </a>
-                    ) : (
-                      <div className="flex items-center gap-2 px-3 py-2 text-gray-400 opacity-50 font-medium cursor-not-allowed select-none">
-                        <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
-                        <span>2D Drawing Belum Tersedia</span>
-                      </div>
-                    )}
-
-                    {/* Single Page: Induk Jig (Hal 1) */}
-                    {activeDoc?.loc2D && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleDownloadSinglePage(1, `${item.noReg}_Induk_Hal_1.pdf`);
-                          setDownloadDropdownOpen(false);
-                        }}
-                        disabled={downloadingPage !== null}
-                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50/70 text-left text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
-                      >
-                        <span className="material-symbols-outlined text-[14px] text-indigo-600">home</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate font-bold">Hal 1: Induk Jig (1 Halaman)</p>
-                          <p className="text-[8px] text-gray-400">Gambar teknik utama {item.noReg}</p>
-                        </div>
-                        <span className="material-symbols-outlined text-[12px] text-gray-400">file_download</span>
-                      </button>
-                    )}
-
-                    {/* Single Page: CellParts */}
-                    {activeDoc?.loc2D && item.cellParts && item.cellParts.length > 0 && (
+                    {downloadDropdownOpen && (
                       <>
-                        <div className="px-3 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 border-t border-b border-gray-100 mt-0.5">
-                          Cell Parts (1 Halaman)
-                        </div>
-                        {item.cellParts.map((cp, idx) => {
-                          const pageNum = cp.pdfPageIndex || (idx + 2);
-                          return (
-                            <button
-                              key={cp.id}
-                              type="button"
-                              onClick={() => {
-                                handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`);
-                                setDownloadDropdownOpen(false);
-                              }}
-                              disabled={downloadingPage !== null}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-blue-50/70 text-left text-gray-800 transition-colors cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[13px] text-blue-500">widgets</span>
-                              <div className="flex-1 min-w-0">
-                                <p className="truncate font-bold text-[9px] font-mono">{cp.partNumber}</p>
-                                <p className="text-[8px] text-gray-400 truncate">Hal {pageNum} · {cp.name}</p>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setDownloadDropdownOpen(false)}
+                        ></div>
+
+                        <div className="absolute right-0 mt-1 w-72 bg-white border border-gray-250 rounded-xl shadow-xl z-50 py-1.5 text-[10px] text-gray-700 max-h-80 overflow-y-auto no-scrollbar">
+                          {/* Header */}
+                          <div className="px-3 py-1 text-[8.5px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 flex items-center justify-between">
+                            <span>Pilihan Unduh</span>
+                            {downloadingFull && <span className="text-emerald-600 animate-pulse font-bold">Mengunduh Dokumen Resmi...</span>}
+                            {downloadingPage && <span className="text-blue-600 animate-pulse font-bold">Mengunduh Hal {downloadingPage}...</span>}
+                          </div>
+
+                          {/* Approval Status Banner if Not Approved */}
+                          {!isDrawingApproved && (
+                            <div className="mx-2.5 my-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[8.5px] flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[14px] text-amber-600 shrink-0">lock</span>
+                              <span>Drawing belum dapat diunduh karena belum disetujui resmi oleh Section Head &amp; Dept Head.</span>
+                            </div>
+                          )}
+
+                          {/* Full 2D Drawing */}
+                          {activeDoc?.loc2D ? (
+                            isDrawingApproved ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDownloadFullPdf(`${item.noReg}_Drawing_Resmi.pdf`);
+                                  setDownloadDropdownOpen(false);
+                                }}
+                                disabled={downloadingFull || downloadingPage !== null}
+                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-emerald-50/70 text-left text-gray-800 font-semibold transition-colors cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px] text-emerald-600">verified</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <p className="truncate font-bold text-emerald-900">2D Drawing Lengkap Resmi</p>
+                                    <span className="text-[7.5px] bg-emerald-100 text-emerald-700 font-bold px-1 rounded">Stempel</span>
+                                  </div>
+                                  <p className="text-[8px] text-gray-400">Semua halaman berstempel legalitas</p>
+                                </div>
+                                <span className="material-symbols-outlined text-[12px] text-gray-400">file_download</span>
+                              </button>
+                            ) : (
+                              <div className="flex items-center gap-2 px-3 py-2 text-gray-400 opacity-60 font-medium cursor-not-allowed select-none bg-gray-50/60">
+                                <span className="material-symbols-outlined text-[14px] text-gray-400">lock</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate font-medium text-gray-500">2D Drawing Lengkap</p>
+                                  <p className="text-[8px] text-amber-600 font-semibold">Terkunci (Belum di-approve)</p>
+                                </div>
                               </div>
-                              <span className="material-symbols-outlined text-[11px] text-gray-400">file_download</span>
-                            </button>
-                          );
-                        })}
+                            )
+                          ) : (
+                            <div className="flex items-center gap-2 px-3 py-2 text-gray-400 opacity-50 font-medium cursor-not-allowed select-none">
+                              <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
+                              <span>2D Drawing Belum Tersedia</span>
+                            </div>
+                          )}
+
+                          {/* Single Page: Induk Jig (Hal 1) */}
+                          {activeDoc?.loc2D && (
+                            isDrawingApproved ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDownloadSinglePage(1, `${item.noReg}_Induk_Hal_1.pdf`);
+                                  setDownloadDropdownOpen(false);
+                                }}
+                                disabled={downloadingPage !== null || downloadingFull}
+                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50/70 text-left text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-indigo-600">home</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate font-bold">Hal 1: Induk Jig (1 Halaman)</p>
+                                  <p className="text-[8px] text-gray-400">Gambar teknik utama {item.noReg}</p>
+                                </div>
+                                <span className="material-symbols-outlined text-[12px] text-gray-400">file_download</span>
+                              </button>
+                            ) : (
+                              <div className="w-full flex items-center gap-2 px-3 py-2 text-gray-400 opacity-60 font-medium cursor-not-allowed select-none border-t border-gray-100 bg-gray-50/60">
+                                <span className="material-symbols-outlined text-[14px] text-gray-400">lock</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate font-medium text-gray-500">Hal 1: Induk Jig</p>
+                                  <p className="text-[8px] text-amber-600 font-semibold">Terkunci (Belum di-approve)</p>
+                                </div>
+                              </div>
+                            )
+                          )}
+
+                          {/* Single Page: CellParts */}
+                          {activeDoc?.loc2D && item.cellParts && item.cellParts.length > 0 && (
+                            <>
+                              <div className="px-3 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 border-t border-b border-gray-100 mt-0.5">
+                                Cell Parts (1 Halaman)
+                              </div>
+                              {item.cellParts.map((cp, idx) => {
+                                const pageNum = cp.pdfPageIndex || (idx + 2);
+                                return isDrawingApproved ? (
+                                  <button
+                                    key={cp.id}
+                                    type="button"
+                                    onClick={() => {
+                                      handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`);
+                                      setDownloadDropdownOpen(false);
+                                    }}
+                                    disabled={downloadingPage !== null || downloadingFull}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-blue-50/70 text-left text-gray-800 transition-colors cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[13px] text-blue-500">widgets</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="truncate font-bold text-[9px] font-mono">{cp.partNumber}</p>
+                                      <p className="text-[8px] text-gray-400 truncate">Hal {pageNum} · {cp.name}</p>
+                                    </div>
+                                    <span className="material-symbols-outlined text-[11px] text-gray-400">file_download</span>
+                                  </button>
+                                ) : (
+                                  <div
+                                    key={cp.id}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-gray-400 opacity-60 font-medium cursor-not-allowed select-none"
+                                  >
+                                    <span className="material-symbols-outlined text-[12px] text-gray-400">lock</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="truncate font-bold text-[9px] font-mono text-gray-500">{cp.partNumber}</p>
+                                      <p className="text-[8px] text-gray-400 truncate">Hal {pageNum} · {cp.name}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          )}
+
+                          {/* 3D Model CAD */}
+                          {(() => {
+                            const active3DRev = item.revisionHistories.find((rev) => rev.loc3D);
+                            return active3DRev?.loc3D ? (
+                              <a
+                                href={getFileUrl(active3DRev.loc3D!) ?? undefined}
+                                download
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => setDownloadDropdownOpen(false)}
+                                className="flex items-center gap-2 px-3 py-2 hover:bg-purple-50/70 text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-purple-600">deployed_code</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="truncate font-bold">Unduh 3D CAD</p>
+                                  <p className="text-[8px] text-gray-400">File STEP / IGS</p>
+                                </div>
+                              </a>
+                            ) : null;
+                          })()}
+                        </div>
                       </>
                     )}
-
-                    {/* 3D Model CAD */}
-                    {(() => {
-                      const active3DRev = item.revisionHistories.find((rev) => rev.loc3D);
-                      return active3DRev?.loc3D ? (
-                        <a
-                          href={getFileUrl(active3DRev.loc3D!) ?? undefined}
-                          download
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => setDownloadDropdownOpen(false)}
-                          className="flex items-center gap-2 px-3 py-2 hover:bg-purple-50/70 text-gray-800 font-semibold transition-colors cursor-pointer border-t border-gray-100"
-                        >
-                          <span className="material-symbols-outlined text-[14px] text-purple-600">deployed_code</span>
-                          <div className="flex-1 min-w-0">
-                            <p className="truncate font-bold">Unduh 3D CAD</p>
-                            <p className="text-[8px] text-gray-400">File STEP / IGS</p>
-                          </div>
-                        </a>
-                      ) : null;
-                    })()}
-                  </div>
-                </>
-              )}
+                  </>
+                );
+              })()}
             </div>
 
             <button
@@ -1147,17 +1218,32 @@ function DesignDetailPageContent({ params }: PageProps) {
                                 Drawing
                               </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`)}
-                                disabled={downloadingPage !== null}
-                                className="py-1 px-1.5 rounded text-[8px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors flex items-center justify-center gap-0.5 cursor-pointer"
-                                title={`Unduh 1 Halaman PDF (${cp.partNumber})`}
-                              >
-                                <span className="material-symbols-outlined text-[10px]">
-                                  {downloadingPage === pageNum ? 'sync' : 'download'}
-                                </span>
-                              </button>
+                              {(() => {
+                                const isDrawingApproved = activeDoc?.approvalStatus === 'APPROVED';
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!isDrawingApproved) {
+                                        alert('Drawing belum disetujui (Approved) secara resmi oleh Section Head dan Dept Head.');
+                                        return;
+                                      }
+                                      handleDownloadSinglePage(pageNum, `${item.noReg}_CP_${cp.partNumber}_Hal_${pageNum}.pdf`);
+                                    }}
+                                    disabled={downloadingPage !== null || !isDrawingApproved}
+                                    className={`py-1 px-1.5 rounded text-[8px] font-bold border transition-colors flex items-center justify-center gap-0.5 ${
+                                      isDrawingApproved
+                                        ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 cursor-pointer'
+                                        : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                                    }`}
+                                    title={isDrawingApproved ? `Unduh 1 Halaman PDF Resmi (${cp.partNumber})` : 'Drawing belum disetujui (Menunggu approval resmi)'}
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">
+                                      {!isDrawingApproved ? 'lock' : downloadingPage === pageNum ? 'sync' : 'download'}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
 
                               {isPic && (
                                 <>
@@ -1224,15 +1310,28 @@ function DesignDetailPageContent({ params }: PageProps) {
                           {(rev.loc2D || rev.loc3D) && (
                             <div className="mt-2 pt-2 border-t border-dashed border-gray-100 flex gap-2">
                               {rev.loc2D && (
-                                <a
-                                  href={getFileUrl(rev.loc2D!) ?? undefined}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex-1 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1"
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isDrawingApproved) {
+                                      alert('Drawing belum disetujui (Approved) secara resmi oleh Section Head dan Dept Head.');
+                                      return;
+                                    }
+                                    handleDownloadFullPdf(`${item.noReg}_Rev_${rev.revStatus}_Drawing_Resmi.pdf`);
+                                  }}
+                                  disabled={!isDrawingApproved || downloadingFull}
+                                  className={`flex-1 py-1 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 ${
+                                    isDrawingApproved
+                                      ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 cursor-pointer'
+                                      : 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                  }`}
+                                  title={isDrawingApproved ? 'Unduh 2D Drawing Resmi' : 'Drawing belum disetujui (Menunggu approval resmi)'}
                                 >
-                                  <span className="material-symbols-outlined text-[10px]">download</span>
+                                  <span className="material-symbols-outlined text-[10px]">
+                                    {isDrawingApproved ? 'download' : 'lock'}
+                                  </span>
                                   2D Drawing
-                                </a>
+                                </button>
                               )}
                               {rev.loc3D && (
                                 <button
@@ -1476,16 +1575,13 @@ function DesignDetailPageContent({ params }: PageProps) {
                   <p className="text-[8px] text-gray-400 mt-0.5">Halaman 1 = Parent, Hal 2+ = Child</p>
                 </div>
 
-                {/* 2-Way Lifetime System Configuration */}
+                {/* Lifetime System Configuration */}
                 <div className="col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-[9px] font-bold text-gray-700 uppercase flex items-center gap-1">
                       <span className="material-symbols-outlined text-[13px] text-blue-600">published_with_changes</span>
-                      Konfigurasi Lifetime (2-Way)
+                      Konfigurasi Lifetime
                     </label>
-                    <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded-full font-bold">
-                      Aus: 500x / 180 Hari
-                    </span>
                   </div>
 
                   {/* Mode Selector */}
@@ -1499,7 +1595,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                           : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-100'
                       }`}
                     >
-                      <span>2-Way (Dual)</span>
+                      <span>2-Way</span>
                       <span className="text-[7.5px] opacity-80 font-normal">Hari &amp; Pemakaian</span>
                     </button>
                     <button
@@ -1547,7 +1643,6 @@ function DesignDetailPageContent({ params }: PageProps) {
                           />
                           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400">kali</span>
                         </div>
-                        <p className="text-[7.5px] text-gray-400 mt-0.5">Aus jika mencapai batas ini (default: 500x).</p>
                       </div>
                     )}
 
@@ -1568,7 +1663,6 @@ function DesignDetailPageContent({ params }: PageProps) {
                           />
                           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400">hari</span>
                         </div>
-                        <p className="text-[7.5px] text-gray-400 mt-0.5">Reminder 5 minggu sebelum habis (default: 180d).</p>
                       </div>
                     )}
                   </div>

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { canApprove } from '@/lib/rbac';
-import { getFileUrl, approveRevision } from '@/lib/api/phase3';
+import { getFileUrl, approveRevision, rejectRevision } from '@/lib/api/phase3';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -41,9 +41,6 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const { approvals, items, processApproval, user, isLoading } = useApp();
   const isApprover = !isLoading && canApprove(user?.role);
 
-  const approval = approvals.find((a) => a.id === id);
-  const baseItem = approval ? items.find((i) => i.noReg === approval.noReg) : null;
-
   const [fullItem, setFullItem] = useState<FullItem | null>(null);
   const [comment, setComment] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
@@ -51,10 +48,33 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
   const [approvalDetail, setApprovalDetail] = useState<any>(null);
+  const [loadingApproval, setLoadingApproval] = useState(true);
+
+  const contextApproval = approvals.find((a) => a.id === id);
+  const resolvedApproval: any = approvalDetail ? {
+    id: approvalDetail.id,
+    noReg: approvalDetail.item?.noReg || approvalDetail.design?.noReg || 'N/A',
+    designId: approvalDetail.item?.id || approvalDetail.designId,
+    itemName: approvalDetail.item?.assyPartName || approvalDetail.design?.assyPartName || 'N/A',
+    date: approvalDetail.createdAt ? new Date(approvalDetail.createdAt).toLocaleDateString('id-ID') : '',
+    author: approvalDetail.submittedBy?.name || 'PIC Submitter',
+    authorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD0K5uMa_eyzsLMfQnbYnlDlbL0hBNbMgB43eKGSSrulPd8R9KaBD-eOVIRnjge_lre88wQy32ZMQbO5pKvKoJdf7atqBmlbiSVEQIAF1Wf7obS1uwccX8H_uNfR8SZ6-SE-1fv1hDVDh_g8Jp0I7dS5FLdPtJ_RtVTHs-mnlA6p4X_ZzB-516cPH-NL6fxEyDNf7v4FLZ2X5nqNvfLo15Em1bnYhl46iz08ZtBfbLW2c17XuJTiElB',
+    note: approvalDetail.revisionNote || '',
+    type: approvalDetail.type === 'DESIGN_REVISION' ? 'Design Rev' : 'Inventory Update',
+    status: approvalDetail.status,
+    color: approvalDetail.type === 'DESIGN_REVISION' ? 'bg-accent-orange border-orange-200/50' : 'bg-[#d8b4fe] border-purple-300/50',
+    has3DRender: true,
+    sectionStatus: approvalDetail.sectionStatus,
+    deptStatus: approvalDetail.deptStatus,
+  } : contextApproval;
+
+  const approval = resolvedApproval;
+  const baseItem = approval ? items.find((i) => i.noReg === approval.noReg) : null;
 
   // Fetch approval detail directly from backend (includes design.revisionHistories)
   useEffect(() => {
     const token = document.cookie.match(/auth_token=([^;]+)/)?.[1] || '';
+    setLoadingApproval(true);
     fetch(`http://localhost:3002/api/approvals/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -74,23 +94,34 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             revStatus: design.revStatus,
             revisionHistories: design.revisionHistories,
           });
-          console.log('[ApprovalReview] loaded revisionHistories:', design.revisionHistories.length, 'entries');
         }
       })
       .catch((err) => {
         console.warn('[ApprovalReview] direct API failed, falling back to master-list:', err);
-        // Fallback: use fetchMasterList
         import('@/lib/api/phase3').then(({ fetchMasterList }) =>
           fetchMasterList().then((list: FullItem[]) => {
             const found = list.find((i) => i.noReg === approval?.noReg) ?? null;
-            console.log('[ApprovalReview] fallback found:', found?.noReg);
             setFullItem(found);
           })
         );
+      })
+      .finally(() => {
+        setLoadingApproval(false);
       });
   }, [id]);
 
-  if (!approval || !baseItem) {
+  if (isLoading || loadingApproval) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 bg-white">
+        <div className="text-center">
+          <span className="material-symbols-outlined animate-spin text-3xl text-blue-600 block mb-2">sync</span>
+          <p className="text-xs text-gray-500 font-medium">Memuat data approval...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!approval) {
     return (
       <div className="flex-1 flex items-center justify-center p-6 bg-white">
         <div className="text-center">
@@ -118,14 +149,18 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     }
   };
 
-  const handleRejectSubmit = (e: React.FormEvent) => {
+  const handleRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!comment.trim()) { alert('Reject comment is required.'); return; }
-    processApproval(approval.id, 'REJECT', comment);
-    setToastMessage('Request has been REJECTED.');
-    setShowRejectModal(false);
-    setComment('');
-    setTimeout(() => { router.push('/approval-center'); }, 1500);
+    try {
+      await rejectRevision(approval.id, { comment: comment.trim() });
+      setToastMessage('Request has been REJECTED.');
+      setShowRejectModal(false);
+      setComment('');
+      setTimeout(() => { router.push('/approval-center'); }, 1500);
+    } catch (err: any) {
+      alert(err.message || 'Gagal menolak approval');
+    }
   };
 
   // Derive file URLs — search all revisions for files (not just the last one)
@@ -136,7 +171,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const pdf2DUrl = targetPdf ? getFileUrl(targetPdf) : null;
   const model3DUrl = revWith3D?.loc3D ? getFileUrl(revWith3D.loc3D) : null;
 
-  // Use fullItem if loaded, fallback to baseItem for basic fields
+  // Use fullItem if loaded, fallback to baseItem or approval for basic fields
   const item = fullItem ?? baseItem;
 
   const approvalStatusColor =
@@ -145,12 +180,12 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     'bg-yellow-100 text-yellow-700 border border-yellow-200';
 
   const infoRows = [
-    { label: 'No. Registrasi', value: item.noReg, mono: true },
-    { label: 'Part Name', value: item.assyPartName },
-    { label: 'Tipe', value: item.type },
-    { label: 'Line Product', value: item.lineProduct },
-    { label: 'Process / OP', value: item.process },
-    { label: 'Revision', value: `Rev ${item.revStatus}` },
+    { label: 'No. Registrasi', value: item?.noReg || approval.noReg, mono: true },
+    { label: 'Part Name', value: item?.assyPartName || approval.itemName },
+    { label: 'Tipe', value: item?.type || 'JF' },
+    { label: 'Line Product', value: item?.lineProduct || '—' },
+    { label: 'Process / OP', value: item?.process || '—' },
+    { label: 'Revision', value: `Rev ${item?.revStatus || '0'}` },
   ];
 
   return (
@@ -209,7 +244,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               <span className="material-symbols-outlined text-[12px]">deployed_code</span>
               3D Model
             </button>
-            <span className="text-[8px] font-mono text-gray-400 font-bold uppercase">{item.noReg}</span>
+            <span className="text-[8px] font-mono text-gray-400 font-bold uppercase">{item?.noReg || approval.noReg}</span>
           </div>
 
           {/* Viewer Content */}

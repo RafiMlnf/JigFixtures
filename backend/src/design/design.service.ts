@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateDesignDto } from './dto/update-design.dto';
 import { DrawingStamperService } from '../upload/drawing-stamper.service';
@@ -476,6 +476,8 @@ export class DesignService {
 
   /**
    * Extract a single page of 2D drawing (Hal 1 for Induk Jig, Hal N for CellPart)
+   * Drawing can ONLY be downloaded when fully approved.
+   * Stamped with official legal seal at the bottom-right corner.
    */
   async getSinglePagePdf(designId: string, pageNumber: number) {
     const design = await this.prisma.design.findUnique({
@@ -487,22 +489,49 @@ export class DesignService {
     });
     if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);
 
-    const doc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && d.loc2D)
-      || design.documents.find((d) => d.loc2D)
-      || design.documents[0];
+    // 1. Fetch latest approval status
+    const latestApproval = await this.prisma.approval.findFirst({
+      where: { designId: design.id, type: 'DESIGN_REVISION' },
+      include: {
+        sectionHead: { select: { name: true } },
+        deptHead: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    if (!doc) throw new NotFoundException('Tidak ada dokumen PDF untuk item ini.');
+    const approvedDoc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && d.loc2D);
+    const isApproved = approvedDoc || (latestApproval && latestApproval.finalStatus === 'APPROVED');
+
+    // Drawing can ONLY be downloaded once approved by all parties
+    if (!isApproved) {
+      throw new ForbiddenException(
+        'Drawing belum disetujui (Approved) secara resmi oleh Section Head dan Dept Head. Dokumen belum dapat diunduh.',
+      );
+    }
+
+    const doc = approvedDoc || design.documents.find((d) => d.loc2D) || design.documents[0];
+    if (!doc || !doc.loc2D) throw new NotFoundException('Tidak ada dokumen PDF untuk item ini.');
 
     const targetPath = doc.loc2D;
-    if (!targetPath) throw new NotFoundException('Path PDF tidak ditemukan.');
-
     const pdfBuffer = await this.storageService.getFileBuffer(targetPath);
 
     if (!pdfBuffer) {
       throw new NotFoundException(`File PDF tidak dapat ditemukan di penyimpanan.`);
     }
 
-    const singlePageBuffer = await this.drawingStamperService.extractSinglePage(pdfBuffer, pageNumber);
+    // Extract single page and apply official legal stamp at bottom-right corner
+    const singlePageBuffer = await this.drawingStamperService.extractAndStampSinglePage(
+      pdfBuffer,
+      pageNumber,
+      {
+        noReg: design.noReg,
+        revStatus: design.revStatus || '0',
+        approvedAt: latestApproval?.deptAt || latestApproval?.updatedAt || doc.updatedAt,
+        sectionHeadName: latestApproval?.sectionHead?.name,
+        deptHeadName: latestApproval?.deptHead?.name,
+        approvalId: latestApproval?.id || doc.id,
+      },
+    );
 
     // Compute descriptive filename
     let filename = '';
@@ -520,6 +549,64 @@ export class DesignService {
     return {
       buffer: singlePageBuffer,
       filename,
+    };
+  }
+
+  /**
+   * Get full multi-page PDF stamped on EVERY page with official legality stamp
+   * Drawing can ONLY be downloaded when fully approved.
+   */
+  async getFullPdf(designId: string) {
+    const design = await this.prisma.design.findUnique({
+      where: { id: designId },
+      include: {
+        documents: { orderBy: { createdAt: 'desc' } },
+        cellParts: true,
+      },
+    });
+    if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);
+
+    // 1. Fetch latest approval status
+    const latestApproval = await this.prisma.approval.findFirst({
+      where: { designId: design.id, type: 'DESIGN_REVISION' },
+      include: {
+        sectionHead: { select: { name: true } },
+        deptHead: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const approvedDoc = design.documents.find((d) => d.approvalStatus === 'APPROVED' && d.loc2D);
+    const isApproved = approvedDoc || (latestApproval && latestApproval.finalStatus === 'APPROVED');
+
+    // Drawing can ONLY be downloaded once approved by all parties
+    if (!isApproved) {
+      throw new ForbiddenException(
+        'Drawing belum disetujui (Approved) secara resmi oleh Section Head dan Dept Head. Dokumen belum dapat diunduh.',
+      );
+    }
+
+    const doc = approvedDoc || design.documents.find((d) => d.loc2D) || design.documents[0];
+    if (!doc || !doc.loc2D) throw new NotFoundException('Tidak ada file PDF drawing untuk item ini.');
+
+    const pdfBuffer = await this.storageService.getFileBuffer(doc.loc2D);
+    if (!pdfBuffer) {
+      throw new NotFoundException('File PDF tidak dapat ditemukan di penyimpanan.');
+    }
+
+    // Apply official legal stamp on EVERY page at bottom-right corner
+    const stampedBuffer = await this.drawingStamperService.stampPdfDocument(pdfBuffer, {
+      noReg: design.noReg,
+      revStatus: design.revStatus || '0',
+      approvedAt: latestApproval?.deptAt || latestApproval?.updatedAt || doc.updatedAt,
+      sectionHeadName: latestApproval?.sectionHead?.name,
+      deptHeadName: latestApproval?.deptHead?.name,
+      approvalId: latestApproval?.id || doc.id,
+    });
+
+    return {
+      buffer: stampedBuffer,
+      filename: `${design.noReg}_Drawing_Resmi.pdf`,
     };
   }
 

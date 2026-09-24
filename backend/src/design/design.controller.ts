@@ -93,6 +93,22 @@ export class DesignController {
     res.end(buffer);
   }
 
+  /** Download full multi-page PDF with official legal stamp on every page */
+  @Get(':id/pdf-full')
+  async downloadPdfFull(
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const { buffer, filename } = await this.designService.getFullPdf(id);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
   /** Delete a design item and all its related records */
   @Delete(':id')
   deleteDesign(@Param('id') id: string) {

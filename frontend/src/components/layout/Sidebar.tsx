@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { canEdit, type AppRole } from '@/lib/rbac';
-import logoImg from '../../../assets/img/logoapp.png';
+import logoImg from '../../../assets/img/mtmwide.png';
 
 interface MenuItem {
   name: string;
@@ -31,7 +31,7 @@ const ALL_MENU_ITEMS: MenuItem[] = [
     // visible to all roles
   },
   {
-    name: 'Update Abnormality',
+    name: 'Monitoring Abnormality',
     icon: 'report_problem',
     href: '/update-abnormality',
     allowedRoles: ['PE_JIG_FIXTURE'],               // Update → PIC only
@@ -48,6 +48,12 @@ const ALL_MENU_ITEMS: MenuItem[] = [
     href: '/approval-center',
     allowedRoles: ['PE_JIG_FIXTURE', 'PE_SECTION_HEAD', 'PE_DEPT_HEAD'], // NOT Tamu
   },
+  {
+    name: 'TPM',
+    icon: 'build_circle',
+    href: '/tpm',
+    // visible to all roles
+  },
 ];
 
 const getRoleLabel = (role?: AppRole | null) => {
@@ -63,7 +69,6 @@ export default function Sidebar() {
   const { user, isLoading, approvals } = useApp();
   const role = user?.role ?? null;
 
-  const [showLogoImage, setShowLogoImage] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
@@ -81,13 +86,6 @@ export default function Sidebar() {
       return next;
     });
   };
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setShowLogoImage((prev) => !prev);
-    }, 4000); // loop switch every 4 seconds
-    return () => clearInterval(interval);
-  }, []);
 
   // Filter menu items based on current user's role and compute badge count dynamically
   const visibleItems = ALL_MENU_ITEMS.map((item) => {
@@ -122,11 +120,11 @@ export default function Sidebar() {
         isCollapsed ? 'w-16' : 'w-56'
       } bg-surface-container-low flex flex-col h-full z-10 shrink-0 transition-all duration-300 relative`}
     >
-      {/* SVG Outline Filter */}
+      {/* SVG Outline Filter (Crisp & Solid Stroke, No Feather) */}
       <svg width="0" height="0" className="absolute pointer-events-none">
-        <filter id="white-outline">
+        <filter id="white-outline" x="-20%" y="-20%" width="140%" height="140%">
           <feMorphology operator="dilate" radius="0.8" in="SourceAlpha" result="dilated" />
-          <feFlood floodColor="white" floodOpacity="1" result="flooded" />
+          <feFlood floodColor="#ffffff" floodOpacity="1" result="flooded" />
           <feComposite in="flooded" in2="dilated" operator="in" result="outline" />
           <feMerge>
             <feMergeNode in="outline" />
@@ -136,30 +134,24 @@ export default function Sidebar() {
       </svg>
 
       {/* Header */}
-      <div className={`border-b border-outline-variant h-[80px] flex items-center justify-between overflow-hidden relative ${isCollapsed ? 'px-1 justify-center' : 'px-2 py-1'}`}>
+      <div className={`border-b border-outline-variant h-[80px] flex items-center justify-center overflow-hidden relative ${isCollapsed ? 'px-2' : 'px-3 py-2'}`}>
         {!isCollapsed ? (
-          <div className="relative w-full h-[68px] flex items-center justify-start gap-1">
-            <div className="w-[64px] h-[64px] flex items-center justify-center shrink-0">
-              <Image
-                src={logoImg}
-                alt="Logo Jig & Fixtures"
-                className="max-h-[64px] max-w-[64px] object-contain drop-shadow-md"
-                priority
-              />
-            </div>
-            <h1
-              className="text-[23px] text-on-surface leading-none text-left font-bold italic tracking-tighter whitespace-nowrap truncate -ml-0.5"
-              style={{ fontFamily: "'Arial Narrow', Arial, sans-serif" }}
-            >
-              Jig &amp; Fixtures
-            </h1>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center p-0.5" title="Jig & Fixtures">
+          <div className="relative w-full h-full flex items-center justify-center">
             <Image
               src={logoImg}
-              alt="Logo Jig & Fixtures"
-              className="w-[52px] h-[52px] object-contain drop-shadow-md"
+              alt="Logo PT Menara Terus Makmur"
+              className="max-h-[52px] w-auto max-w-[95%] object-contain"
+              style={{ filter: 'url(#white-outline)' }}
+              priority
+            />
+          </div>
+        ) : (
+          <div className="flex items-center justify-center p-0.5" title="PT Menara Terus Makmur">
+            <Image
+              src={logoImg}
+              alt="Logo PT Menara Terus Makmur"
+              className="w-[48px] h-auto object-contain"
+              style={{ filter: 'url(#white-outline)' }}
               priority
             />
           </div>

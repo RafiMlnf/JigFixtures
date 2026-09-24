@@ -62,11 +62,8 @@ export class DrawingParserService {
     // 1. Extract Jig Info from Page 1 E-Tiket
     const jig = this.extractJigInfo(page1Text);
 
-    // 2. Extract BOM Table from Page 1
-    const cellParts = this.extractBomItems(page1Text);
-
-    // 3. Map Subsequent Pages (Page 2..N) to Cell Parts
-    this.mapSubsequentPagesToCellParts(cellParts, pageTexts);
+    // 2. Extract CellParts directly from each subsequent sheet / etiket (Pages 2..N)
+    const cellParts = this.extractCellPartsFromSheets(pageTexts);
 
     return {
       jig,
@@ -232,162 +229,124 @@ export class DrawingParserService {
     return [tokens[0] || '', tokens[1] || '', tokens[2] || ''];
   }
 
+
+
   /**
-   * Extract BOM table items from Page 1 text.
-   * Header: ITEM NO | PART NAME | PART NUMBER | MATERIAL | HEAT TREATMENT | HARDNESS | QTY
+   * Extract CellParts directly from subsequent drawing sheets / etiket (Pages 2..N).
+   * Does NOT scrape from the Page 1 BOM table, as requested.
    */
-  private extractBomItems(text: string): ParsedCellPart[] {
+  private extractCellPartsFromSheets(pageTexts: string[]): ParsedCellPart[] {
     const items: ParsedCellPart[] = [];
-    const lines = text.split(/\r?\n/);
-
-    // Regex to match BOM table rows:
-    // 1. Line starts with item number (1..99)
-    // 2. Part Name
-    // 3. Part Number: TXMACH-..., MISUMI ..., AMF ..., STD, or hyphenated part numbers
-    // 4. Material / Treatment / Hardness
-    // 5. Quantity (digits at end of line)
-    const bomRowRegex = /^(\d{1,2})\s+(.+?)\s+(TXMACH-[A-Z0-9]+|MISUMI\s+[A-Z0-9_-]+|AMF\s+[A-Z0-9_-]+|STD|\b[A-Z0-9]{2,}-[A-Z0-9_-]+\b)\s+(.*?)\s*(\d+)\s*$/;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.includes('ITEM NO')) continue;
-
-      const rowMatch = line.match(bomRowRegex);
-
-      if (rowMatch) {
-        const itemNo = parseInt(rowMatch[1], 10);
-        const name = rowMatch[2].trim();
-        const partNumber = rowMatch[3].trim();
-        let middleInfo = rowMatch[4]?.trim() || '';
-        const qty = rowMatch[5].trim();
-
-        // Check if standard part (e.g. BOLT, NUT, STD, MISUMI, etc.)
-        const isStandard =
-          partNumber === 'STD' ||
-          name.toUpperCase().startsWith('BOLT') ||
-          name.toUpperCase().startsWith('NUT') ||
-          name.toUpperCase().startsWith('SCREW') ||
-          name.toUpperCase().startsWith('WASHER') ||
-          partNumber.startsWith('MISUMI') ||
-          partNumber.startsWith('AMF') ||
-          name.toUpperCase().includes('HYDRAULIC') ||
-          middleInfo.includes('STD');
-
-        // Extract Material & Treatment from middleInfo
-        let hardness = '';
-        let heatTreatment = '';
-
-        if (middleInfo.includes('Hrc') || middleInfo.includes('HRC')) {
-          const hrcMatch = middleInfo.match(/([0-9\s-]+\s*Hrc)/i);
-          if (hrcMatch) {
-            hardness = hrcMatch[1].trim().replace(/\s+/g, ' ');
-            middleInfo = middleInfo.replace(hrcMatch[0], '').trim();
-          }
-        }
-
-        if (middleInfo.match(/Q-?T/i)) {
-          heatTreatment = 'QT';
-          middleInfo = middleInfo.replace(/Q-?T/i, '').trim();
-        }
-
-        // Clean up dashes in material
-        let material = middleInfo.replace(/[-–—]+/g, ' ').replace(/\s+/g, ' ').trim();
-        if (material === 'STD STD STD' || material === 'STD') {
-          material = 'STD';
-        }
-        if (!material && isStandard) material = 'STD';
-
-        items.push({
-          itemNo,
-          name,
-          partNumber,
-          material: material || undefined,
-          heatTreatment: heatTreatment || undefined,
-          hardness: hardness || undefined,
-          qty,
-          isStandardPart: isStandard,
-          description: `Item #${itemNo} - Material: ${material || 'N/A'}${hardness ? ` - Hardness: ${hardness}` : ''}`,
-        });
-      }
-    }
-
-    // Fallback if structured regex missed some items:
-    if (items.length === 0) {
-      const txMachRegex = /(\d{1,2})?\s*([A-Za-z0-9Øø\s_-]+?)\s+(TXMACH-[A-Z0-9]+)\s*(.*?)\s+(\d+)/g;
-      let m;
-      let autoItemNo = 1;
-      while ((m = txMachRegex.exec(text)) !== null) {
-        const itemNo = m[1] ? parseInt(m[1], 10) : autoItemNo++;
-        const name = m[2].trim();
-        const partNumber = m[3].trim();
-        const material = m[4]?.trim() || '';
-        const qty = m[5] || '1';
-
-        items.push({
-          itemNo,
-          name,
-          partNumber,
-          material: material || undefined,
-          qty,
-          isStandardPart: false,
-          description: `Material: ${material}`,
-        });
-      }
-    }
-
-    // Sort by itemNo ascending
-    return items.sort((a, b) => a.itemNo - b.itemNo);
-  }
-
-  /**
-   * Map subsequent pages (Pages 2..N) to CellParts.
-   * Compares Part Number, Part Name, and Sheet No in each page's text.
-   */
-  private mapSubsequentPagesToCellParts(cellParts: ParsedCellPart[], pageTexts: string[]): void {
-    if (pageTexts.length <= 1) return;
+    if (pageTexts.length <= 1) return items;
 
     for (let pageIdx = 1; pageIdx < pageTexts.length; pageIdx++) {
-      const pageNum = pageIdx + 1; // 1-indexed page number
+      const pageNum = pageIdx + 1; // 1-indexed PDF page
       const pageText = pageTexts[pageIdx];
+      const lines = pageText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
-      // Try matching by exact Part Number first
-      let matchedPart = cellParts.find((cp) => {
-        if (!cp.partNumber || cp.partNumber === 'STD') return false;
-        // Normalize OCR variations (e.g., '1' vs 'I')
-        const normalizedPartNo = cp.partNumber.replace(/I/g, '1');
-        const normalizedPageText = pageText.replace(/I/g, '1');
-        return pageText.includes(cp.partNumber) || normalizedPageText.includes(normalizedPartNo);
-      });
+      // 1. Part Number: usually TXMACH-... or under Part No.
+      const partNoMatch =
+        pageText.match(/(TXMACH-[A-Z0-9]+)/i) ||
+        pageText.match(/Part\s*No\.?\s*[:\s]*([A-Z0-9/_-]+)/i);
+      const partNumber = partNoMatch ? partNoMatch[1].trim() : '';
 
-      // If not matched by Part Number, try matching by Sheet No (e.g. "Sheet No: 2/10" -> Page 2)
-      if (!matchedPart) {
-        const sheetMatch = pageText.match(/Sheet\s*No\.?\s*[:\s]*(\d+)\s*\/\s*(\d+)/i) || pageText.match(/(\d+)\s*\/\s*10/);
-        if (sheetMatch && sheetMatch[1]) {
-          const sheetNum = parseInt(sheetMatch[1], 10);
-          matchedPart = cellParts.find((cp) => cp.itemNo === (sheetNum - 1));
+      // Ignore page if it does not have a manufactured part number or title block
+      if (!partNumber && !pageText.includes('MENARA TERUS MAKMUR') && !pageText.includes('Sheet No')) {
+        continue;
+      }
+
+      // 2. Sheet No: e.g. "2/10" or "Sheet No ... 2/10"
+      let sheetNum = pageNum;
+      const sheetMatch = pageText.match(/(?:Sheet\s*No[^\d]*)?(\d+)\s*\/\s*(\d+)/i);
+      if (sheetMatch && sheetMatch[1]) {
+        sheetNum = parseInt(sheetMatch[1], 10);
+      }
+
+      // 3. Material
+      let material = '';
+      const matMatch = pageText.match(/\b(SKD\s*61|SKD\s*11|S\s*45\s*C|S45C|SS400|SCM\s*440|SUS\s*304|AL\s*6061)\b/i);
+      if (matMatch) {
+        material = matMatch[1].replace(/\s+/g, ' ').trim();
+      }
+
+      // 4. Hardness
+      let hardness = '';
+      const hardMatch = pageText.match(/(\d+\s*[-–]\s*\d+\s*Hrc|\d+\s*Hrc)/i);
+      if (hardMatch) {
+        hardness = hardMatch[1].trim();
+      }
+
+      // 5. Heat Treatment
+      let heatTreatment = '';
+      if (/\b(Q-?T|QT)\b/i.test(pageText)) {
+        heatTreatment = 'QT';
+      }
+
+      // 6. Name and Quantity from sheet etiket layout
+      let name = '';
+      let qty = '1';
+
+      const itemNoIdx = lines.findIndex((l) => l.includes('Item No :'));
+      if (itemNoIdx !== -1) {
+        // Standard Layout (e.g. A3/A2 formats):
+        // lines[itemNoIdx + 1] = Approver names (e.g., 'M. FARIEDL \t RAHMAT K.')
+        // lines[itemNoIdx + 2] = Part Name, tab, Qty (e.g., 'Base Plate \t - \t 1')
+        const targetLine = lines[itemNoIdx + 2];
+        if (targetLine && !targetLine.startsWith('Title') && !targetLine.startsWith('FIXTURE') && !targetLine.startsWith('LINE')) {
+          const parts = targetLine.split(/\t+|\s{2,}/).map((s) => s.trim()).filter(Boolean);
+          name = parts[0] || '';
+          for (let p = 1; p < parts.length; p++) {
+            if (/^\d+$/.test(parts[p])) {
+              qty = parts[p];
+              break;
+            }
+          }
+        } else {
+          // Alternative layout (e.g. A4 formats):
+          // Title block order has standalone quantity before approver, and part name after approver
+          const qLine = lines[itemNoIdx + 3];
+          if (qLine) {
+            const qm = qLine.match(/^(\d+)/);
+            if (qm) qty = qm[1];
+          }
+          const nLine = lines[itemNoIdx + 6];
+          if (nLine && !nLine.startsWith(':')) {
+            name = nLine.trim();
+          }
         }
       }
 
-      // If not matched, try matching by Part Name
-      if (!matchedPart) {
-        matchedPart = cellParts.find((cp) => {
-          if (!cp.name || cp.name.length < 4) return false;
-          return pageText.toLowerCase().includes(cp.name.toLowerCase());
-        });
+      // Fallback for Name if not yet identified: look for Part Name line in page text
+      if (!name) {
+        const pnMatch = pageText.match(/Part\s*Name\s*[:\-]\s*([^\r\n]+)/i);
+        if (pnMatch && pnMatch[1]) {
+          name = pnMatch[1].trim();
+        }
       }
 
-      // If matched, assign the page index
-      if (matchedPart && !matchedPart.pdfPageIndex) {
-        matchedPart.pdfPageIndex = pageNum;
+      // Fallback for Qty if still '1': check for Qty : [0-9]+
+      if (qty === '1') {
+        const qm = pageText.match(/Qty\s*[:\s]*([0-9]+)/i);
+        if (qm && qm[1]) qty = qm[1].trim();
       }
+
+      const itemNo = sheetNum > 1 ? sheetNum - 1 : pageIdx;
+
+      items.push({
+        itemNo,
+        name: name.replace(/[:\-]/g, '').trim() || `Part Sheet #${sheetNum}`,
+        partNumber: partNumber || `CP-P${sheetNum}`,
+        qty,
+        material: material || undefined,
+        hardness: hardness || undefined,
+        heatTreatment: heatTreatment || undefined,
+        pdfPageIndex: pageNum,
+        isStandardPart: false,
+        description: `Sheet #${sheetNum}${material ? ` - Material: ${material}` : ''}${hardness ? ` - Hardness: ${hardness}` : ''}`,
+      });
     }
 
-    // For any manufactured cell parts without assigned page, assign sequentially if applicable
-    let currentPage = 2;
-    for (const cp of cellParts) {
-      if (!cp.isStandardPart && !cp.pdfPageIndex && currentPage <= pageTexts.length) {
-        cp.pdfPageIndex = currentPage++;
-      }
-    }
+    return items.sort((a, b) => a.itemNo - b.itemNo);
   }
 }
+

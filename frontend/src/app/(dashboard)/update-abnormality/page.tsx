@@ -166,30 +166,54 @@ export default function UpdateAbnormalityPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden relative">
+    <div className="flex-1 flex flex-col px-4 pb-3 pt-1.5 bg-white h-full overflow-hidden relative">
       {/* Toast */}
       {toast && (
-        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 text-xs font-semibold px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 max-w-sm ${toast.type === 'success' ? 'bg-orange-600 text-white' : 'bg-red-600 text-white'}`}>
+        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-50 text-xs font-semibold px-4 py-1.5 rounded-xl shadow-lg flex items-center gap-2 max-w-sm ${toast.type === 'success' ? 'bg-orange-600 text-white' : 'bg-red-600 text-white'}`}>
           <span className="material-symbols-outlined text-sm">{toast.type === 'success' ? 'check_circle' : 'error'}</span>
           {toast.msg}
           <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100">✕</button>
         </div>
       )}
 
-      {/* Header */}
-      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
-        <div>
-          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[#0063ff] text-lg">report_problem</span>
-            Update Abnormality
+      {/* Header & Tabs Inline */}
+      <header className="h-10 flex justify-between items-center border-b border-gray-150 mb-2 shrink-0">
+        <div className="flex items-center gap-4">
+          <h2 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[#0063ff] text-base">report_problem</span>
+            Monitoring Abnormality
           </h2>
+
+          {/* Tabs */}
+          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
+            <button
+              onClick={() => setActiveTab('form')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'form' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">add_circle</span>
+              Buat Laporan
+            </button>
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'list' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">list</span>
+              Daftar Laporan
+              {reports.filter((r) => r.status === 'OPEN').length > 0 && (
+                <span className="ml-1 bg-red-500 text-white text-[8px] px-1 py-0.25 rounded-full">
+                  {reports.filter((r) => r.status === 'OPEN').length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
+
         {activeTab === 'form' && isPic && (
           <button
             type="submit"
             form="abnormalityForm"
             disabled={submitting}
-            className="py-1.5 px-4 bg-[#0063ff] text-white rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="py-1 px-3.5 bg-[#0063ff] text-white rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             {submitting ? (
               <span className="material-symbols-outlined animate-spin text-sm">sync</span>
@@ -201,43 +225,20 @@ export default function UpdateAbnormalityPage() {
         )}
       </header>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-3 bg-gray-100 p-1 rounded-lg w-fit">
-        <button
-          onClick={() => setActiveTab('form')}
-          className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'form' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">add_circle</span>
-          Buat Laporan
-        </button>
-        <button
-          onClick={() => setActiveTab('list')}
-          className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'list' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">list</span>
-          Daftar Laporan
-          {reports.filter((r) => r.status === 'OPEN').length > 0 && (
-            <span className="ml-1 bg-red-500 text-white text-[8px] px-1 py-0.5 rounded-full">
-              {reports.filter((r) => r.status === 'OPEN').length}
-            </span>
-          )}
-        </button>
-      </div>
-
       {/* Tab: Form */}
       {activeTab === 'form' && (
-        <form id="abnormalityForm" onSubmit={handleSubmit} className="flex-1 grid grid-cols-2 gap-5 overflow-hidden mt-2 pr-1 pb-2">
+        <form id="abnormalityForm" onSubmit={handleSubmit} className="flex-1 grid grid-cols-2 gap-4 overflow-hidden pr-0.5 pb-0.5">
           
           {/* Left Column: Problem Definition */}
-          <div className="space-y-3.5 flex flex-col justify-start">
-            <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-2 flex items-center gap-1.5 shrink-0">
+          <div className="space-y-2 flex flex-col justify-start h-full">
+            <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-1 flex items-center gap-1.5 shrink-0">
               <span className="material-symbols-outlined text-[#0063ff] text-sm">assignment_late</span>
               Informasi Masalah
             </h3>
             
             {/* Item selector */}
-            <div>
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Pilih Item Jig/Fixture *</label>
+            <div className="shrink-0">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Pilih Item Jig/Fixture *</label>
               {(() => {
                 const selectedItem = items.find((item) => item.id === selectedItemId);
                 const filteredItems = items.filter((item) => {
@@ -340,14 +341,14 @@ export default function UpdateAbnormalityPage() {
               })()}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
               {/* Date Found */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tanggal Ditemukan *</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Tanggal Ditemukan *</label>
                 <input
                   type="date"
                   required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
                   value={dateFound}
                   onChange={(e) => setDateFound(e.target.value)}
                 />
@@ -355,12 +356,12 @@ export default function UpdateAbnormalityPage() {
 
               {/* Found By */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Ditemukan Oleh *</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Ditemukan Oleh *</label>
                 <input
                   type="text"
                   placeholder="Nama pelapor..."
                   required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
                   value={foundBy}
                   onChange={(e) => setFoundBy(e.target.value)}
                 />
@@ -368,15 +369,15 @@ export default function UpdateAbnormalityPage() {
             </div>
 
             {/* Type */}
-            <div>
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tipe Abnormality</label>
+            <div className="shrink-0">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Tipe Abnormality</label>
               <div className="flex gap-1.5 flex-wrap">
                 {ABNORMALITY_TYPES.map((t) => (
                   <button
                     key={t}
                     type="button"
                     onClick={() => setAbnType(t)}
-                    className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${abnType === t ? 'bg-[#0063ff] text-white border-[#0063ff]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#0063ff]'}`}
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all ${abnType === t ? 'bg-[#0063ff] text-white border-[#0063ff]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#0063ff]'}`}
                   >
                     {t}
                   </button>
@@ -386,11 +387,11 @@ export default function UpdateAbnormalityPage() {
 
             {/* Description */}
             <div className="flex-1 flex flex-col min-h-0">
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Problem Description (Deskripsi Masalah) *</label>
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Problem Description (Deskripsi Masalah) *</label>
               <textarea
                 placeholder="Detail gejala abnormal..."
                 required
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 min-h-[90px]"
+                className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
@@ -398,30 +399,30 @@ export default function UpdateAbnormalityPage() {
           </div>
 
           {/* Right Column: Actions & Root Causes */}
-          <div className="space-y-3.5 flex flex-col justify-start">
-            <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-2 flex items-center gap-1.5 shrink-0">
+          <div className="space-y-2 flex flex-col justify-start h-full">
+            <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-1 flex items-center gap-1.5 shrink-0">
               <span className="material-symbols-outlined text-[#0063ff] text-sm">build</span>
               Analisa & Tindakan
             </h3>
 
             {/* Root Cause */}
-            <div>
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Root Cause (Penyebab Akar)</label>
+            <div className="shrink-0">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Root Cause (Penyebab Akar)</label>
               <textarea
                 placeholder="Penyebab akar dari masalah..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[56px]"
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
                 value={rootCause}
                 onChange={(e) => setRootCause(e.target.value)}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
               {/* Temporary Action */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Temporary Action (Sementara)</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Temporary Action (Sementara)</label>
                 <textarea
                   placeholder="Solusi sementara..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[56px]"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
                   value={tempAction}
                   onChange={(e) => setTempAction(e.target.value)}
                 />
@@ -429,24 +430,24 @@ export default function UpdateAbnormalityPage() {
 
               {/* Corrective Action */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Corrective Action (Permanen)</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Corrective Action (Permanen)</label>
                 <textarea
                   placeholder="Solusi jangka panjang..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[56px]"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
                   value={correctiveAction}
                   onChange={(e) => setCorrectiveAction(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
               {/* Action PIC */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Action PIC</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Action PIC</label>
                 <input
                   type="text"
                   placeholder="Nama PIC Tindakan..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
                   value={actionPic}
                   onChange={(e) => setActionPic(e.target.value)}
                 />
@@ -454,9 +455,9 @@ export default function UpdateAbnormalityPage() {
 
               {/* Initial Status */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Status Laporan</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Status Laporan</label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700 font-bold"
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700 font-bold"
                   value={status}
                   onChange={(e) => setStatus(e.target.value as any)}
                 >
@@ -467,12 +468,12 @@ export default function UpdateAbnormalityPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 shrink-0">
               {/* Link to Revision */}
-              <div className="flex flex-col justify-center border border-gray-200 rounded-xl p-2.5 bg-gray-50">
+              <div className="flex flex-col justify-center border border-gray-200 rounded-lg p-1.5 bg-gray-50">
                 <label className="block text-[8px] font-bold text-gray-500 uppercase mb-0.5">Link to Revision?</label>
                 <div className="flex gap-3 text-xs">
-                  <label className="flex items-center gap-1 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
                     <input
                       type="radio"
                       name="linkToRevision"
@@ -481,7 +482,7 @@ export default function UpdateAbnormalityPage() {
                     />
                     <span>Ya</span>
                   </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
                     <input
                       type="radio"
                       name="linkToRevision"
@@ -494,10 +495,10 @@ export default function UpdateAbnormalityPage() {
               </div>
 
               {/* Link to Spare Replacement */}
-              <div className="flex flex-col justify-center border border-gray-200 rounded-xl p-2.5 bg-gray-50">
+              <div className="flex flex-col justify-center border border-gray-200 rounded-lg p-1.5 bg-gray-50">
                 <label className="block text-[8px] font-bold text-gray-500 uppercase mb-0.5">Link to Spare?</label>
                 <div className="flex gap-3 text-xs">
-                  <label className="flex items-center gap-1 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
                     <input
                       type="radio"
                       name="linkToSpare"
@@ -506,7 +507,7 @@ export default function UpdateAbnormalityPage() {
                     />
                     <span>Ya</span>
                   </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
                     <input
                       type="radio"
                       name="linkToSpare"
@@ -520,13 +521,13 @@ export default function UpdateAbnormalityPage() {
             </div>
 
             {/* Alert info banner */}
-            <div className="bg-orange-50 border border-orange-200 text-orange-850 text-[9px] p-2 rounded-lg flex items-start gap-1 font-medium leading-tight">
-              <span className="material-symbols-outlined text-[12px] mt-0.5">warning</span>
-              <span>Submit akan otomatis mengirimkan <strong>notifikasi darurat</strong> ke Section Head & Dept Head.</span>
+            <div className="bg-orange-50 border border-orange-200 text-orange-850 text-[9px] p-1.5 rounded-lg flex items-center gap-1 font-medium leading-tight shrink-0 mt-auto">
+              <span className="material-symbols-outlined text-[13px] text-orange-600">warning</span>
+              <span>Submit otomatis mengirimkan <strong>notifikasi darurat</strong> ke Section &amp; Dept Head.</span>
             </div>
             
             {!isPic && (
-              <p className="text-[9px] text-red-500 flex items-center gap-1">
+              <p className="text-[9px] text-red-500 flex items-center gap-1 shrink-0">
                 <span className="material-symbols-outlined text-[11px]">lock</span>
                 Hanya PIC Jig Fixture yang dapat membuat laporan.
               </p>
@@ -537,9 +538,9 @@ export default function UpdateAbnormalityPage() {
 
       {/* Tab: Report List */}
       {activeTab === 'list' && (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Detailed Filters row */}
-          <div className="flex flex-wrap gap-2.5 items-center bg-gray-50 p-2.5 rounded-xl mb-3 border border-gray-150 text-[10px]">
+          <div className="flex flex-wrap gap-2 items-center bg-gray-50 p-2 rounded-xl mb-2 border border-gray-150 text-[10px] shrink-0">
             {/* Search Reg ID */}
             <div className="flex-1 min-w-[150px] relative">
               <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">search</span>

@@ -90,30 +90,44 @@ export async function submitDecision(
   action: 'APPROVE' | 'REJECT',
   comment?: string
 ): Promise<ApprovalItem> {
-  try {
-    const endpoint = action === 'APPROVE' ? 'approve' : 'reject';
-    const res = await fetch(`${API_BASE_URL}/approvals/${id}/${endpoint}`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ comment: comment || '' }),
-    });
-    if (!res.ok) throw new Error('Failed to submit decision on server');
+  const endpoint = action === 'APPROVE' ? 'approve' : 'reject';
+  const res = await fetch(`${API_BASE_URL}/approvals/${id}/${endpoint}`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ comment: comment || '' }),
+  });
+  if (res.ok) {
     const result = await res.json();
     return mapBackendApproval(result);
-  } catch (error) {
-    console.warn(`[API] NestJS backend offline. Processing approval decision for ${id} in fallback storage.`, error);
-    const approvals = getLocalApprovals();
-    const index = approvals.findIndex(a => a.id === id);
-    if (index === -1) throw new Error('Approval request not found');
-
-    const updated = {
-      ...approvals[index],
-      status: action === 'APPROVE' ? ('APPROVED' as const) : ('REJECTED' as const),
-    };
-    approvals[index] = updated;
-    saveLocalApprovals(approvals);
-    return updated;
   }
+
+  // If server returned an error (e.g. 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found)
+  let errMsg = 'Failed to submit decision on server';
+  try {
+    const errData = await res.json();
+    if (errData?.message) {
+      errMsg = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message;
+    }
+  } catch {}
+
+  // If it's a real HTTP error from server, throw it directly with the server's explanation
+  if (res.status >= 400 && res.status < 500) {
+    throw new Error(errMsg);
+  }
+
+  // Only fall back to local storage if server is truly unreachable (network failure / 502 / 503)
+  console.warn(`[API] Server unavailable (${res.status}). Processing approval decision in fallback storage.`);
+  const approvals = getLocalApprovals();
+  const index = approvals.findIndex((a) => a.id === id);
+  if (index === -1) throw new Error(errMsg || 'Approval request not found');
+
+  const updated = {
+    ...approvals[index],
+    status: action === 'APPROVE' ? ('APPROVED' as const) : ('REJECTED' as const),
+  };
+  approvals[index] = updated;
+  saveLocalApprovals(approvals);
+  return updated;
 }
 
 // Submits a new approval request for an item (PIC role)

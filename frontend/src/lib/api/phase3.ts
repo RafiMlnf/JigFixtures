@@ -19,7 +19,7 @@ export async function fetchDesignItems() {
   const res = await fetch(`${BASE}/api/design/items`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
-  if (!res.ok) throw new Error('Failed to fetch design items');
+  if (!res.ok) throw new HttpError('Failed to fetch design items', res.status);
   return res.json();
 }
 
@@ -28,7 +28,7 @@ export async function fetchLinesAndProcesses() {
   const res = await fetch(`${BASE}/api/design/lines-processes`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
-  if (!res.ok) throw new Error('Failed to fetch lines and processes');
+  if (!res.ok) throw new HttpError('Failed to fetch lines and processes', res.status);
   return res.json();
 }
 
@@ -432,6 +432,23 @@ export async function approveRevision(approvalId: string, data?: { comment?: str
   return res.json();
 }
 
+/** Section Head or Dept Head rejects an item revision */
+export async function rejectRevision(approvalId: string, data: { comment: string }) {
+  const res = await fetch(`${BASE}/api/approvals/${approvalId}/reject`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menolak approval', res.status);
+  }
+  return res.json();
+}
+
 /** Download a single 1-page PDF for a design (Hal 1: Induk, Hal N: CellPart) */
 export async function downloadDesignPdfPage(designId: string, pageNumber: number, customFilename?: string) {
   const res = await fetch(`${BASE}/api/design/${designId}/pdf-page/${pageNumber}`, {
@@ -459,3 +476,32 @@ export async function downloadDesignPdfPage(designId: string, pageNumber: number
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
+
+/** Download full multi-page PDF with official legal stamp on every page */
+export async function downloadDesignPdfFull(designId: string, customFilename?: string) {
+  const res = await fetch(`${BASE}/api/design/${designId}/pdf-full`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal mengunduh Dokumen PDF Resmi', res.status);
+  }
+
+  const disposition = res.headers.get('content-disposition');
+  let filename = customFilename || `Drawing_Resmi.pdf`;
+  if (!customFilename && disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match?.[1]) filename = decodeURIComponent(match[1]);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
