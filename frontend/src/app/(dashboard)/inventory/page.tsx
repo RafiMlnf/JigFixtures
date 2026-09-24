@@ -28,7 +28,7 @@ interface CellPartInfo {
 }
 
 export default function InventoryPage() {
-  const { items, user, isLoading } = useApp();
+  const { items, user, isLoading, reloadData } = useApp();
   const router = useRouter();
 
   const [cellPartsMap, setCellPartsMap] = useState<Record<string, CellPartInfo[]>>({});
@@ -115,6 +115,7 @@ export default function InventoryPage() {
       setShowUsageModal(false);
       setUsageTarget(null);
       await loadMasterData();
+      if (reloadData) await reloadData();
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message || 'Gagal mencatat pemakaian.' });
     } finally {
@@ -144,6 +145,7 @@ export default function InventoryPage() {
       setShowRenewModal(false);
       setRenewTarget(null);
       await loadMasterData();
+      if (reloadData) await reloadData();
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message || 'Gagal memperbarui lifetime.' });
     } finally {

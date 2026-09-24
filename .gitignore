@@ -31,3 +31,7 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# MinIO data storage
+minio_data/
+

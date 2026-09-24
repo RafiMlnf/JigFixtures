@@ -64,8 +64,12 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     status: approvalDetail.status,
     color: approvalDetail.type === 'DESIGN_REVISION' ? 'bg-accent-orange border-orange-200/50' : 'bg-[#d8b4fe] border-purple-300/50',
     has3DRender: true,
-    sectionStatus: approvalDetail.sectionStatus,
-    deptStatus: approvalDetail.deptStatus,
+    sectionStatus: approvalDetail.sectionStatus || 'WAITING',
+    deptStatus: approvalDetail.deptStatus || 'WAITING',
+    sectionHead: approvalDetail.sectionHead,
+    deptHead: approvalDetail.deptHead,
+    sectionComment: approvalDetail.sectionComment,
+    deptComment: approvalDetail.deptComment,
   } : contextApproval;
 
   const approval = resolvedApproval;
@@ -137,9 +141,11 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const handleApproveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await approveRevision(approval.id, {
-        comment: comment.trim() || undefined,
-      });
+      if (processApproval) {
+        await processApproval(approval.id, 'APPROVE', comment.trim() || undefined);
+      } else {
+        await approveRevision(approval.id, { comment: comment.trim() || undefined });
+      }
       setToastMessage('Persetujuan berhasil diproses!');
       setShowApproveModal(false);
       setComment('');
@@ -153,7 +159,11 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     e.preventDefault();
     if (!comment.trim()) { alert('Reject comment is required.'); return; }
     try {
-      await rejectRevision(approval.id, { comment: comment.trim() });
+      if (processApproval) {
+        await processApproval(approval.id, 'REJECT', comment.trim());
+      } else {
+        await rejectRevision(approval.id, { comment: comment.trim() });
+      }
       setToastMessage('Request has been REJECTED.');
       setShowRejectModal(false);
       setComment('');
@@ -349,7 +359,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
           <div className="border border-gray-200 rounded-xl p-3 bg-white flex-1">
             <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest mb-3 flex items-center gap-1">
               <span className="material-symbols-outlined text-[10px]">event_note</span>
-              Approval Flow
+              Approval Flow (2 Tahap)
             </p>
             <div className="relative pl-4 border-l border-gray-200 space-y-3">
               {/* Step 1 - PIC Submit */}
@@ -357,38 +367,62 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                 <span className="absolute -left-[18px] top-0.5 bg-green-500 text-white rounded-full w-3 h-3 flex items-center justify-center text-[7px] font-black">✓</span>
                 <p className="text-[9px] font-bold text-gray-800 leading-none">PIC Submit</p>
                 <p className="text-[8px] text-gray-500 mt-0.5">{approval.author} &bull; {approval.date}</p>
+                {approval.note && (
+                  <p className="text-[8px] text-gray-600 italic mt-0.5 bg-gray-50 p-1 rounded border border-gray-150">&ldquo;{approval.note}&rdquo;</p>
+                )}
               </div>
               {/* Step 2 - Section Head */}
               <div className="relative">
                 <span className={`absolute -left-[18px] top-0.5 rounded-full w-3 h-3 flex items-center justify-center text-[7px] font-black text-white ${
-                  approval.status === 'APPROVED' ? 'bg-green-500' :
-                  approval.status === 'REJECTED' ? 'bg-red-500' :
+                  approval.sectionStatus === 'APPROVED' ? 'bg-green-500' :
+                  approval.sectionStatus === 'REJECTED' ? 'bg-red-500' :
                   'bg-yellow-400 animate-pulse'
                 }`}>
-                  {approval.status === 'APPROVED' ? '✓' : approval.status === 'REJECTED' ? '✗' : '…'}
+                  {approval.sectionStatus === 'APPROVED' ? '✓' : approval.sectionStatus === 'REJECTED' ? '✗' : '…'}
                 </span>
                 <p className="text-[9px] font-bold text-gray-800 leading-none">Section Head</p>
                 <p className={`text-[8px] mt-0.5 font-semibold ${
-                  approval.status === 'WAITING' ? 'text-yellow-600' :
-                  approval.status === 'APPROVED' ? 'text-green-600' : 'text-red-600'
+                  approval.sectionStatus === 'WAITING' ? 'text-yellow-600' :
+                  approval.sectionStatus === 'APPROVED' ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  {approval.status === 'WAITING' ? 'Menunggu keputusan' :
-                   approval.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
+                  {approval.sectionStatus === 'WAITING' ? 'Menunggu review Section Head' :
+                   approval.sectionStatus === 'APPROVED' ? (approval.sectionHead?.name ? `Disetujui oleh ${approval.sectionHead.name}` : 'Disetujui') :
+                   'Ditolak'}
                 </p>
+                {approval.sectionComment && (
+                  <p className="text-[8px] text-gray-600 italic mt-0.5 bg-gray-50 p-1 rounded border border-gray-150">&ldquo;{approval.sectionComment}&rdquo;</p>
+                )}
               </div>
               {/* Step 3 - Dept Head */}
               <div className="relative">
                 <span className={`absolute -left-[18px] top-0.5 rounded-full w-3 h-3 flex items-center justify-center text-[7px] font-black text-white ${
-                  approval.status === 'APPROVED' ? 'bg-green-500' : 'bg-gray-300'
+                  approval.deptStatus === 'APPROVED' ? 'bg-green-500' :
+                  approval.deptStatus === 'REJECTED' ? 'bg-red-500' :
+                  approval.sectionStatus === 'APPROVED' ? 'bg-yellow-400 animate-pulse' :
+                  'bg-gray-300'
                 }`}>
-                  {approval.status === 'APPROVED' ? '✓' : '-'}
+                  {approval.deptStatus === 'APPROVED' ? '✓' : approval.deptStatus === 'REJECTED' ? '✗' : approval.sectionStatus === 'APPROVED' ? '…' : '-'}
                 </span>
-                <p className={`text-[9px] font-bold leading-none ${approval.status === 'APPROVED' ? 'text-gray-800' : 'text-gray-400'}`}>
+                <p className={`text-[9px] font-bold leading-none ${
+                  approval.deptStatus === 'APPROVED' || (approval.sectionStatus === 'APPROVED' && approval.deptStatus === 'WAITING')
+                    ? 'text-gray-800' : 'text-gray-400'
+                }`}>
                   Dept Head
                 </p>
-                <p className="text-[8px] mt-0.5 text-gray-400">
-                  {approval.status === 'APPROVED' ? <span className="text-green-600 font-semibold">Disetujui</span> : 'Pending Section Head'}
+                <p className={`text-[8px] mt-0.5 font-semibold ${
+                  approval.deptStatus === 'APPROVED' ? 'text-green-600' :
+                  approval.deptStatus === 'REJECTED' ? 'text-red-600' :
+                  approval.sectionStatus === 'APPROVED' ? 'text-yellow-600' :
+                  'text-gray-400'
+                }`}>
+                  {approval.deptStatus === 'APPROVED' ? (approval.deptHead?.name ? `Disetujui oleh ${approval.deptHead.name}` : 'Disetujui') :
+                   approval.deptStatus === 'REJECTED' ? 'Ditolak' :
+                   approval.sectionStatus === 'APPROVED' ? 'Menunggu review Dept Head' :
+                   'Pending Section Head'}
                 </p>
+                {approval.deptComment && (
+                  <p className="text-[8px] text-gray-600 italic mt-0.5 bg-gray-50 p-1 rounded border border-gray-150">&ldquo;{approval.deptComment}&rdquo;</p>
+                )}
               </div>
             </div>
           </div>
@@ -437,26 +471,62 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Action buttons */}
+          {/* Action buttons with strict role-based & sequential flow control */}
           <div className="flex-1 flex flex-col gap-2">
             {approval.status === 'WAITING' ? (
-              isApprover ? (
-                <>
-                  <button
-                    onClick={() => { setComment(''); setShowApproveModal(true); }}
-                    className="w-full py-2 bg-green-600 text-white rounded-xl text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-sm">check_circle</span>
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => { setComment(''); setShowRejectModal(true); }}
-                    className="w-full py-2 border border-red-400 text-red-600 rounded-xl text-[10px] font-bold hover:bg-red-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span className="material-symbols-outlined text-sm">cancel</span>
-                    Reject
-                  </button>
-                </>
+              user?.role === 'PE_SECTION_HEAD' ? (
+                approval.sectionStatus === 'WAITING' ? (
+                  <>
+                    <button
+                      onClick={() => { setComment(''); setShowApproveModal(true); }}
+                      className="w-full py-2 bg-green-600 text-white rounded-xl text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                      Setujui (Section Head)
+                    </button>
+                    <button
+                      onClick={() => { setComment(''); setShowRejectModal(true); }}
+                      className="w-full py-2 border border-red-400 text-red-600 rounded-xl text-[10px] font-bold hover:bg-red-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">cancel</span>
+                      Tolak
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex-1 bg-green-50 border border-green-200 text-green-800 rounded-xl p-3 text-center text-[9px] font-bold flex flex-col items-center justify-center gap-1">
+                    <span className="material-symbols-outlined text-xl text-green-600">check_circle</span>
+                    Anda telah menyetujui. Menunggu review Dept Head.
+                  </div>
+                )
+              ) : user?.role === 'PE_DEPT_HEAD' ? (
+                approval.sectionStatus !== 'APPROVED' ? (
+                  <div className="flex-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center text-[9px] font-bold flex flex-col items-center justify-center gap-1">
+                    <span className="material-symbols-outlined text-xl text-amber-600">lock_clock</span>
+                    Menunggu persetujuan Section Head terlebih dahulu sebelum Anda dapat mereview.
+                  </div>
+                ) : approval.deptStatus === 'WAITING' ? (
+                  <>
+                    <button
+                      onClick={() => { setComment(''); setShowApproveModal(true); }}
+                      className="w-full py-2 bg-green-600 text-white rounded-xl text-[10px] font-bold hover:bg-green-700 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                      Setujui Final (Dept Head)
+                    </button>
+                    <button
+                      onClick={() => { setComment(''); setShowRejectModal(true); }}
+                      className="w-full py-2 border border-red-400 text-red-600 rounded-xl text-[10px] font-bold hover:bg-red-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-sm">cancel</span>
+                      Tolak
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex-1 bg-green-50 border border-green-200 text-green-800 rounded-xl p-3 text-center text-[9px] font-bold flex flex-col items-center justify-center gap-1">
+                    <span className="material-symbols-outlined text-xl text-green-600">check_circle</span>
+                    Keputusan final Dept Head telah diberikan.
+                  </div>
+                )
               ) : (
                 <div className="flex-1 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl p-3 text-center text-[9px] font-bold flex flex-col items-center justify-center gap-1">
                   <span className="material-symbols-outlined text-xl text-yellow-500">schedule</span>
@@ -466,7 +536,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             ) : (
               <div className="flex-1 bg-gray-100 rounded-xl p-3 text-center text-[9px] font-bold text-gray-500 border border-gray-200 flex flex-col items-center justify-center gap-1">
                 <span className="material-symbols-outlined text-xl">gavel</span>
-                Decision finalized
+                Decision finalized ({approval.status})
               </div>
             )}
           </div>

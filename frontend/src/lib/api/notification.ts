@@ -67,3 +67,18 @@ export async function markNotificationAsRead(id: string): Promise<void> {
     saveLocalNotifications(updated);
   }
 }
+
+export async function markAllNotificationsAsRead(): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to mark all as read on server');
+  } catch (error) {
+    console.warn('[API] NestJS backend offline. Marking all notifications as read in fallback storage.', error);
+    const notifs = getLocalNotifications();
+    const updated = notifs.map((n) => ({ ...n, isRead: true }));
+    saveLocalNotifications(updated);
+  }
+}

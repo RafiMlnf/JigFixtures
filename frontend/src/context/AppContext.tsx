@@ -22,6 +22,19 @@ export interface JigFixtureItem {
   actualStock: number;
   newVisualDesign?: string; // 3D model render image
   lifecycleStatus?: string;
+  // Lifetime tracking fields
+  lifetimeDays?: number;
+  lifetimeType?: 'DUAL' | 'USAGE' | 'DAYS';
+  maxUsage?: number;
+  currentUsage?: number;
+  usageRemaining?: number;
+  usagePercent?: number;
+  daysRemaining?: number;
+  dueDate?: string;
+  lifetimeStatus?: 'OVERDUE' | 'WARNING' | 'SAFE';
+  dayStatus?: 'OVERDUE' | 'WARNING' | 'SAFE';
+  usageStatus?: 'OVERDUE' | 'WARNING' | 'SAFE';
+  triggerReason?: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE';
 }
 
 export interface ApprovalItem {
@@ -256,8 +269,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setApprovals((prev) =>
         prev.map((approval) => (approval.id === id ? updated : approval))
       );
-    } catch (e) {
+    } catch (e: any) {
+      // Revert optimistic update on failure
+      setApprovals((prev) =>
+        prev.map((approval) =>
+          approval.id === id
+            ? { ...approval, status: 'WAITING' as const }
+            : approval
+        )
+      );
       console.error('[API Error] Failed to sync approval decision with server:', e);
+      throw e; // Re-throw so UI caller can show error feedback
     }
   };
 

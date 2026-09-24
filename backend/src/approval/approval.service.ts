@@ -57,6 +57,7 @@ export class ApprovalService {
         designId: dto.itemId,
         userId: sh.id,
       })),
+      skipDuplicates: true,
     });
 
     return approval;
@@ -70,38 +71,12 @@ export class ApprovalService {
       deptHead: true,
     };
 
-    let approvals;
-
-    if (role === 'PE_SECTION_HEAD') {
-      approvals = await this.prisma.approval.findMany({
-        where: {
-          OR: [
-            { sectionStatus: 'WAITING' },
-            { sectionHeadId: userId },
-          ],
-        },
-        include,
-        orderBy: { createdAt: 'desc' },
-      });
-    } else if (role === 'PE_DEPT_HEAD') {
-      approvals = await this.prisma.approval.findMany({
-        where: {
-          sectionStatus: 'APPROVED',
-          OR: [
-            { deptStatus: 'WAITING' },
-            { deptHeadId: userId },
-          ],
-        },
-        include,
-        orderBy: { createdAt: 'desc' },
-      });
-    } else {
-      // PIC or Tamu sees all submissions
-      approvals = await this.prisma.approval.findMany({
-        include,
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+    // Return all submissions so Section Head, Dept Head, and PIC have full visibility
+    // and can see the pipeline progress across sequential stages
+    const approvals = await this.prisma.approval.findMany({
+      include,
+      orderBy: { createdAt: 'desc' },
+    });
 
     // Map fields to match legacy design schema
     return approvals.map((appr) => ({
@@ -210,6 +185,7 @@ export class ApprovalService {
             designId: approval.designId,
             userId: dh.id,
           })),
+          skipDuplicates: true,
         });
 
         return {
@@ -297,7 +273,7 @@ export class ApprovalService {
         await this.prisma.design.update({
           where: { id: approval.designId },
           data: {
-            revStatus: String(parseInt(approval.design.revStatus || '0', 10) + 1),
+            revStatus: latestHistory?.revStatus || String(parseInt(approval.design.revStatus || '0', 10) + 1),
             designDateNew: new Date(),
             vendorId: latestHistory?.vendorId || undefined,
           },
@@ -312,7 +288,7 @@ export class ApprovalService {
         // Notify Submitter
         await this.prisma.notification.create({
           data: {
-            type: 'INVENTORY_GREEN',
+            type: 'WAITING_APPROVAL',
             title: '✅ Revision Approved (Completed)',
             message: `Your revision request for ${approval.design.noReg} was fully approved and updated in the system.`,
             designId: approval.designId,

@@ -114,6 +114,11 @@ model Design {
   maxUsage          Int            @default(500) @map("max_usage") // Batas aus siklus pemakaian (default 500x)
   currentUsage      Int            @default(0) @map("current_usage") // Counter pemakaian aktual
 
+  // TPM Scheduling — kapan lifetime jig ini akan diatur di modul TPM
+  tpmScheduleStart  DateTime? @map("tpm_schedule_start")   // Tanggal mulai masuk jadwal TPM
+  tpmScheduleDeadline DateTime? @map("tpm_schedule_deadline") // Deadline harus sudah di-set lifetime di TPM
+  tpmLifetimeSetAt  DateTime? @map("tpm_lifetime_set_at")  // Waktu lifetime sudah di-set di TPM (null = belum)
+
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
 
@@ -316,6 +321,11 @@ model CellPart {
 
   // PDF drawing page reference
   pdfPageIndex    Int?      @map("pdf_page_index")
+
+  // TPM Scheduling — kapan lifetime cell part ini akan diatur di modul TPM
+  tpmScheduleStart    DateTime? @map("tpm_schedule_start")
+  tpmScheduleDeadline DateTime? @map("tpm_schedule_deadline")
+  tpmLifetimeSetAt    DateTime? @map("tpm_lifetime_set_at")
 
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")

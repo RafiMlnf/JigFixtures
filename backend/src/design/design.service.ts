@@ -78,7 +78,7 @@ export class DesignService {
     const updated = await this.prisma.design.update({
       where: { id: itemId },
       data: {
-        revStatus: dto.revStatus,
+        ...(dto.revStatus !== undefined && { revStatus: dto.revStatus }),
         designDateNew: dto.designDateNew ? new Date(dto.designDateNew) : undefined,
         lifetimeDays: dto.lifetimeDays !== undefined ? parseInt(String(dto.lifetimeDays), 10) : undefined,
         lifetimeType: dto.lifetimeType,
@@ -113,7 +113,7 @@ export class DesignService {
         type: 'DESIGN_REVISION',
         status: 'WAITING',
         designId: item.id,
-        revisionNote: dto.revisionNote || `Revisi desain ${item.noReg} — Rev ${dto.revStatus}`,
+        revisionNote: dto.revisionNote || `Revisi desain ${item.noReg} — Rev ${dto.revStatus || item.revStatus}`,
         submittedById: userId,
         sectionHeadId: sectionHead?.id,
         deptHeadId: deptHead?.id,
@@ -127,8 +127,8 @@ export class DesignService {
     await this.prisma.revisionHistory.create({
       data: {
         designId: item.id,
-        revStatus: dto.revStatus,
-        description: dto.revisionNote || `Update Rev ${dto.revStatus}`,
+        revStatus: dto.revStatus || item.revStatus || '0',
+        description: dto.revisionNote || `Update Rev ${dto.revStatus || item.revStatus}`,
         changedById: userId,
         vendorId: dto.vendorId || undefined,
         poNumber: dto.poNumber || undefined,

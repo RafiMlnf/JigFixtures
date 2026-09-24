@@ -3,9 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { canEdit, type AppRole } from '@/lib/rbac';
+import {
+  fetchNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  NotificationItem,
+} from '@/lib/api/notification';
 import logoImg from '../../../assets/img/mtmwide.png';
 
 interface MenuItem {
@@ -66,10 +72,60 @@ const getRoleLabel = (role?: AppRole | null) => {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, isLoading, approvals } = useApp();
   const role = user?.role ?? null;
 
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifPopover, setShowNotifPopover] = useState(false);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const loadNotifications = async () => {
+    if (!user) return;
+    try {
+      const list = await fetchNotifications();
+      setNotifications(list || []);
+    } catch (e) {
+      console.warn('Failed to load notifications', e);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllNotificationsAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    } catch (e) {
+      console.warn('Failed to mark all notifications read', e);
+    }
+  };
+
+  const handleNotificationClick = async (notif: NotificationItem) => {
+    if (!notif.isRead) {
+      markNotificationAsRead(notif.id).catch(() => {});
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      );
+    }
+    setShowNotifPopover(false);
+
+    if (notif.type === 'WAITING_APPROVAL') {
+      router.push('/approval-center');
+    } else if (notif.type === 'INVENTORY_RED' || notif.type === 'INVENTORY_YELLOW') {
+      router.push('/inventory');
+    } else if (notif.type === 'ABNORMALITY_OPEN') {
+      router.push('/update-abnormality');
+    }
+  };
 
   useEffect(() => {
     // Read saved preference
@@ -240,11 +296,11 @@ export default function Sidebar() {
           </Link>
         )}
 
-        {/* User Profile and Logout */}
+        {/* User Profile, Notifications and Logout */}
         <div
           className={`flex items-center ${
             isCollapsed ? 'justify-center p-1.5 w-10 h-10' : 'justify-between p-2'
-          } bg-surface-container-highest/20 border border-outline-variant/30 rounded-xl mt-1`}
+          } bg-surface-container-highest/20 border border-outline-variant/30 rounded-xl mt-1 relative`}
         >
           <div
             className="flex items-center gap-2 min-w-0"
@@ -264,16 +320,105 @@ export default function Sidebar() {
               </div>
             )}
           </div>
-          {!isCollapsed && (
+          <div className="flex items-center gap-1 shrink-0 ml-1">
+            {/* Notification Bell */}
             <button
-              onClick={logout}
-              className="text-on-surface-variant hover:text-red-500 transition-colors cursor-pointer shrink-0 ml-1.5 flex items-center"
-              title="Logout"
+              type="button"
+              onClick={() => setShowNotifPopover(!showNotifPopover)}
+              className="relative text-on-surface-variant hover:text-blue-500 transition-colors cursor-pointer flex items-center p-1 rounded-lg hover:bg-white/10"
+              title={`Notifikasi (${unreadCount} belum dibaca)`}
+              aria-label="Notifications"
             >
-              <span className="material-symbols-outlined text-[16px]">logout</span>
+              <span className="material-symbols-outlined text-[16px]">notifications</span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[7px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
-          )}
+
+            {!isCollapsed && (
+              <button
+                onClick={logout}
+                className="text-on-surface-variant hover:text-red-500 transition-colors cursor-pointer flex items-center p-1 rounded-lg hover:bg-white/10"
+                title="Logout"
+                aria-label="Logout"
+              >
+                <span className="material-symbols-outlined text-[16px]">logout</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Notification Popover Dropdown */}
+        {showNotifPopover && (
+          <div className="absolute bottom-16 left-full ml-3 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 text-xs z-50 animate-in fade-in duration-150 text-gray-800">
+            <div className="flex items-center justify-between border-b border-gray-150 pb-2 mb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-600 text-[16px]">notifications</span>
+                <span className="font-bold text-[11px] text-gray-800">Notifikasi</span>
+                {unreadCount > 0 && (
+                  <span className="bg-red-100 text-red-700 text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+                    {unreadCount} baru
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleMarkAllRead}
+                    className="text-[9px] text-blue-650 hover:underline font-semibold cursor-pointer"
+                  >
+                    Baca Semua
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowNotifPopover(false)}
+                  className="text-gray-400 hover:text-gray-600 cursor-pointer flex"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+              {notifications.length === 0 ? (
+                <div className="py-6 text-center text-gray-400 italic text-[10px]">
+                  Tidak ada notifikasi saat ini.
+                </div>
+              ) : (
+                notifications.map((notif) => (
+                  <div
+                    key={notif.id}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+                      notif.isRead
+                        ? 'bg-gray-50 border-gray-150 text-gray-600 hover:bg-gray-100/70'
+                        : 'bg-blue-50/70 border-blue-200 text-gray-800 hover:bg-blue-100/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <span className="text-[10px] font-bold text-gray-800 leading-tight line-clamp-1">
+                        {notif.title}
+                      </span>
+                      {!notif.isRead && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-gray-600 line-clamp-2 leading-relaxed">
+                      {notif.message}
+                    </p>
+                    <span className="text-[8px] text-gray-400 mt-1 block">
+                      {new Date(notif.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} &bull; {new Date(notif.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

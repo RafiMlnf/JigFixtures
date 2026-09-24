@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useApp, JigFixtureItem, ApprovalItem } from '@/context/AppContext';
 import { fetchMasterList, fetchCellPartReminders, renewCellPart } from '@/lib/api/phase3';
+import { canApprove } from '@/lib/rbac';
 
 interface LifetimeItem {
   id: string;
@@ -27,6 +28,7 @@ interface LifetimeItem {
 
 export default function DashboardPage() {
   const { user, items, approvals, isLoading: isAppLoading, processApproval } = useApp();
+  const userCanApprove = canApprove(user?.role);
 
   const [masterList, setMasterList] = useState<any[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -300,13 +302,23 @@ export default function DashboardPage() {
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
   const handleQuickDecision = async (taskId: string, action: 'APPROVE' | 'REJECT') => {
+    if (!userCanApprove) {
+      alert('Hanya Section Head atau Dept Head yang dapat menyetujui/menolak approval.');
+      return;
+    }
     try {
       setProcessingTaskId(taskId);
       await processApproval(taskId, action, action === 'APPROVE' ? 'Quick approval from dashboard' : 'Declined from dashboard');
       setActionSuccessMsg(`Task berhasil di-${action === 'APPROVE' ? 'setujui' : 'tolak'}.`);
       setTimeout(() => setActionSuccessMsg(null), 3000);
     } catch (err: any) {
-      alert(`Gagal memproses approval: ${err.message || 'Error server'}`);
+      const errMsg = err?.message || 'Error server';
+      if (errMsg.toLowerCase().includes('section head') || errMsg.toLowerCase().includes('dept head')) {
+        setActionSuccessMsg(null);
+        alert('Tidak bisa proses: ' + errMsg);
+      } else {
+        alert(`Gagal memproses approval: ${errMsg}`);
+      }
     } finally {
       setProcessingTaskId(null);
     }
@@ -565,8 +577,8 @@ export default function DashboardPage() {
                               <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
                             </Link>
 
-                            {/* Direct Action Buttons */}
-                            {isWaiting ? (
+                            {/* Direct Action Buttons - hanya tampil untuk approver */}
+                            {isWaiting && userCanApprove ? (
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
@@ -591,7 +603,7 @@ export default function DashboardPage() {
                               </div>
                             ) : (
                               <span className="text-[8px] font-semibold text-slate-400 italic">
-                                Selesai
+                                {isWaiting && !userCanApprove ? 'Menunggu approver' : 'Selesai'}
                               </span>
                             )}
                           </div>
