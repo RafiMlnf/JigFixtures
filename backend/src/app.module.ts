@@ -11,9 +11,10 @@ import { DesignModule } from './design/design.module';
 import { AbnormalityModule } from './abnormality/abnormality.module';
 import { UploadModule } from './upload/upload.module';
 import { CellPartModule } from './cell-part/cell-part.module';
+import { TpmModule } from './tpm/tpm.module';
 
 @Module({
-  imports: [AuthModule, UserModule, InventoryModule, NotificationModule, ApprovalModule, DesignModule, AbnormalityModule, UploadModule, CellPartModule],
+  imports: [AuthModule, UserModule, InventoryModule, NotificationModule, ApprovalModule, DesignModule, AbnormalityModule, UploadModule, CellPartModule, TpmModule],
   controllers: [AppController],
   providers: [AppService, PrismaService],
 })

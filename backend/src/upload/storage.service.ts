@@ -67,18 +67,18 @@ export class StorageService implements OnModuleInit {
         const port = process.env.MINIO_PORT || '9000';
         return `${protocol}://${host}:${port}/${this.bucketName}/${sanitizedFilename}`;
       } catch (err) {
-        console.error('MinIO upload buffer error:', err);
-        throw new InternalServerErrorException('Gagal upload buffer ke object storage');
+        console.warn('MinIO upload unreachable/error, falling back to local disk storage:', (err as any)?.message || err);
+        // Fallback to local storage so upload does not fail!
       }
-    } else {
-      const uploadsDir = join(process.cwd(), 'uploads');
-      if (!existsSync(uploadsDir)) {
-        mkdirSync(uploadsDir, { recursive: true });
-      }
-      const filePath = join(uploadsDir, sanitizedFilename);
-      writeFileSync(filePath, buffer);
-      return `/uploads/${sanitizedFilename}`;
     }
+
+    const uploadsDir = join(process.cwd(), 'uploads');
+    if (!existsSync(uploadsDir)) {
+      mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filePath = join(uploadsDir, sanitizedFilename);
+    writeFileSync(filePath, buffer);
+    return `/uploads/${sanitizedFilename}`;
   }
 
   async getFileBuffer(pathOrUrl: string): Promise<Buffer | null> {

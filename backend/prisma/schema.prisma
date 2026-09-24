@@ -129,6 +129,8 @@ model Design {
   notifications     Notification[]
   revisionHistories RevisionHistory[]
   cellParts         CellPart[]
+  tpmChecklists     TpmChecklist[]
+  tpmLogs           TpmMaintenanceLog[]
 
   @@map("design")
 }
@@ -330,5 +332,66 @@ model CellPart {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
+  tpmChecklists   TpmChecklist[]
+  tpmLogs         TpmMaintenanceLog[]
+
   @@map("cell_part")
 }
+
+// ==========================================
+// TPM (TOTAL PRODUCTIVE MAINTENANCE)
+// ==========================================
+
+model TpmChecklist {
+  id                String       @id @default(cuid())
+  designId          String       @map("design_id")
+  design            Design       @relation(fields: [designId], references: [id], onDelete: Cascade)
+  cellPartId        String?      @map("cell_part_id")
+  cellPart          CellPart?    @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+
+  inspectorName     String       @map("inspector_name")
+  shift             String       @default("Shift 1") // Shift 1, Shift 2, Shift 3, Non-Shift
+  checkDate         DateTime     @default(now()) @map("check_date")
+  overallResult     String       @default("OK") @map("overall_result") // OK, NG
+
+  cleaningStatus    String       @default("OK") @map("cleaning_status") // OK, NG, NA
+  locatorPinStatus  String       @default("OK") @map("locator_pin_status") // OK, NG, NA
+  clampingStatus    String       @default("OK") @map("clamping_status") // OK, NG, NA
+  sensorStatus      String       @default("OK") @map("sensor_status") // OK, NG, NA
+  boltsStatus       String       @default("OK") @map("bolts_status") // OK, NG, NA
+  lubricationStatus String       @default("OK") @map("lubrication_status") // OK, NG, NA
+
+  notes             String?
+  linkToAbnormality Boolean      @default(false) @map("link_to_abnormality")
+  abnormalityId     String?      @map("abnormality_id")
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@map("tpm_checklist")
+}
+
+model TpmMaintenanceLog {
+  id                String       @id @default(cuid())
+  designId          String       @map("design_id")
+  design            Design       @relation(fields: [designId], references: [id], onDelete: Cascade)
+  cellPartId        String?      @map("cell_part_id")
+  cellPart          CellPart?    @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+
+  actionType        String       @default("PREVENTIVE") @map("action_type") // PREVENTIVE, CORRECTIVE, RENEWAL, CALIBRATION, OVERHAUL
+  title             String
+  description       String
+  performedBy       String       @map("performed_by")
+  performedAt       DateTime     @default(now()) @map("performed_at")
+  durationMinutes   Int?         @default(60) @map("duration_minutes")
+  partsReplaced     String?      @map("parts_replaced")
+  status            String       @default("COMPLETED") // COMPLETED, IN_PROGRESS, SCHEDULED
+  cost              Float?       @default(0)
+  resetLifetime     Boolean      @default(false) @map("reset_lifetime")
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@map("tpm_maintenance_log")
+}
+
