@@ -505,3 +505,25 @@ export async function downloadDesignPdfFull(designId: string, customFilename?: s
   window.URL.revokeObjectURL(url);
 }
 
+/** Fetch full PDF blob for batch ZIP download */
+export async function fetchDesignPdfBlob(designId: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${BASE}/api/design/${designId}/pdf-full`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal mengunduh Dokumen PDF Resmi', res.status);
+  }
+
+  const disposition = res.headers.get('content-disposition');
+  let filename = `Drawing_Resmi_${designId}.pdf`;
+  if (disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match?.[1]) filename = decodeURIComponent(match[1]);
+  }
+
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+

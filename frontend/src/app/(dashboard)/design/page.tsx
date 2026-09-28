@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, fetchDesignPdfBlob } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 
 interface DocumentInfo {
@@ -247,6 +247,17 @@ export function DesignPageContent() {
   const [revFilter, setRevFilter] = useState('All');
   const [inventoryFilter, setInventoryFilter] = useState('All');
   const [abnormalityFilter, setAbnormalityFilter] = useState('All');
+
+  // Pagination & Multi-Page Selection States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number | 'All'>(25);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exportScope, setExportScope] = useState<'selected' | 'all'>('selected');
+  const [isZippingPdf, setIsZippingPdf] = useState(false);
+  const [zipProgress, setZipProgress] = useState<{ current: number; total: number } | null>(null);
+  const [showSelectDropdown, setShowSelectDropdown] = useState(false);
+  const selectDropdownRef = React.useRef<HTMLDivElement>(null);
+  const headerCheckboxRef = React.useRef<HTMLInputElement>(null);
 
   // Column export selector checklist
   const [showExportModal, setShowExportModal] = useState(false);
@@ -838,14 +849,160 @@ export function DesignPageContent() {
     return matchesSearch && matchesLine && matchesProcess && matchesType && matchesVendor && matchesLifecycle && matchesRev && matchesInv && matchesAbn;
   });
 
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    search,
+    lineFilter,
+    processFilter,
+    typeFilter,
+    vendorFilter,
+    lifecycleFilter,
+    revFilter,
+    inventoryFilter,
+    abnormalityFilter,
+    pageSize,
+  ]);
+
+  // Click outside listener for table selection dropdown
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (selectDropdownRef.current && !selectDropdownRef.current.contains(e.target as Node)) {
+        setShowSelectDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // ─── Pagination Calculations ────────────────────────────────────────────────
+  const totalItems = filteredItems.length;
+  const totalPages = pageSize === 'All' ? 1 : Math.max(1, Math.ceil(totalItems / (pageSize as number)));
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedItems = React.useMemo(() => {
+    if (pageSize === 'All') return filteredItems;
+    const start = (validCurrentPage - 1) * (pageSize as number);
+    return filteredItems.slice(start, start + (pageSize as number));
+  }, [filteredItems, validCurrentPage, pageSize]);
+
+  // Checkbox helpers
+  const allCurrentPageSelected =
+    paginatedItems.length > 0 && paginatedItems.every((item) => selectedIds.has(item.id));
+
+  const isSomeCurrentPageSelected =
+    paginatedItems.some((item) => selectedIds.has(item.id)) && !allCurrentPageSelected;
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = isSomeCurrentPageSelected;
+    }
+  }, [isSomeCurrentPageSelected]);
+
+  const toggleSelectItem = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectCurrentPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allCurrentPageSelected) {
+        paginatedItems.forEach((item) => next.delete(item.id));
+      } else {
+        paginatedItems.forEach((item) => next.add(item.id));
+      }
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(filteredItems.map((item) => item.id)));
+    setShowSelectDropdown(false);
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setShowSelectDropdown(false);
+  };
+
+  // ─── Batch Download PDF Drawings (.zip) ───────────────────────────────────
+  const handleBatchDownloadPdfZip = async () => {
+    const selectedItemsList = items.filter((item) => selectedIds.has(item.id));
+    const itemsWithApprovedPdf = selectedItemsList.filter((item) => {
+      const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
+      return doc && doc.approvalStatus === 'APPROVED';
+    });
+
+    if (itemsWithApprovedPdf.length === 0) {
+      alert('Tidak ada item terpilih yang memiliki Drawing PDF Resmi (Approved).');
+      return;
+    }
+
+    setIsZippingPdf(true);
+    setZipProgress({ current: 0, total: itemsWithApprovedPdf.length });
+
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      const folderName = `Drawing_Resmi_${new Date().toISOString().split('T')[0]}`;
+      const folder = zip.folder(folderName);
+
+      for (let i = 0; i < itemsWithApprovedPdf.length; i++) {
+        const item = itemsWithApprovedPdf[i];
+        setZipProgress({ current: i + 1, total: itemsWithApprovedPdf.length });
+        try {
+          const { blob, filename } = await fetchDesignPdfBlob(item.id);
+          const safeNoReg = item.noReg.replace(/[/\\?%*:|"<>]/g, '_');
+          const saveName = `${safeNoReg}_${filename}`;
+          folder?.file(saveName, blob);
+        } catch (err) {
+          console.error(`Gagal mengunduh PDF untuk ${item.noReg}`, err);
+        }
+      }
+
+      const zipContent = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipContent);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Batch_Drawing_JigFixture_${selectedIds.size}_Items_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setToast({
+        type: 'success',
+        msg: `Berhasil mengunduh ${itemsWithApprovedPdf.length} Drawing PDF dalam format ZIP!`,
+      });
+    } catch (err: any) {
+      console.error('Failed to generate ZIP:', err);
+      alert('Gagal mengemas file PDF ke dalam ZIP. Silakan coba lagi.');
+    } finally {
+      setIsZippingPdf(false);
+      setZipProgress(null);
+    }
+  };
+
   // Unique list derivations for select inputs
   const uniqueLines = Array.from(new Set(items.map((i) => i.lineProduct).filter(Boolean)));
   const uniqueProcesses = Array.from(new Set(items.map((i) => i.process).filter(Boolean)));
   const uniqueRevs = Array.from(new Set(items.map((i) => i.revStatus).filter(Boolean)));
 
+  // ─── Export Excel Handler ──────────────────────────────────────────────────
   const handleExport = async () => {
-    if (filteredItems.length === 0) {
-      alert('Tidak ada data untuk diunduh.');
+    const itemsToExport =
+      exportScope === 'selected' && selectedIds.size > 0
+        ? items.filter((item) => selectedIds.has(item.id))
+        : filteredItems;
+
+    if (itemsToExport.length === 0) {
+      alert('Tidak ada data yang dipilih atau tersedia untuk diunduh.');
       return;
     }
 
@@ -880,7 +1037,8 @@ export function DesignPageContent() {
 
     // ─── Title row ─────────────────────────────────────────────────────────────
     const today = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
-    sheet.insertRow(1, [`PE-Machining — Jig & Fixture Master List (${today})`]);
+    const isSelectionExport = exportScope === 'selected' && selectedIds.size > 0;
+    sheet.insertRow(1, [`PE-Machining — Jig & Fixture Master List ${isSelectionExport ? `(Pilihan ${itemsToExport.length} Item - ${today})` : `(${today})`}`]);
     const titleRow = sheet.getRow(1);
     titleRow.getCell(1).font = { name: 'Calibri', bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
     titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0063FF' } };
@@ -903,8 +1061,6 @@ export function DesignPageContent() {
     });
     headerRow.height = 22;
 
-    // ─── AutoFilter on header row ────────────────────────────────────────────
-    // Convert last column index to Excel letter (e.g. 3 → C)
     const colLetter = (n: number): string => {
       let s = '';
       while (n > 0) {
@@ -918,11 +1074,10 @@ export function DesignPageContent() {
       from: { row: 2, column: 1 },
       to: { row: 2, column: columns.length },
     };
-    // Also set the ref string so Excel shows the filter controls on row 2
     (sheet as any).autoFilter = `A2:${colLetter(columns.length)}2`;
 
     // ─── Data rows ───────────────────────────────────────────────────────────
-    filteredItems.forEach((item, idx) => {
+    itemsToExport.forEach((item, idx) => {
       const stockStatus =
         item.actualStock === 0 ? 'EMPTY'
           : item.actualStock < item.minimumStock * 0.5 ? 'CRITICAL'
@@ -959,7 +1114,6 @@ export function DesignPageContent() {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
         };
 
-        // Color Stock Status cell
         if (exportCols.stock) {
           const stockColIdx = columns.findIndex(c => c.key === 'stockStatus') + 1;
           if (colNumber === stockColIdx) {
@@ -976,7 +1130,6 @@ export function DesignPageContent() {
           }
         }
 
-        // Format cost as number
         if (exportCols.cost) {
           const costColIdx = columns.findIndex(c => c.key === 'cost') + 1;
           if (colNumber === costColIdx) {
@@ -993,7 +1146,8 @@ export function DesignPageContent() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `JigFixture_MasterList_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const prefix = isSelectionExport ? `Selected_${itemsToExport.length}_Items_` : '';
+    link.download = `JigFixture_MasterList_${prefix}${new Date().toISOString().split('T')[0]}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1035,10 +1189,23 @@ export function DesignPageContent() {
 
           {/* Download feature trigger */}
           <button
-            onClick={() => setShowExportModal(true)}
-            className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+            onClick={() => {
+              if (selectedIds.size > 0) {
+                setExportScope('selected');
+              } else {
+                setExportScope('all');
+              }
+              setShowExportModal(true);
+            }}
+            className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm relative"
           >
-            <span className="material-symbols-outlined text-xs">download</span> Master List
+            <span className="material-symbols-outlined text-xs">download</span>
+            <span>Master List</span>
+            {selectedIds.size > 0 && (
+              <span className="bg-yellow-400 text-yellow-950 font-black px-1.5 py-0.2 rounded-full text-[8px] animate-pulse">
+                {selectedIds.size}
+              </span>
+            )}
           </button>
 
           {/* System Warnings Notifications */}
@@ -1226,6 +1393,64 @@ export function DesignPageContent() {
           <table className="w-full text-left border-collapse text-[10px] table-fixed">
             <thead>
               <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[9px] uppercase tracking-wider whitespace-nowrap select-none">
+                {/* Multi-select checkbox column */}
+                <th className="px-1 py-1 text-center w-[40px] relative">
+                  <div className="flex items-center justify-center gap-0.5" ref={selectDropdownRef}>
+                    <input
+                      type="checkbox"
+                      ref={headerCheckboxRef}
+                      checked={allCurrentPageSelected && paginatedItems.length > 0}
+                      onChange={toggleSelectCurrentPage}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title={allCurrentPageSelected ? 'Batal pilih halaman ini' : 'Pilih semua di halaman ini'}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSelectDropdown(!showSelectDropdown)}
+                      className="p-0.5 hover:bg-gray-200 rounded text-gray-500 transition-colors cursor-pointer"
+                      title="Opsi Pilihan Multi-Halaman"
+                    >
+                      <span className="material-symbols-outlined text-[10px]">arrow_drop_down</span>
+                    </button>
+
+                    {/* Dropdown Menu for Selection */}
+                    {showSelectDropdown && (
+                      <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-xl p-1.5 text-[10px] z-30 font-medium normal-case text-left">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleSelectCurrentPage();
+                            setShowSelectDropdown(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-blue-50 hover:text-blue-700 rounded-lg flex items-center justify-between cursor-pointer"
+                        >
+                          <span>{allCurrentPageSelected ? 'Batal Pilih Halaman Ini' : 'Pilih Halaman Ini'}</span>
+                          <span className="text-[9px] font-bold text-gray-400">({paginatedItems.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={selectAllFiltered}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-blue-50 hover:text-blue-700 rounded-lg flex items-center justify-between cursor-pointer"
+                        >
+                          <span>Pilih Semua Data Filtered</span>
+                          <span className="text-[9px] font-bold text-blue-600">({filteredItems.length})</span>
+                        </button>
+
+                        {selectedIds.size > 0 && (
+                          <button
+                            type="button"
+                            onClick={clearSelection}
+                            className="w-full text-left px-2.5 py-1.5 hover:bg-red-50 text-red-600 rounded-lg flex items-center justify-between cursor-pointer mt-0.5 border-t border-gray-100 pt-1.5"
+                          >
+                            <span>Hapus Semua Pilihan</span>
+                            <span className="text-[9px] font-bold">({selectedIds.size})</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </th>
                 <th className="px-1.5 py-1 text-center w-[38px]">No</th>
                 <th className="px-2 py-1 w-[115px]">No. Reg</th>
                 <th className="px-2 py-1 w-[140px]">Assy Part Name</th>
@@ -1240,7 +1465,9 @@ export function DesignPageContent() {
               </tr>
             </thead>
             <tbody className="text-gray-700 divide-y divide-gray-100">
-              {filteredItems.map((item, index) => {
+              {paginatedItems.map((item, index) => {
+                const globalIndex = pageSize === 'All' ? index : (validCurrentPage - 1) * (pageSize as number) + index;
+                const isSelected = selectedIds.has(item.id);
                 const isRed = item.actualStock < item.minimumStock * 0.5;
                 const isYellow = item.actualStock < item.minimumStock && item.actualStock >= item.minimumStock * 0.5;
                 const isExpanded = expandedRows.has(item.id);
@@ -1248,7 +1475,9 @@ export function DesignPageContent() {
                 const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
                 const isApproved = doc?.approvalStatus === 'APPROVED';
                 const isWaiting = doc?.approvalStatus === 'WAITING';
-                const statusBorderClass = isApproved
+                const statusBorderClass = isSelected
+                  ? 'border-l-[4px] border-l-blue-600'
+                  : isApproved
                   ? 'border-l-[3.5px] border-l-emerald-500'
                   : isWaiting
                   ? 'border-l-[3.5px] border-l-amber-500'
@@ -1263,10 +1492,25 @@ export function DesignPageContent() {
                   <React.Fragment key={item.id}>
                     <tr
                       onClick={() => router.push(`/design/${item.id}`)}
-                      className={`hover:bg-blue-50/50 transition-colors cursor-pointer ${isExpanded ? 'bg-blue-50/25' : ''}`}
+                      className={`hover:bg-blue-50/50 transition-colors cursor-pointer ${
+                        isSelected ? 'bg-blue-50/80 font-medium' : isExpanded ? 'bg-blue-50/25' : ''
+                      }`}
                     >
+                      {/* Checkbox cell */}
                       <td
-                        className={`px-1 py-0.5 text-center font-semibold text-gray-400 ${statusBorderClass}`}
+                        className={`px-1 py-0.5 text-center ${statusBorderClass}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectItem(item.id)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
+
+                      <td
+                        className="px-1 py-0.5 text-center font-semibold text-gray-400"
                         onClick={(e) => e.stopPropagation()}
                         title={`Status: ${statusLabel}`}
                       >
@@ -1288,7 +1532,7 @@ export function DesignPageContent() {
                           ) : (
                             <span className="w-2.5 inline-block text-gray-300 text-[8px]">•</span>
                           )}
-                          <span className="text-[9px]">{index + 1}</span>
+                          <span className="text-[9px]">{globalIndex + 1}</span>
                         </div>
                       </td>
                       <td className="px-2 py-0.5 font-mono font-bold text-blue-600 truncate">
@@ -1462,7 +1706,7 @@ export function DesignPageContent() {
                     {/* CellPart Expanded Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-50/80">
-                        <td colSpan={11} className="px-4 py-3">
+                        <td colSpan={12} className="px-4 py-3">
                           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             {/* Sub-header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
@@ -1633,7 +1877,7 @@ export function DesignPageContent() {
               })}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-gray-400">
+                  <td colSpan={12} className="text-center py-12 text-gray-400">
                     Tidak ada data master Jig &amp; Fixture yang cocok dengan filter pencarian.
                   </td>
                 </tr>
@@ -1642,6 +1886,209 @@ export function DesignPageContent() {
           </table>
         )}
       </div>
+
+      {/* Datatable Footer / Pagination Controls */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs border-t border-gray-200 pt-2.5 px-1 shrink-0">
+        {/* Left: Info & Items per page */}
+        <div className="flex items-center gap-4 text-gray-600 text-[11px]">
+          <div>
+            Showing{' '}
+            <span className="font-bold text-gray-900">
+              {filteredItems.length === 0 ? 0 : (validCurrentPage - 1) * (pageSize === 'All' ? filteredItems.length : (pageSize as number)) + 1}
+            </span>{' '}
+            -{' '}
+            <span className="font-bold text-gray-900">
+              {pageSize === 'All' ? filteredItems.length : Math.min(validCurrentPage * (pageSize as number), filteredItems.length)}
+            </span>{' '}
+            of <span className="font-bold text-gray-900">{filteredItems.length}</span> entries
+          </div>
+
+          {/* Per Page Selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-400">Tampilkan:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(e.target.value === 'All' ? 'All' : Number(e.target.value))}
+              className="border border-gray-300 rounded px-2 py-0.5 bg-white text-[11px] font-semibold text-gray-700 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value="All">Semua (All)</option>
+            </select>
+          </div>
+
+          {/* Selection indicator pill */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full border border-blue-200 text-[10px] font-bold">
+              <span className="material-symbols-outlined text-xs">check_circle</span>
+              <span>{selectedIds.size} terpilih dari {filteredItems.length} data</span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="hover:text-blue-900 text-blue-500 font-bold ml-1 cursor-pointer"
+                title="Batal pilih"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Pagination Buttons */}
+        {pageSize !== 'All' && totalPages > 1 && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={validCurrentPage === 1}
+              onClick={() => setCurrentPage(1)}
+              className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white text-[10px] font-bold cursor-pointer transition-colors"
+              title="Halaman Pertama"
+            >
+              «
+            </button>
+            <button
+              type="button"
+              disabled={validCurrentPage === 1}
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white text-[10px] font-bold cursor-pointer transition-colors"
+              title="Halaman Sebelumnya"
+            >
+              ‹ Prev
+            </button>
+
+            {/* Page Number Pills */}
+            <div className="flex items-center gap-1 px-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - validCurrentPage) <= 2)
+                .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                    acc.push('...');
+                  }
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-1 text-gray-400 text-[10px]">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={`page-${p}`}
+                      type="button"
+                      onClick={() => setCurrentPage(p as number)}
+                      className={`px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                        validCurrentPage === p
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'border border-gray-200 text-gray-700 hover:bg-gray-100 bg-white'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+            </div>
+
+            <button
+              type="button"
+              disabled={validCurrentPage === totalPages}
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white text-[10px] font-bold cursor-pointer transition-colors"
+              title="Halaman Berikutnya"
+            >
+              Next ›
+            </button>
+            <button
+              type="button"
+              disabled={validCurrentPage === totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white text-[10px] font-bold cursor-pointer transition-colors"
+              title="Halaman Terakhir"
+            >
+              »
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ─── FLOATING MULTI-PAGE BATCH ACTION BAR ───────────────────────────── */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-5 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-3 border-r border-slate-700 pr-4">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xs text-white shadow-inner">
+              {selectedIds.size}
+            </div>
+            <div>
+              <div className="text-xs font-bold leading-tight">
+                {selectedIds.size} Data Master Terpilih
+              </div>
+              <div className="text-[9px] text-slate-400">
+                Pilihan tersimpan di {totalPages > 1 ? 'semua halaman' : 'tabel'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Quick Action: Select All Filtered */}
+            {selectedIds.size < filteredItems.length && (
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                className="text-[10px] font-semibold text-blue-300 hover:text-white underline cursor-pointer px-1"
+              >
+                Pilih Semua ({filteredItems.length})
+              </button>
+            )}
+
+            {/* Action 1: Export Selected to Excel */}
+            <button
+              type="button"
+              onClick={() => {
+                setExportScope('selected');
+                setShowExportModal(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">table_chart</span>
+              <span>Ekspor Excel ({selectedIds.size})</span>
+            </button>
+
+            {/* Action 2: Download Batch PDF Drawing (.zip) */}
+            <button
+              type="button"
+              disabled={isZippingPdf}
+              onClick={handleBatchDownloadPdfZip}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isZippingPdf ? (
+                <>
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                  <span>
+                    Proses ZIP ({zipProgress?.current}/{zipProgress?.total})...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-sm">folder_zip</span>
+                  <span>Unduh Drawing PDF (.zip)</span>
+                </>
+              )}
+            </button>
+
+            {/* Clear selection button */}
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer ml-1"
+              title="Batal Pilih Semua"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        </div>
+      )}
 
 
       {/* CREATE DESIGN MODAL */}
@@ -2496,16 +2943,56 @@ export function DesignPageContent() {
       )}
       {/* Export Columns Selector Checklist Modal */}
       {showExportModal && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-6 z-50">
-          <div className="max-w-xs w-full bg-white border border-gray-300 rounded-2xl p-4 text-gray-800 shadow-2xl relative">
-            <h3 className="font-bold text-xs text-gray-800 mb-2 border-b border-gray-100 pb-1.5">
-              Pilih Kolom Ekspor (Select Columns)
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-[95]">
+          <div className="max-w-sm w-full bg-white border border-gray-300 rounded-2xl p-5 text-gray-800 shadow-2xl relative">
+            <h3 className="font-bold text-xs text-gray-800 mb-1 border-b border-gray-100 pb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-blue-600 text-sm">download</span>
+                Opsi Ekspor Master List (Excel)
+              </span>
+              <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-xs cursor-pointer">✕</button>
             </h3>
-            <p className="text-[9px] text-gray-500 mb-3 leading-tight">
-              Centang kolom data spesifikasi Jig &amp; Fixture yang ingin Anda sertakan di dalam file unduhan CSV/Excel.
+
+            {/* Scope Selection */}
+            <div className="my-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1.5">Scope Data yang Diunduh</label>
+              <div className="space-y-1.5 text-xs">
+                <label className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${exportScope === 'selected' && selectedIds.size > 0 ? 'bg-blue-50 border-blue-400 text-blue-900 font-bold' : selectedIds.size === 0 ? 'opacity-40 border-gray-200 cursor-not-allowed' : 'border-gray-200 cursor-pointer bg-white'}`}>
+                  <input
+                    type="radio"
+                    name="exportScope"
+                    checked={exportScope === 'selected' && selectedIds.size > 0}
+                    disabled={selectedIds.size === 0}
+                    onChange={() => setExportScope('selected')}
+                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <div>Hanya Item Terpilih ({selectedIds.size} Data)</div>
+                    {selectedIds.size === 0 && <div className="text-[8.5px] text-gray-400">Pilih item di tabel terlebih dahulu</div>}
+                  </div>
+                </label>
+
+                <label className={`flex items-center gap-2 p-2 rounded-lg border transition-all ${exportScope === 'all' || selectedIds.size === 0 ? 'bg-blue-50 border-blue-400 text-blue-900 font-bold' : 'border-gray-200 cursor-pointer bg-white'}`}>
+                  <input
+                    type="radio"
+                    name="exportScope"
+                    checked={exportScope === 'all' || selectedIds.size === 0}
+                    onChange={() => setExportScope('all')}
+                    className="text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <div>Semua Data Filtered ({filteredItems.length} Data)</div>
+                    <div className="text-[8.5px] text-gray-400 font-normal">Termasuk seluruh halaman yang sesuai filter</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <p className="text-[9px] text-gray-500 mb-2 font-bold uppercase tracking-wider">
+              Pilih Kolom Data Spesifikasi:
             </p>
 
-            <div className="flex flex-col gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-xs">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -2578,28 +3065,31 @@ export function DesignPageContent() {
                 <span>Vendor Cost (Biaya)</span>
               </label>
 
-              <label className="flex items-center gap-1.5 cursor-pointer">
+              <label className="flex items-center gap-1.5 col-span-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={exportCols.stock}
                   onChange={(e) => setExportCols({ ...exportCols, stock: e.target.checked })}
                 />
-                <span>Stock Levels (Min/Act)</span>
+                <span>Stock Levels & Status (Min/Act)</span>
               </label>
             </div>
 
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-5">
               <button
+                type="button"
                 onClick={() => setShowExportModal(false)}
-                className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-[10px] font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex-1 py-2 border border-gray-300 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Batal
               </button>
               <button
+                type="button"
                 onClick={handleExport}
-                className="flex-1 py-1.5 bg-[#0063ff] text-white rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors cursor-pointer"
+                className="flex-1 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
               >
-                Download CSV
+                <span className="material-symbols-outlined text-sm">download</span>
+                <span>Unduh Excel (.xlsx)</span>
               </button>
             </div>
           </div>
