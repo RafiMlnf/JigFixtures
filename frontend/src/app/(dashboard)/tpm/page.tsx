@@ -21,7 +21,7 @@ import {
   CreateTpmChecklistPayload,
   CreateTpmLogPayload,
 } from '@/lib/api/tpm';
-import { renewDesign, renewCellPart } from '@/lib/api/phase3';
+import { renewDesign, renewCellPart, recordUsage } from '@/lib/api/phase3';
 
 type ActiveTab = 'schedules' | 'checklists' | 'logs';
 
@@ -43,6 +43,7 @@ export default function TPMPage() {
   const [scheduleSearch, setScheduleSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'DESIGN' | 'CELL_PART'>('ALL');
+  const [lineFilter, setLineFilter] = useState('All');
 
   // Filter states: Checklists
   const [checklistSearch, setChecklistSearch] = useState('');
@@ -64,6 +65,12 @@ export default function TPMPage() {
     tpmScheduleStart: '',
     tpmScheduleDeadline: '',
   });
+
+  // Modal: Quick Usage
+  const [showUsageModal, setShowUsageModal] = useState(false);
+  const [usageTarget, setUsageTarget] = useState<TpmScheduleItem | null>(null);
+  const [usageAmountInput, setUsageAmountInput] = useState<number>(50);
+  const [usageMode, setUsageMode] = useState<'ADD' | 'SET'>('ADD');
 
   // Modal: Create Checklist
   const [showChecklistModal, setShowChecklistModal] = useState(false);
@@ -146,10 +153,16 @@ export default function TPMPage() {
   // Toast auto-clear
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
+      const timer = setTimeout(() => setToast(null), 3500);
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  // Unique lines
+  const uniqueLines = useMemo(() => {
+    const lines = Array.from(new Set(schedules.map((s) => s.lineName).filter(Boolean)));
+    return ['All', ...lines];
+  }, [schedules]);
 
   // Filtered schedules
   const filteredSchedules = useMemo(() => {
@@ -165,6 +178,9 @@ export default function TPMPage() {
           return false;
         }
       }
+      if (lineFilter !== 'All' && item.lineName !== lineFilter) {
+        return false;
+      }
       if (scheduleSearch) {
         const q = scheduleSearch.toLowerCase();
         const matchNoReg = item.noReg?.toLowerCase().includes(q);
@@ -176,7 +192,7 @@ export default function TPMPage() {
       }
       return true;
     });
-  }, [schedules, typeFilter, statusFilter, scheduleSearch]);
+  }, [schedules, typeFilter, statusFilter, lineFilter, scheduleSearch]);
 
   // Filtered checklists
   const filteredChecklists = useMemo(() => {
@@ -283,6 +299,38 @@ export default function TPMPage() {
     setShowLogModal(true);
   };
 
+  // Quick Usage modal trigger
+  const handleOpenUsageModal = (item: TpmScheduleItem) => {
+    setUsageTarget(item);
+    setUsageAmountInput(50);
+    setUsageMode('ADD');
+    setShowUsageModal(true);
+  };
+
+  const handleSaveUsage = async () => {
+    if (!usageTarget) return;
+    setSubmitting(true);
+    try {
+      await recordUsage(
+        usageTarget.isCellPart ? 'cell-part' : 'design',
+        usageTarget.id,
+        usageAmountInput,
+        usageMode,
+      );
+      setToast({
+        type: 'success',
+        msg: `Pemakaian "${usageTarget.name}" berhasil dicatat (${usageMode === 'ADD' ? `+${usageAmountInput}` : `set ${usageAmountInput}`}x)!`,
+      });
+      setShowUsageModal(false);
+      setUsageTarget(null);
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal mencatat pemakaian.' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Submit Checklist
   const handleSubmitChecklist = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,9 +343,10 @@ export default function TPMPage() {
       await createTpmChecklist(checklistForm);
       setToast({
         type: 'success',
-        msg: checklistForm.overallResult === 'NG' && checklistForm.linkToAbnormality
-          ? 'Checklist tersimpan & Abnormality otomatis dilaporkan!'
-          : 'Laporan checklist TPM berhasil disimpan!',
+        msg:
+          checklistForm.overallResult === 'NG' && checklistForm.linkToAbnormality
+            ? 'Checklist tersimpan & Abnormality otomatis dilaporkan!'
+            : 'Laporan checklist TPM berhasil disimpan!',
       });
       setShowChecklistModal(false);
       loadData();
@@ -395,579 +444,615 @@ export default function TPMPage() {
   }, [schedules]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden text-slate-800">
+    <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden">
       {/* Toast Alert */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium flex items-center gap-2 transition-all duration-300 animate-slide-up ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-rose-50 text-rose-800 border-rose-200'
+          className={`fixed top-4 right-4 z-[99] px-4 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
           }`}
         >
-          <span className="material-symbols-outlined text-lg">
-            {toast.type === 'success' ? 'check_circle' : 'error'}
-          </span>
-          <span>{toast.msg}</span>
+          {toast.msg}
         </div>
       )}
 
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-2xs">
-            <span className="material-symbols-outlined text-2xl">build_circle</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900 leading-tight">
-                TPM (Total Productive Maintenance)
-              </h1>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Sistem Aktif
+      {/* Header controls matching standard dashboard layout */}
+      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
+        <div className="flex items-center gap-4">
+          {/* Title: changed to TPM only */}
+          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
+            <span className="material-symbols-outlined text-[#0063ff] text-lg">build_circle</span>
+            TPM
+          </h2>
+
+          {/* 4 Compact & Simple Mini Cards in Topbar (Solid colors, rounded-lg, matching height) */}
+          <div className="flex items-center gap-1.5">
+            {/* Safe */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'schedules') setActiveTab('schedules');
+                setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE');
+              }}
+              title="Filter Aman (Safe)"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
+                statusFilter === 'SAFE'
+                  ? 'bg-green-600 text-white ring-2 ring-green-400'
+                  : 'bg-green-500 hover:bg-green-600 text-white'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px] leading-none">check_circle</span>
+              <span>Aman</span>
+              <span className="px-1.5 py-0.2 rounded bg-black/20 text-white text-[9px] font-black">
+                {summary?.safeCount ?? 0}
               </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Pemeliharaan preventif, checklist inspeksi mandiri, dan monitoring 2-way lifetime Jig &amp; Fixtures
-            </p>
+            </button>
+
+            {/* Warning */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'schedules') setActiveTab('schedules');
+                setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING');
+              }}
+              title="Filter Warning (Mendekati Limit)"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
+                statusFilter === 'WARNING'
+                  ? 'bg-yellow-500 text-yellow-950 ring-2 ring-yellow-300'
+                  : 'bg-yellow-400 hover:bg-yellow-500 text-yellow-950'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px] leading-none">warning</span>
+              <span>Warning</span>
+              <span className="px-1.5 py-0.2 rounded bg-black/15 text-yellow-950 text-[9px] font-black">
+                {summary?.warningCount ?? 0}
+              </span>
+            </button>
+
+            {/* Overdue */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab !== 'schedules') setActiveTab('schedules');
+                setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE');
+              }}
+              title="Filter Overdue (Lewat Batas)"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs relative overflow-hidden ${
+                statusFilter === 'OVERDUE'
+                  ? 'bg-red-700 text-white ring-2 ring-red-400'
+                  : 'bg-red-500 hover:bg-red-600 text-white'
+              }`}
+            >
+              {(summary?.overdueCount ?? 0) > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+              )}
+              <span className="material-symbols-outlined text-[13px] leading-none">error</span>
+              <span>Overdue</span>
+              <span className="px-1.5 py-0.2 rounded bg-black/25 text-white text-[9px] font-black">
+                {summary?.overdueCount ?? 0}
+              </span>
+            </button>
+
+            {/* Inspeksi */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('checklists')}
+              title="Lihat Inspeksi Hari Ini"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
+                activeTab === 'checklists'
+                  ? 'bg-blue-700 text-white ring-2 ring-blue-400'
+                  : 'bg-[#0063ff] hover:bg-[#0052d4] text-white'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px] leading-none">checklist_rtl</span>
+              <span>Inspeksi</span>
+              <span className="px-1.5 py-0.2 rounded bg-black/20 text-white text-[9px] font-black">
+                {summary?.checklistTodayCount ?? 0}
+              </span>
+            </button>
           </div>
         </div>
 
-        {/* Header Action Buttons */}
+        {/* Right Header Controls */}
         <div className="flex items-center gap-2">
+          {/* Quick Action Button for PIC */}
+          {isPic && (
+            <div className="flex items-center gap-1.5">
+              {activeTab === 'schedules' && (
+                <button
+                  onClick={() => {
+                    setChecklistForm((prev) => ({
+                      ...prev,
+                      designId: designOptions[0]?.id || '',
+                      cellPartId: '',
+                      notes: '',
+                    }));
+                    setShowChecklistModal(true);
+                  }}
+                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-xs">fact_check</span>
+                  Isi Checklist
+                </button>
+              )}
+
+              {activeTab === 'checklists' && (
+                <button
+                  onClick={() => {
+                    setChecklistForm((prev) => ({
+                      ...prev,
+                      designId: designOptions[0]?.id || '',
+                      cellPartId: '',
+                      notes: '',
+                    }));
+                    setShowChecklistModal(true);
+                  }}
+                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-xs">add_task</span>
+                  Form Checklist
+                </button>
+              )}
+
+              {activeTab === 'logs' && (
+                <button
+                  onClick={() => {
+                    setLogForm((prev) => ({
+                      ...prev,
+                      designId: designOptions[0]?.id || '',
+                      cellPartId: '',
+                      title: 'Preventive Maintenance Rutin',
+                      description: '',
+                    }));
+                    setShowLogModal(true);
+                  }}
+                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-xs">handyman</span>
+                  Catat Servis
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Reload button */}
           <button
             onClick={loadData}
             title="Muat Ulang Data"
-            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+            className="px-2.5 py-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors cursor-pointer flex items-center justify-center shadow-xs"
           >
-            <span className={`material-symbols-outlined text-lg ${loadingData ? 'animate-spin' : ''}`}>
+            <span className={`material-symbols-outlined text-xs ${loadingData ? 'animate-spin' : ''}`}>
               refresh
             </span>
           </button>
-
-          {isPic && (
-            <>
-              <button
-                onClick={() => {
-                  setChecklistForm((prev) => ({
-                    ...prev,
-                    designId: designOptions[0]?.id || '',
-                    cellPartId: '',
-                    notes: '',
-                  }));
-                  setShowChecklistModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-xl text-xs font-semibold shadow-2xs transition-all active:scale-95"
-              >
-                <span className="material-symbols-outlined text-sm">fact_check</span>
-                <span>+ Isi Checklist</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setLogForm((prev) => ({
-                    ...prev,
-                    designId: designOptions[0]?.id || '',
-                    cellPartId: '',
-                    title: 'Preventive Maintenance Rutin',
-                    description: '',
-                  }));
-                  setShowLogModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95"
-              >
-                <span className="material-symbols-outlined text-sm">handyman</span>
-                <span>+ Catat Maintenance</span>
-              </button>
-            </>
-          )}
         </div>
       </header>
 
-      {/* Main Body */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Top KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Health Score */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Kesehatan Jig &amp; Fixture
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-lg">health_and_safety</span>
-              </span>
+      {/* Button Switch Tabs (Dipindahkan ke lokasi 4 card sebelumnya) */}
+      <div className="flex gap-2.5 mb-3 shrink-0">
+        <button
+          onClick={() => setActiveTab('schedules')}
+          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
+            activeTab === 'schedules'
+              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                activeTab === 'schedules' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">calendar_month</span>
             </div>
-            <div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-black text-slate-900">
-                  {summary ? `${summary.healthScore}%` : '—'}
-                </span>
-                <span className="text-xs font-medium text-emerald-600">Jig Berstatus Aman</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex">
-                <div
-                  className="bg-emerald-500 h-full transition-all duration-500"
-                  style={{ width: `${summary ? summary.healthScore : 100}%` }}
-                />
-                <div
-                  className="bg-rose-500 h-full transition-all duration-500"
-                  style={{
-                    width: `${
-                      summary && summary.totalItems > 0
-                        ? Math.round((summary.overdueCount / summary.totalItems) * 100)
-                        : 0
-                    }%`,
-                  }}
-                />
-              </div>
-              <div className="flex justify-between text-[10px] text-slate-400 mt-1.5 font-medium">
-                <span>{summary?.safeCount ?? 0} Aman</span>
-                <span>{summary?.warningCount ?? 0} Warning</span>
-                <span className="text-rose-600 font-bold">{summary?.overdueCount ?? 0} Overdue</span>
-              </div>
+            <div className="text-left">
+              <h3 className={`text-xs font-bold leading-none ${activeTab === 'schedules' ? 'text-blue-900' : 'text-gray-800'}`}>
+                Jadwal Preventif &amp; Lifetime
+              </h3>
             </div>
           </div>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              activeTab === 'schedules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {filteredSchedules.length}
+          </span>
+        </button>
 
-          {/* Card 2: Items Needing Attention */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Perhatian Segera
-              </span>
-              <span
-                className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  (summary?.overdueCount ?? 0) > 0
-                    ? 'bg-rose-50 text-rose-600 animate-pulse'
-                    : 'bg-amber-50 text-amber-600'
-                }`}
-              >
-                <span className="material-symbols-outlined text-lg">warning</span>
-              </span>
+        <button
+          onClick={() => setActiveTab('checklists')}
+          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
+            activeTab === 'checklists'
+              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                activeTab === 'checklists' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">fact_check</span>
             </div>
-            <div>
-              <div className="flex items-baseline gap-2 mb-0.5">
-                <span className="text-2xl font-black text-rose-600">
-                  {(summary?.overdueCount ?? 0) + (summary?.warningCount ?? 0)}
-                </span>
-                <span className="text-xs text-slate-500 font-medium">Unit Mendekati / Lewat Limit</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {summary?.unscheduledCount ?? 0} unit belum diatur tanggal jadwal TPM
-              </p>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <button
-                onClick={() => {
-                  setActiveTab('schedules');
-                  setStatusFilter('OVERDUE');
-                }}
-                className="text-rose-600 hover:text-rose-700 font-bold text-[11px] hover:underline"
-              >
-                Lihat Overdue ({summary?.overdueCount ?? 0}) →
-              </button>
+            <div className="text-left">
+              <h3 className={`text-xs font-bold leading-none ${activeTab === 'checklists' ? 'text-blue-900' : 'text-gray-800'}`}>
+                Daily Checklist Inspeksi
+              </h3>
             </div>
           </div>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              activeTab === 'checklists' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {filteredChecklists.length}
+          </span>
+        </button>
 
-          {/* Card 3: Checklist Hari Ini */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Inspeksi Hari Ini
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-lg">checklist_rtl</span>
-              </span>
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
+            activeTab === 'logs'
+              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                activeTab === 'logs' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              }`}
+            >
+              <span className="material-symbols-outlined text-base">history_toggle_off</span>
             </div>
-            <div>
-              <div className="flex items-baseline gap-2 mb-0.5">
-                <span className="text-2xl font-black text-slate-900">
-                  {summary?.checklistTodayCount ?? 0}
-                </span>
-                <span className="text-xs text-slate-500 font-medium">Form Terisi</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs mt-1">
-                <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
-                  <span className="material-symbols-outlined text-xs">check_circle</span>
-                  {summary?.checklistTodayOk ?? 0} OK
-                </span>
-                <span className="inline-flex items-center gap-1 text-rose-600 font-bold">
-                  <span className="material-symbols-outlined text-xs">cancel</span>
-                  {summary?.checklistTodayNg ?? 0} NG
-                </span>
-              </div>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <button
-                onClick={() => setActiveTab('checklists')}
-                className="text-indigo-600 hover:text-indigo-700 font-bold text-[11px] hover:underline"
-              >
-                Buka Log Checklist →
-              </button>
+            <div className="text-left">
+              <h3 className={`text-xs font-bold leading-none ${activeTab === 'logs' ? 'text-blue-900' : 'text-gray-800'}`}>
+                Riwayat Servis &amp; Maintenance
+              </h3>
             </div>
           </div>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              activeTab === 'logs' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            {filteredLogs.length}
+          </span>
+        </button>
+      </div>
 
-          {/* Card 4: Maintenance Bulan Ini */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-2xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Maintenance Bulan Ini
-              </span>
-              <span className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-lg">event_available</span>
-              </span>
-            </div>
-            <div>
-              <div className="flex items-baseline gap-2 mb-0.5">
-                <span className="text-2xl font-black text-slate-900">
-                  {summary?.maintenanceThisMonth ?? 0}
-                </span>
-                <span className="text-xs text-slate-500 font-medium">Aktivitas Servis</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Total item terdaftar: {summary?.totalItems ?? 0} ({summary?.totalDesigns ?? 0} Jig, {summary?.totalCellParts ?? 0} Cell Part)
-              </p>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <button
-                onClick={() => setActiveTab('logs')}
-                className="text-purple-600 hover:text-purple-700 font-bold text-[11px] hover:underline"
-              >
-                Lihat Log Riwayat →
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Content Tabs */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
-          {/* Tab Navigation Header */}
-          <div className="border-b border-slate-200 px-6 pt-3 flex items-center justify-between bg-slate-50/50">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setActiveTab('schedules')}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
-                  activeTab === 'schedules'
-                    ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-lg shadow-2xs'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">calendar_month</span>
-                <span>1. Jadwal Preventif &amp; Lifetime</span>
-                <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-semibold">
-                  {filteredSchedules.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('checklists')}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
-                  activeTab === 'checklists'
-                    ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-lg shadow-2xs'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">fact_check</span>
-                <span>2. Daily Checklist Inspeksi</span>
-                <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-semibold">
-                  {filteredChecklists.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('logs')}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all ${
-                  activeTab === 'logs'
-                    ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-lg shadow-2xs'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">history_toggle_off</span>
-                <span>3. Riwayat Maintenance &amp; Servis</span>
-                <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-semibold">
-                  {filteredLogs.length}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* TAB 1: SCHEDULES & LIFETIME MONITORING */}
-          {activeTab === 'schedules' && (
-            <div className="p-6 space-y-4">
-              {/* Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
-                  {/* Search */}
-                  <div className="relative flex-1 max-w-sm">
-                    <span className="material-symbols-outlined text-slate-400 absolute left-3 top-2.5 text-lg">
-                      search
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Cari No Reg, nama part, line, proses..."
-                      value={scheduleSearch}
-                      onChange={(e) => setScheduleSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* Status Filter */}
+      {/* Main Tab Content Area */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* ============================================================== */}
+        {/* TAB 1: JADWAL PREVENTIF & LIFETIME MONITORING                 */}
+        {/* ============================================================== */}
+        {activeTab === 'schedules' && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Filter toolbar with right-aligned search bar */}
+            <div className="flex items-center justify-between gap-3 mb-2 shrink-0">
+              <div className="flex items-center gap-2">
+                {/* Status dropdown pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Status: {statusFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
                   >
-                    <option value="ALL">Semua Status Lifetime</option>
-                    <option value="OVERDUE">🔴 Overdue (Lewat Batas)</option>
-                    <option value="WARNING">🟡 Warning (Mendekati)</option>
-                    <option value="SAFE">🟢 Safe (Aman)</option>
-                    <option value="UNSCHEDULED">⚪ Belum Ada Jadwal TPM</option>
+                    <option value="ALL">Semua Status</option>
+                    <option value="SAFE">Safe (Aman)</option>
+                    <option value="WARNING">Warning (Mendekati)</option>
+                    <option value="OVERDUE">Overdue (Lewat Batas)</option>
+                    <option value="UNSCHEDULED">Belum Terjadwal</option>
                   </select>
+                </div>
 
-                  {/* Type Filter */}
+                {/* Type dropdown pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Tipe: {typeFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value as any)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
                   >
-                    <option value="ALL">Semua Tipe (Jig &amp; Cell Part)</option>
-                    <option value="DESIGN">Jig / Fixture Induk Saja</option>
-                    <option value="CELL_PART">Cell Part Saja</option>
+                    <option value="ALL">Semua Tipe</option>
+                    <option value="DESIGN">Jig / Fixture Induk</option>
+                    <option value="CELL_PART">Cell Part</option>
+                  </select>
+                </div>
+
+                {/* Line dropdown pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Line: {lineFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
+                  <select
+                    value={lineFilter}
+                    onChange={(e) => setLineFilter(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
+                  >
+                    {uniqueLines.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                      <th className="py-3 px-4">No Reg / Part No</th>
-                      <th className="py-3 px-4">Nama Jig / Cell Part</th>
-                      <th className="py-3 px-4">Line &amp; Process</th>
-                      <th className="py-3 px-4 text-center">Status Lifetime</th>
-                      <th className="py-3 px-4 text-center">Monitoring 2-Way (Hari &amp; Siklus)</th>
-                      <th className="py-3 px-4 text-center">Jadwal TPM</th>
-                      <th className="py-3 px-4 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredSchedules.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-12 text-center text-slate-400">
-                          <span className="material-symbols-outlined text-4xl text-slate-300 block mb-1">
-                            event_busy
-                          </span>
-                          Tidak ada data jadwal yang sesuai filter pencarian.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredSchedules.map((item) => (
-                        <tr
-                          key={`${item.isCellPart ? 'cp' : 'd'}-${item.id}`}
-                          className="hover:bg-slate-50/80 transition-colors"
-                        >
-                          <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                            <div className="flex items-center gap-1.5">
-                              {item.isCellPart ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                  PART
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                  {item.type || 'JIG'}
-                                </span>
-                              )}
-                              <span>{item.isCellPart ? item.partNumber : item.noReg}</span>
-                            </div>
-                            {item.isCellPart && (
-                              <div className="text-[10px] text-slate-400 font-sans font-normal mt-0.5">
-                                Induk: {item.parentNoReg}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-slate-800">{item.name}</div>
-                            {!item.isCellPart && item.cellPartsCount > 0 && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 font-medium mt-0.5">
-                                <span className="material-symbols-outlined text-xs">extension</span>
-                                {item.cellPartsCount} Cell Part terdaftar
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-600">
-                            <div>{item.lineName}</div>
-                            <div className="text-[11px] text-slate-400">{item.processName}</div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {item.lifetimeStatus === 'OVERDUE' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
-                                <span className="material-symbols-outlined text-xs">error</span>
-                                OVERDUE
-                              </span>
-                            ) : item.lifetimeStatus === 'WARNING' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                <span className="material-symbols-outlined text-xs">warning</span>
-                                WARNING
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
-                                SAFE
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="max-w-[190px] mx-auto space-y-1">
-                              {/* Days meter */}
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-500">Sisa Hari:</span>
-                                <span
-                                  className={`font-bold ${
-                                    item.daysRemaining <= 0
-                                      ? 'text-rose-600 font-black'
-                                      : item.daysRemaining <= 35
-                                      ? 'text-amber-600'
-                                      : 'text-emerald-700'
-                                  }`}
-                                >
-                                  {item.daysRemaining} hari ({item.lifetimeDays}d)
-                                </span>
-                              </div>
-
-                              {/* Usage meter */}
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-500">Pemakaian:</span>
-                                <span className="font-semibold text-slate-700">
-                                  {item.currentUsage || 0} / {item.maxUsage || 500}x
-                                </span>
-                              </div>
-
-                              {/* Mini progress bar */}
-                              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                <div
-                                  className={`h-full ${
-                                    item.lifetimeStatus === 'OVERDUE'
-                                      ? 'bg-rose-500'
-                                      : item.lifetimeStatus === 'WARNING'
-                                      ? 'bg-amber-500'
-                                      : 'bg-emerald-500'
-                                  }`}
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      Math.round(((item.currentUsage || 0) / (item.maxUsage || 500)) * 100),
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center text-xs">
-                            {item.tpmScheduleDeadline ? (
-                              <div>
-                                <span className="font-semibold text-slate-800">
-                                  {new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })}
-                                </span>
-                                <div className="text-[10px] text-slate-400">
-                                  Mulai: {item.tpmScheduleStart ? new Date(item.tpmScheduleStart).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '—'}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
-                                Belum Terjadwal
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {isPic && (
-                                <>
-                                  <button
-                                    onClick={() => openScheduleModal(item)}
-                                    title="Atur Jadwal & Lifetime"
-                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                  >
-                                    <span className="material-symbols-outlined text-base">edit_calendar</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => {
-                                      setRenewTarget(item);
-                                      setShowRenewModal(true);
-                                    }}
-                                    title="Renew / Reset Lifetime"
-                                    className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                  >
-                                    <span className="material-symbols-outlined text-base">replay</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => openChecklistForTarget(item)}
-                                    title="Isi Checklist untuk item ini"
-                                    className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                  >
-                                    <span className="material-symbols-outlined text-base">fact_check</span>
-                                  </button>
-
-                                  <button
-                                    onClick={() => openLogForTarget(item)}
-                                    title="Catat Servis / Maintenance"
-                                    className="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                                  >
-                                    <span className="material-symbols-outlined text-base">handyman</span>
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              {/* Right: Search Bar & Count */}
+              <div className="flex items-center gap-2.5">
+                <div className="text-[10px] text-gray-400 font-medium hidden sm:inline">
+                  <strong className="text-gray-700">{filteredSchedules.length}</strong> item
+                </div>
+                <div className="relative">
+                  <span
+                    className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"
+                    style={{ fontSize: '10px' }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search No.Reg, Part Name, Line..."
+                    value={scheduleSearch}
+                    onChange={(e) => setScheduleSearch(e.target.value)}
+                    className="pl-7 pr-3 py-1 bg-gray-100 border border-gray-300 rounded-full text-[10px] w-56 focus:ring-1 focus:ring-[#0063ff] focus:border-[#0063ff] focus:bg-white outline-none text-gray-700 placeholder-gray-400 transition-all"
+                  />
+                </div>
               </div>
             </div>
-          )}
 
-          {/* TAB 2: DAILY CHECKLIST INSPECTION */}
-          {activeTab === 'checklists' && (
-            <div className="p-6 space-y-4">
-              {/* Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
-                  <div className="relative flex-1 max-w-sm">
-                    <span className="material-symbols-outlined text-slate-400 absolute left-3 top-2.5 text-lg">
-                      search
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Cari nama inspector, no reg, catatan..."
-                      value={checklistSearch}
-                      onChange={(e) => setChecklistSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
+            {/* Table Container */}
+            <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
+                    <th className="px-3 py-2">No. Reg / Part</th>
+                    <th className="px-2 py-2">Item Name / Assy</th>
+                    <th className="px-2 py-2">Line &amp; OP</th>
+                    <th className="px-2 text-center py-2">Lifetime (2-Way)</th>
+                    <th className="px-2 text-center py-2">Jadwal Servis</th>
+                    <th className="px-2 text-center py-2">Status</th>
+                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  </tr>
+                </thead>
+                <tbody className="text-gray-700">
+                  {filteredSchedules.map((item) => {
+                    const isOverdue = item.lifetimeStatus === 'OVERDUE';
+                    const isWarning = item.lifetimeStatus === 'WARNING';
+                    const days = item.daysRemaining;
+                    const maxUsage = item.maxUsage || 500;
+                    const curUsage = item.currentUsage || 0;
+                    const usagePct = Math.min(100, Math.round((curUsage / maxUsage) * 100));
 
+                    return (
+                      <tr
+                        key={`${item.isCellPart ? 'cp' : 'd'}-${item.id}`}
+                        className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                          isOverdue ? 'bg-red-50/50 hover:bg-red-100/50' : ''
+                        }`}
+                      >
+                        {/* No Reg */}
+                        <td className="px-3 font-normal font-mono py-2">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`text-[8px] font-bold px-1 py-0.2 rounded-full uppercase ${
+                                item.isCellPart
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-blue-100 text-blue-800 border border-blue-200'
+                              }`}
+                            >
+                              {item.isCellPart ? 'PART' : item.type || 'JIG'}
+                            </span>
+                            <span className="font-bold text-gray-800">
+                              {item.isCellPart ? item.partNumber : item.noReg}
+                            </span>
+                          </div>
+                          {item.isCellPart && item.parentNoReg && (
+                            <div className="text-[9px] text-gray-400 font-sans mt-0.5">
+                              Induk: {item.parentNoReg}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Name */}
+                        <td className="px-2 py-2">
+                          <div className="font-bold text-gray-800">{item.name}</div>
+                          {!item.isCellPart && item.cellPartsCount > 0 && (
+                            <span className="text-[8.5px] text-blue-600 bg-blue-50 px-1 py-0.2 rounded font-medium inline-block mt-0.5">
+                              {item.cellPartsCount} Cell Part terdaftar
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Line & Process */}
+                        <td className="px-2 py-2">
+                          <div className="font-medium text-gray-800">{item.lineName || '—'}</div>
+                          <div className="text-[9px] text-gray-400">{item.processName || '—'}</div>
+                        </td>
+
+                        {/* 2-Way Lifetime Column */}
+                        <td className="px-2 py-2 text-center">
+                          <div className="inline-flex flex-col items-center gap-1 min-w-[130px]">
+                            <span
+                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                                isOverdue
+                                  ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                                  : isWarning
+                                  ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                              }`}
+                            >
+                              {item.lifetimeType === 'DAYS'
+                                ? `${days}d rem (${item.lifetimeDays}d)`
+                                : item.lifetimeType === 'USAGE'
+                                ? `${curUsage}/${maxUsage}x`
+                                : `${curUsage}/${maxUsage}x · ${days}d`}
+                            </span>
+
+                            {/* Mini progress meter */}
+                            <div className="w-24 bg-gray-200 rounded-full h-1 overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  isOverdue ? 'bg-red-500' : isWarning ? 'bg-yellow-500' : 'bg-green-500'
+                                }`}
+                                style={{ width: `${usagePct}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Scheduled Date */}
+                        <td className="px-2 py-2 text-center text-[10px]">
+                          {item.tpmScheduleDeadline ? (
+                            <div>
+                              <span className="font-semibold text-gray-800">
+                                {new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                              {item.tpmScheduleStart && (
+                                <div className="text-[8.5px] text-gray-400">
+                                  Start:{' '}
+                                  {new Date(item.tpmScheduleStart).toLocaleDateString('id-ID', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 italic text-[9px]">Belum diatur</span>
+                          )}
+                        </td>
+
+                        {/* Status Column with solid color badge like Inventory */}
+                        <td
+                          className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider ${
+                            isOverdue
+                              ? 'bg-red-500 text-white'
+                              : isWarning
+                              ? 'bg-yellow-400 text-yellow-950'
+                              : 'bg-green-500 text-white'
+                          }`}
+                        >
+                          {isOverdue ? 'Overdue' : isWarning ? 'Warning' : 'Aman'}
+                        </td>
+
+                        {/* Actions */}
+                        {isPic && (
+                          <td className="px-2 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {/* Quick Usage Counter */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenUsageModal(item)}
+                                className="text-[8px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200 cursor-pointer"
+                                title="Catat Pemakaian Siklus"
+                              >
+                                + Catat
+                              </button>
+
+                              {/* Quick Renew */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRenewTarget(item);
+                                  setShowRenewModal(true);
+                                }}
+                                className="text-[8px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 cursor-pointer"
+                                title="Renew Lifetime"
+                              >
+                                Renew
+                              </button>
+
+                              {/* Atur Jadwal */}
+                              <button
+                                type="button"
+                                onClick={() => openScheduleModal(item)}
+                                className="text-gray-400 hover:text-indigo-600 p-0.5 hover:bg-indigo-50 rounded cursor-pointer"
+                                title="Atur Jadwal & Limit TPM"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">edit_calendar</span>
+                              </button>
+
+                              {/* Isi Checklist */}
+                              <button
+                                type="button"
+                                onClick={() => openChecklistForTarget(item)}
+                                className="text-gray-400 hover:text-emerald-600 p-0.5 hover:bg-emerald-50 rounded cursor-pointer"
+                                title="Isi Checklist Inspeksi"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">fact_check</span>
+                              </button>
+
+                              {/* Catat Servis */}
+                              <button
+                                type="button"
+                                onClick={() => openLogForTarget(item)}
+                                className="text-gray-400 hover:text-purple-600 p-0.5 hover:bg-purple-50 rounded cursor-pointer"
+                                title="Catat Servis / Maintenance"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">handyman</span>
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+
+                  {filteredSchedules.length === 0 && (
+                    <tr>
+                      <td colSpan={isPic ? 7 : 6} className="text-center py-12 text-gray-400 text-xs">
+                        Tidak ada data jadwal TPM yang sesuai filter pencarian.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 2: DAILY CHECKLIST INSPECTION                             */}
+        {/* ============================================================== */}
+        {activeTab === 'checklists' && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Filter Toolbar with right-aligned search bar */}
+            <div className="flex items-center justify-between gap-3 mb-2 shrink-0">
+              <div className="flex items-center gap-2">
+                {/* Result filter pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Hasil: {checklistResultFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
                     value={checklistResultFilter}
                     onChange={(e) => setChecklistResultFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
                   >
                     <option value="ALL">Semua Hasil</option>
-                    <option value="OK">🟢 Hanya Hasil OK</option>
-                    <option value="NG">🔴 Hanya Hasil NG</option>
+                    <option value="OK">Hanya Hasil OK</option>
+                    <option value="NG">Hanya Hasil NG</option>
                   </select>
+                </div>
 
+                {/* Shift filter pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Shift: {checklistShiftFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
                     value={checklistShiftFilter}
                     onChange={(e) => setChecklistShiftFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
                   >
                     <option value="ALL">Semua Shift</option>
                     <option value="Shift 1">Shift 1</option>
@@ -976,385 +1061,395 @@ export default function TPMPage() {
                     <option value="Non-Shift">Non-Shift</option>
                   </select>
                 </div>
-
-                {isPic && (
-                  <button
-                    onClick={() => {
-                      setChecklistForm((prev) => ({
-                        ...prev,
-                        designId: designOptions[0]?.id || '',
-                        cellPartId: '',
-                        notes: '',
-                      }));
-                      setShowChecklistModal(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95"
-                  >
-                    <span className="material-symbols-outlined text-sm">add_task</span>
-                    <span>+ Form Checklist Baru</span>
-                  </button>
-                )}
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                      <th className="py-3 px-4">Tanggal &amp; Waktu</th>
-                      <th className="py-3 px-4">Shift &amp; Inspector</th>
-                      <th className="py-3 px-4">Target Jig / Part</th>
-                      <th className="py-3 px-4 text-center">Parameter Inspeksi (6 Item)</th>
-                      <th className="py-3 px-4 text-center">Hasil Akhir</th>
-                      <th className="py-3 px-4">Catatan / Temuan</th>
-                      {isPic && <th className="py-3 px-4 text-right">Aksi</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredChecklists.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-12 text-center text-slate-400">
-                          <span className="material-symbols-outlined text-4xl text-slate-300 block mb-1">
-                            fact_check
-                          </span>
-                          Belum ada catatan checklist inspeksi.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredChecklists.map((check) => (
-                        <tr key={check.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-4 font-mono text-slate-700">
-                            <div>
-                              {new Date(check.checkDate).toLocaleDateString('id-ID', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {new Date(check.checkDate).toLocaleTimeString('id-ID', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {check.shift}
-                            </span>
-                            <div className="font-semibold text-slate-800 mt-0.5">{check.inspectorName}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-bold text-slate-900">{check.design?.noReg}</div>
-                            <div className="text-[11px] text-slate-500">{check.design?.assyPartName}</div>
-                            {check.cellPart && (
-                              <div className="text-[10px] text-amber-600 font-medium">
-                                Part: {check.cellPart.name} ({check.cellPart.partNumber})
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="inline-grid grid-cols-6 gap-1 text-[10px] font-mono">
-                              <span
-                                title="Kebersihan"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.cleaningStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Clean:{check.cleaningStatus}
-                              </span>
-                              <span
-                                title="Locator Pin"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.locatorPinStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Pin:{check.locatorPinStatus}
-                              </span>
-                              <span
-                                title="Clamping / Klem"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.clampingStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Clamp:{check.clampingStatus}
-                              </span>
-                              <span
-                                title="Sensor / Pokayoke"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.sensorStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Sens:{check.sensorStatus}
-                              </span>
-                              <span
-                                title="Baut & Baseplate"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.boltsStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Bolt:{check.boltsStatus}
-                              </span>
-                              <span
-                                title="Lubrikasi / Grease"
-                                className={`px-1.5 py-0.5 rounded font-bold ${
-                                  check.lubricationStatus === 'OK'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                Lub:{check.lubricationStatus}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {check.overallResult === 'OK' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
-                                OK
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
-                                <span className="material-symbols-outlined text-xs">cancel</span>
-                                NG
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-600 text-xs">
-                            <div>{check.notes || '—'}</div>
-                            {check.linkToAbnormality && check.abnormalityId && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-rose-600 font-bold mt-1">
-                                <span className="material-symbols-outlined text-xs">link</span>
-                                Link ke Abnormality
-                              </span>
-                            )}
-                          </td>
-                          {isPic && (
-                            <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleDeleteChecklist(check.id)}
-                                title="Hapus catatan ini"
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-base">delete</span>
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+              {/* Right: Search Bar & Count */}
+              <div className="flex items-center gap-2.5">
+                <div className="text-[10px] text-gray-400 font-medium hidden sm:inline">
+                  <strong className="text-gray-700">{filteredChecklists.length}</strong> catatan
+                </div>
+                <div className="relative">
+                  <span
+                    className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"
+                    style={{ fontSize: '10px' }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search Inspector, No.Reg, Part..."
+                    value={checklistSearch}
+                    onChange={(e) => setChecklistSearch(e.target.value)}
+                    className="pl-7 pr-3 py-1 bg-gray-100 border border-gray-300 rounded-full text-[10px] w-56 focus:ring-1 focus:ring-[#0063ff] focus:border-[#0063ff] focus:bg-white outline-none text-gray-700 placeholder-gray-400 transition-all"
+                  />
+                </div>
               </div>
             </div>
-          )}
 
-          {/* TAB 3: MAINTENANCE & REPAIR LOG */}
-          {activeTab === 'logs' && (
-            <div className="p-6 space-y-4">
-              {/* Filter Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
-                  <div className="relative flex-1 max-w-sm">
-                    <span className="material-symbols-outlined text-slate-400 absolute left-3 top-2.5 text-lg">
-                      search
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="Cari judul, teknisi, part diganti, no reg..."
-                      value={logSearch}
-                      onChange={(e) => setLogSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-
-                  <select
-                    value={logActionFilter}
-                    onChange={(e) => setLogActionFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  >
-                    <option value="ALL">Semua Kategori Aksi</option>
-                    <option value="PREVENTIVE">🔧 Preventive Maintenance (PM)</option>
-                    <option value="CORRECTIVE">⚠️ Corrective Maintenance (CM)</option>
-                    <option value="RENEWAL">🔄 Renewal / Overhaul</option>
-                    <option value="CALIBRATION">📐 Kalibrasi &amp; Alignment</option>
-                  </select>
-                </div>
-
-                {isPic && (
-                  <button
-                    onClick={() => {
-                      setLogForm((prev) => ({
-                        ...prev,
-                        designId: designOptions[0]?.id || '',
-                        cellPartId: '',
-                        title: 'Aktivitas Servis / Pemeliharaan',
-                        description: '',
-                      }));
-                      setShowLogModal(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95"
-                  >
-                    <span className="material-symbols-outlined text-sm">build</span>
-                    <span>+ Catat Maintenance Baru</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                      <th className="py-3 px-4">Tanggal Servis</th>
-                      <th className="py-3 px-4">Kategori Aksi</th>
-                      <th className="py-3 px-4">Target Jig / Part</th>
-                      <th className="py-3 px-4">Aktivitas &amp; Deskripsi</th>
-                      <th className="py-3 px-4">Part yang Diganti</th>
-                      <th className="py-3 px-4">Teknisi &amp; Durasi</th>
-                      <th className="py-3 px-4 text-center">Status</th>
-                      {isPic && <th className="py-3 px-4 text-right">Aksi</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredLogs.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center text-slate-400">
-                          <span className="material-symbols-outlined text-4xl text-slate-300 block mb-1">
-                            history_toggle_off
-                          </span>
-                          Belum ada riwayat aktivitas maintenance yang dicatat.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredLogs.map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
-                            {new Date(item.performedAt).toLocaleDateString('id-ID', {
-                              day: 'numeric',
+            {/* Table Container */}
+            <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
+                    <th className="px-3 py-2">Tanggal / Waktu</th>
+                    <th className="px-2 py-2">Shift &amp; Inspector</th>
+                    <th className="px-2 py-2">Target Jig / Part</th>
+                    <th className="px-2 text-center py-2">Parameter (6 Poin)</th>
+                    <th className="px-2 text-center py-2">Hasil</th>
+                    <th className="px-2 py-2">Catatan Temuan</th>
+                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  </tr>
+                </thead>
+                <tbody className="text-gray-700">
+                  {filteredChecklists.map((check) => {
+                    const isNg = check.overallResult === 'NG';
+                    return (
+                      <tr
+                        key={check.id}
+                        className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                          isNg ? 'bg-red-50/40 hover:bg-red-100/40' : ''
+                        }`}
+                      >
+                        <td className="px-3 py-2 font-mono text-[10px] text-gray-700">
+                          <div>
+                            {new Date(check.checkDate).toLocaleDateString('id-ID', {
+                              day: '2-digit',
                               month: 'short',
                               year: 'numeric',
                             })}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.actionType === 'PREVENTIVE'
-                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                  : item.actionType === 'CORRECTIVE'
-                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                  : item.actionType === 'RENEWAL'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-purple-50 text-purple-700 border border-purple-200'
-                              }`}
-                            >
-                              {item.actionType}
-                            </span>
-                            {item.resetLifetime && (
-                              <div className="text-[10px] text-emerald-600 font-bold mt-0.5 flex items-center gap-0.5">
-                                <span className="material-symbols-outlined text-xs">restart_alt</span>
-                                Lifetime Reset
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-bold text-slate-900">{item.design?.noReg}</div>
-                            <div className="text-[11px] text-slate-500">{item.design?.assyPartName}</div>
-                            {item.cellPart && (
-                              <div className="text-[10px] text-amber-600 font-medium">
-                                Part: {item.cellPart.name} ({item.cellPart.partNumber})
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-700">
-                            <div className="font-bold text-slate-900">{item.title}</div>
-                            <div className="text-xs text-slate-600 mt-0.5">{item.description}</div>
-                          </td>
-                          <td className="py-3 px-4 text-slate-600 text-xs">
-                            {item.partsReplaced || '—'}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-slate-800">{item.performedBy}</div>
-                            <div className="text-[11px] text-slate-400">
-                              {item.durationMinutes} menit
-                              {item.cost && item.cost > 0
-                                ? ` • Rp ${Number(item.cost).toLocaleString('id-ID')}`
-                                : ''}
+                          </div>
+                          <div className="text-[8.5px] text-gray-400">
+                            {new Date(check.checkDate).toLocaleTimeString('id-ID', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <span className="text-[8.5px] font-bold bg-gray-100 text-gray-700 px-1.5 py-0.2 rounded border border-gray-200">
+                            {check.shift}
+                          </span>
+                          <div className="font-bold text-gray-800 text-[11px] mt-0.5">{check.inspectorName}</div>
+                        </td>
+
+                        <td className="px-2 py-2">
+                          <div className="font-mono font-bold text-gray-900">{check.design?.noReg}</div>
+                          <div className="text-[10px] text-gray-500">{check.design?.assyPartName}</div>
+                          {check.cellPart && (
+                            <div className="text-[9px] text-amber-700 font-medium">
+                              Part: {check.cellPart.name} ({check.cellPart.partNumber})
                             </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
+                          )}
+                        </td>
+
+                        <td className="px-2 py-2 text-center">
+                          <div className="inline-grid grid-cols-6 gap-0.5 text-[8.5px] font-mono">
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.status === 'COMPLETED'
+                              title="Kebersihan"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.cleaningStatus === 'OK'
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
                               }`}
                             >
-                              {item.status}
+                              Cln
                             </span>
-                          </td>
-                          {isPic && (
-                            <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleDeleteLog(item.id)}
-                                title="Hapus log ini"
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-base">delete</span>
-                              </button>
-                            </td>
+                            <span
+                              title="Locator Pin"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.locatorPinStatus === 'OK'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
+                              }`}
+                            >
+                              Pin
+                            </span>
+                            <span
+                              title="Clamping / Klem"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.clampingStatus === 'OK'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
+                              }`}
+                            >
+                              Clp
+                            </span>
+                            <span
+                              title="Sensor / Pokayoke"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.sensorStatus === 'OK'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
+                              }`}
+                            >
+                              Sen
+                            </span>
+                            <span
+                              title="Baut & Baseplate"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.boltsStatus === 'OK'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
+                              }`}
+                            >
+                              Blt
+                            </span>
+                            <span
+                              title="Pelumasan"
+                              className={`px-1 py-0.2 rounded font-bold ${
+                                check.lubricationStatus === 'OK'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
+                              }`}
+                            >
+                              Lub
+                            </span>
+                          </div>
+                        </td>
+
+                        <td
+                          className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider ${
+                            isNg ? 'bg-red-500 text-white' : 'bg-green-500 text-white'
+                          }`}
+                        >
+                          {isNg ? 'NG' : 'OK'}
+                        </td>
+
+                        <td className="px-2 py-2 text-gray-600 text-[10px]">
+                          <div>{check.notes || '—'}</div>
+                          {check.linkToAbnormality && check.abnormalityId && (
+                            <span className="inline-flex items-center gap-0.5 text-[8.5px] text-red-600 font-bold mt-0.5">
+                              <span className="material-symbols-outlined text-[10px]">link</span>
+                              Link Abnormality
+                            </span>
                           )}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                        </td>
+
+                        {isPic && (
+                          <td className="px-2 py-2 text-center">
+                            <button
+                              onClick={() => handleDeleteChecklist(check.id)}
+                              title="Hapus checklist"
+                              className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+
+                  {filteredChecklists.length === 0 && (
+                    <tr>
+                      <td colSpan={isPic ? 7 : 6} className="text-center py-12 text-gray-400 text-xs">
+                        Belum ada catatan checklist inspeksi.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 3: MAINTENANCE & SERVICE LOGS                             */}
+        {/* ============================================================== */}
+        {activeTab === 'logs' && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Filter Toolbar with right-aligned search bar */}
+            <div className="flex items-center justify-between gap-3 mb-2 shrink-0">
+              <div className="flex items-center gap-2">
+                {/* Action category pill */}
+                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                  <span>Kategori: {logActionFilter}</span>
+                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
+                  <select
+                    value={logActionFilter}
+                    onChange={(e) => setLogActionFilter(e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
+                  >
+                    <option value="ALL">Semua Kategori</option>
+                    <option value="PREVENTIVE">Preventive Maintenance (PM)</option>
+                    <option value="CORRECTIVE">Corrective Maintenance (CM)</option>
+                    <option value="RENEWAL">Renewal / Overhaul</option>
+                    <option value="CALIBRATION">Kalibrasi &amp; Alignment</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Right: Search Bar & Count */}
+              <div className="flex items-center gap-2.5">
+                <div className="text-[10px] text-gray-400 font-medium hidden sm:inline">
+                  <strong className="text-gray-700">{filteredLogs.length}</strong> riwayat
+                </div>
+                <div className="relative">
+                  <span
+                    className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"
+                    style={{ fontSize: '10px' }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search Judul, Teknisi, No.Reg..."
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                    className="pl-7 pr-3 py-1 bg-gray-100 border border-gray-300 rounded-full text-[10px] w-56 focus:ring-1 focus:ring-[#0063ff] focus:border-[#0063ff] focus:bg-white outline-none text-gray-700 placeholder-gray-400 transition-all"
+                  />
+                </div>
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Table Container */}
+            <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
+                    <th className="px-3 py-2">Tanggal</th>
+                    <th className="px-2 py-2">Kategori</th>
+                    <th className="px-2 py-2">Target Jig / Part</th>
+                    <th className="px-2 py-2">Aktivitas &amp; Deskripsi</th>
+                    <th className="px-2 py-2">Part Diganti</th>
+                    <th className="px-2 py-2">Teknisi &amp; Durasi</th>
+                    <th className="px-2 text-center py-2">Status</th>
+                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  </tr>
+                </thead>
+                <tbody className="text-gray-700">
+                  {filteredLogs.map((item) => (
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="px-3 py-2 font-mono text-[10px] text-gray-700 whitespace-nowrap">
+                        {new Date(item.performedAt).toLocaleDateString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </td>
+
+                      <td className="px-2 py-2">
+                        <span
+                          className={`inline-block px-1.5 py-0.2 rounded text-[8.5px] font-bold ${
+                            item.actionType === 'PREVENTIVE'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : item.actionType === 'CORRECTIVE'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : item.actionType === 'RENEWAL'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-purple-50 text-purple-700 border border-purple-200'
+                          }`}
+                        >
+                          {item.actionType}
+                        </span>
+                        {item.resetLifetime && (
+                          <div className="text-[8px] text-emerald-600 font-bold mt-0.5 flex items-center gap-0.5">
+                            <span className="material-symbols-outlined text-[10px]">restart_alt</span>
+                            Reset Lifetime
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-2 py-2">
+                        <div className="font-mono font-bold text-gray-900">{item.design?.noReg}</div>
+                        <div className="text-[10px] text-gray-500">{item.design?.assyPartName}</div>
+                        {item.cellPart && (
+                          <div className="text-[9px] text-amber-700 font-medium">
+                            Part: {item.cellPart.name} ({item.cellPart.partNumber})
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-2 py-2 text-gray-700">
+                        <div className="font-bold text-gray-800 text-[11px]">{item.title}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{item.description}</div>
+                      </td>
+
+                      <td className="px-2 py-2 text-[10px] text-gray-600">{item.partsReplaced || '—'}</td>
+
+                      <td className="px-2 py-2">
+                        <div className="font-semibold text-gray-800 text-[11px]">{item.performedBy}</div>
+                        <div className="text-[9px] text-gray-400">
+                          {item.durationMinutes}m
+                          {item.cost && item.cost > 0
+                            ? ` · Rp ${Number(item.cost).toLocaleString('id-ID')}`
+                            : ''}
+                        </div>
+                      </td>
+
+                      <td className="px-2 py-2 text-center">
+                        <span
+                          className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-full ${
+                            item.status === 'COMPLETED'
+                              ? 'bg-green-100 text-green-700 border border-green-200'
+                              : 'bg-amber-100 text-amber-700 border border-amber-200'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </td>
+
+                      {isPic && (
+                        <td className="px-2 py-2 text-center">
+                          <button
+                            onClick={() => handleDeleteLog(item.id)}
+                            title="Hapus log servis"
+                            className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+
+                  {filteredLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={isPic ? 8 : 7} className="text-center py-12 text-gray-400 text-xs">
+                        Belum ada riwayat aktivitas maintenance yang dicatat.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ========================================================= */}
-      {/* MODAL 1: ATUR JADWAL & LIFETIME TPM                       */}
+      {/* QUICK MODAL 1: ATUR JADWAL & LIFETIME TPM                 */}
       {/* ========================================================= */}
       {showScheduleModal && selectedScheduleItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
                   <span className="material-symbols-outlined text-lg">calendar_month</span>
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Atur Jadwal &amp; Lifetime TPM</h3>
-                  <p className="text-[11px] text-slate-500">
+                  <h3 className="font-bold text-xs text-gray-800">Atur Jadwal &amp; Lifetime TPM</h3>
+                  <p className="text-[9px] text-gray-500">
                     {selectedScheduleItem.noReg} — {selectedScheduleItem.name}
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowScheduleModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
               >
-                <span className="material-symbols-outlined">close</span>
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveSchedule} className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveSchedule} className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Mulai Jadwal TPM
                   </label>
                   <input
@@ -1363,12 +1458,12 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setScheduleForm((prev) => ({ ...prev, tpmScheduleStart: e.target.value }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Batas / Deadline Servis
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Deadline Servis
                   </label>
                   <input
                     type="date"
@@ -1376,19 +1471,19 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setScheduleForm((prev) => ({ ...prev, tpmScheduleDeadline: e.target.value }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
                   />
                 </div>
               </div>
 
-              <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
-                <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block">
+              <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/60 space-y-2.5">
+                <span className="text-[9px] font-bold text-blue-900 uppercase tracking-wider block">
                   Konfigurasi 2-Way Lifetime
                 </span>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
                       Mode Evaluasi
                     </label>
                     <select
@@ -1396,7 +1491,7 @@ export default function TPMPage() {
                       onChange={(e) =>
                         setScheduleForm((prev) => ({ ...prev, lifetimeType: e.target.value as any }))
                       }
-                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
                     >
                       <option value="DUAL">DUAL (2-Way)</option>
                       <option value="DAYS">Hanya Hari</option>
@@ -1404,7 +1499,7 @@ export default function TPMPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
                       Batas Hari
                     </label>
                     <input
@@ -1414,11 +1509,11 @@ export default function TPMPage() {
                       onChange={(e) =>
                         setScheduleForm((prev) => ({ ...prev, lifetimeDays: parseInt(e.target.value) || 1 }))
                       }
-                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
                       Maks Siklus (x)
                     </label>
                     <input
@@ -1428,13 +1523,13 @@ export default function TPMPage() {
                       onChange={(e) =>
                         setScheduleForm((prev) => ({ ...prev, maxUsage: parseInt(e.target.value) || 1 }))
                       }
-                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-600 mb-1">
+                  <label className="block text-[9px] font-medium text-gray-600 mb-1">
                     Counter Pemakaian Saat Ini
                   </label>
                   <input
@@ -1444,7 +1539,7 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setScheduleForm((prev) => ({ ...prev, currentUsage: parseInt(e.target.value) || 0 }))
                     }
-                    className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                    className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
               </div>
@@ -1453,14 +1548,14 @@ export default function TPMPage() {
                 <button
                   type="button"
                   onClick={() => setShowScheduleModal(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold"
+                  className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50"
+                  className="px-3.5 py-1.5 bg-[#0063ff] text-white hover:bg-[#0052d4] rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? 'Menyimpan...' : 'Simpan Jadwal'}
                 </button>
@@ -1471,35 +1566,179 @@ export default function TPMPage() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 2: FORM CHECKLIST INSPEKSI                          */}
+      {/* QUICK MODAL 2: LOG / RECORD USAGE                         */}
+      {/* ========================================================= */}
+      {showUsageModal && usageTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-lg">speed</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs text-gray-800">Catat Pemakaian (Usage Counter)</h3>
+                  <p className="text-[9px] text-gray-500">Update siklus kerja jig untuk pelacakan keausan fisik</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUsageModal(false);
+                  setUsageTarget(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-3">
+              {/* Target Item Card */}
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8.5px] font-bold text-gray-500 uppercase">
+                    {usageTarget.isCellPart ? 'CellPart (Komponen)' : 'Jig & Fixture (Induk)'}
+                  </span>
+                  <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                    {usageTarget.isCellPart ? usageTarget.partNumber : usageTarget.noReg}
+                  </span>
+                </div>
+                <div className="font-bold text-xs text-gray-900 truncate" title={usageTarget.name}>
+                  {usageTarget.name}
+                </div>
+                <div className="flex items-center justify-between pt-1 text-[10px] text-gray-600">
+                  <span>Pemakaian Saat Ini:</span>
+                  <span className="font-mono font-bold text-gray-800">
+                    {usageTarget.currentUsage || 0} / {usageTarget.maxUsage || 500}x
+                  </span>
+                </div>
+              </div>
+
+              {/* Input Mode Selector */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl border border-gray-200 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setUsageMode('ADD')}
+                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                    usageMode === 'ADD' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  + Tambah Siklus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUsageMode('SET')}
+                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                    usageMode === 'SET' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  Set Counter Total
+                </button>
+              </div>
+
+              {/* Quick Presets for ADD mode */}
+              {usageMode === 'ADD' && (
+                <div>
+                  <div className="text-[9px] font-bold text-gray-500 mb-1.5 uppercase">Quick Preset:</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[10, 25, 50, 100, 200].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setUsageAmountInput(preset)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                          usageAmountInput === preset
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        +{preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Number Input */}
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  {usageMode === 'ADD' ? 'Jumlah Pemakaian yang Ditambahkan' : 'Nilai Counter Baru'}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={usageAmountInput}
+                  onChange={(e) => setUsageAmountInput(parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-sm font-bold font-mono outline-none focus:ring-1 focus:ring-[#0063ff]"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUsageModal(false);
+                    setUsageTarget(null);
+                  }}
+                  className="flex-1 py-2 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting || usageAmountInput < 0}
+                  onClick={handleSaveUsage}
+                  className="flex-1 py-2 bg-[#0063ff] text-white rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Pemakaian'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* QUICK MODAL 3: FORM CHECKLIST INSPEKSI                    */}
       {/* ========================================================= */}
       {showChecklistModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 my-8 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95] overflow-y-auto">
+          <div className="bg-white border border-gray-300 rounded-2xl max-w-lg w-full p-5 shadow-2xl relative my-6 text-gray-800">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-150">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0063ff] flex items-center justify-center">
                   <span className="material-symbols-outlined text-lg">fact_check</span>
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Form Checklist Inspeksi TPM</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Inspeksi mandiri kondisi fisik, fungsi mekanisme, dan kelayakan Jig &amp; Fixture
+                  <h3 className="text-xs font-bold text-gray-900">Form Checklist Inspeksi TPM</h3>
+                  <p className="text-[9px] text-gray-500">
+                    Inspeksi mandiri kondisi fisik, fungsi mekanisme, dan kelayakan Jig
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowChecklistModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
               >
-                <span className="material-symbols-outlined">close</span>
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleSubmitChecklist} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmitChecklist} className="mt-3 space-y-3">
               {/* Target Selection */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                   Pilih Jig / Fixture Induk *
                 </label>
                 <select
@@ -1508,7 +1747,7 @@ export default function TPMPage() {
                   onChange={(e) =>
                     setChecklistForm((prev) => ({ ...prev, designId: e.target.value, cellPartId: '' }))
                   }
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 >
                   <option value="">-- Pilih Jig / Fixture --</option>
                   {designOptions.map((opt) => (
@@ -1520,9 +1759,11 @@ export default function TPMPage() {
               </div>
 
               {/* Inspector info */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Inspector</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Inspector
+                  </label>
                   <input
                     type="text"
                     required
@@ -1530,15 +1771,17 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setChecklistForm((prev) => ({ ...prev, inspectorName: e.target.value }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Shift</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Shift
+                  </label>
                   <select
                     value={checklistForm.shift}
                     onChange={(e) => setChecklistForm((prev) => ({ ...prev, shift: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   >
                     <option value="Shift 1">Shift 1</option>
                     <option value="Shift 2">Shift 2</option>
@@ -1547,21 +1790,25 @@ export default function TPMPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tanggal</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Tanggal
+                  </label>
                   <input
                     type="date"
                     value={checklistForm.checkDate}
                     onChange={(e) =>
                       setChecklistForm((prev) => ({ ...prev, checkDate: e.target.value }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
               </div>
 
               {/* 6 Inspection Items */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
-                <span className="text-xs font-bold text-slate-800 block">Item Pemeriksaan Standar:</span>
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
+                <span className="text-[10px] font-bold text-gray-800 block uppercase">
+                  Item Pemeriksaan Standar:
+                </span>
 
                 {[
                   { key: 'cleaningStatus', label: '1. Kebersihan dari chips / gram & debu' },
@@ -1573,9 +1820,9 @@ export default function TPMPage() {
                 ].map((item) => (
                   <div
                     key={item.key}
-                    className="flex items-center justify-between py-1 border-b border-slate-100 last:border-0 text-xs"
+                    className="flex items-center justify-between py-0.5 border-b border-gray-100 last:border-0 text-xs"
                   >
-                    <span className="text-slate-700 font-medium">{item.label}</span>
+                    <span className="text-gray-700 text-[11px]">{item.label}</span>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1 cursor-pointer">
                         <input
@@ -1586,9 +1833,9 @@ export default function TPMPage() {
                           onChange={() =>
                             setChecklistForm((prev) => ({ ...prev, [item.key]: 'OK' }))
                           }
-                          className="text-emerald-600 focus:ring-emerald-500"
+                          className="text-green-600 focus:ring-green-500"
                         />
-                        <span className="text-[11px] font-bold text-emerald-700">OK</span>
+                        <span className="text-[10px] font-bold text-green-700">OK</span>
                       </label>
                       <label className="flex items-center gap-1 cursor-pointer">
                         <input
@@ -1603,9 +1850,9 @@ export default function TPMPage() {
                               overallResult: 'NG',
                             }))
                           }
-                          className="text-rose-600 focus:ring-rose-500"
+                          className="text-red-600 focus:ring-red-500"
                         />
-                        <span className="text-[11px] font-bold text-rose-700">NG</span>
+                        <span className="text-[10px] font-bold text-red-700">NG</span>
                       </label>
                     </div>
                   </div>
@@ -1613,65 +1860,65 @@ export default function TPMPage() {
               </div>
 
               {/* Overall Result */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200">
-                <span className="text-xs font-bold text-slate-800">Kesimpulan Hasil Inspeksi:</span>
+              <div className="flex items-center justify-between p-2.5 rounded-xl border border-gray-200 bg-white">
+                <span className="text-[10px] font-bold text-gray-800 uppercase">Hasil Inspeksi:</span>
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="radio"
                       name="overallResult"
                       value="OK"
                       checked={checklistForm.overallResult === 'OK'}
                       onChange={() => setChecklistForm((prev) => ({ ...prev, overallResult: 'OK' }))}
-                      className="text-emerald-600"
+                      className="text-green-600"
                     />
-                    <span className="text-xs font-bold text-emerald-700">🟢 LAYAK (OK)</span>
+                    <span className="text-xs font-bold text-green-700">🟢 OK</span>
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
+                  <label className="flex items-center gap-1 cursor-pointer">
                     <input
                       type="radio"
                       name="overallResult"
                       value="NG"
                       checked={checklistForm.overallResult === 'NG'}
                       onChange={() => setChecklistForm((prev) => ({ ...prev, overallResult: 'NG' }))}
-                      className="text-rose-600"
+                      className="text-red-600"
                     />
-                    <span className="text-xs font-bold text-rose-700">🔴 ABNORMAL (NG)</span>
+                    <span className="text-xs font-bold text-red-700">🔴 NG</span>
                   </label>
                 </div>
               </div>
 
               {/* Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Catatan / Keterangan Temuan
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Catatan Temuan
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Tuliskan catatan khusus atau alasan jika ditemukan NG..."
+                  placeholder="Tuliskan catatan khusus atau temuan kerusakan jika ada..."
                   value={checklistForm.notes}
                   onChange={(e) => setChecklistForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 />
               </div>
 
               {/* Abnormality Link checkbox */}
               {checklistForm.overallResult === 'NG' && (
-                <label className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-200 rounded-xl cursor-pointer">
+                <label className="flex items-start gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl cursor-pointer">
                   <input
                     type="checkbox"
                     checked={checklistForm.linkToAbnormality}
                     onChange={(e) =>
                       setChecklistForm((prev) => ({ ...prev, linkToAbnormality: e.target.checked }))
                     }
-                    className="mt-0.5 text-rose-600 rounded"
+                    className="mt-0.5 text-red-600 rounded"
                   />
                   <div className="text-xs">
-                    <span className="font-bold text-rose-900 block">
+                    <span className="font-bold text-red-900 block text-[11px]">
                       Otomatis Terbitkan Laporan Abnormality
                     </span>
-                    <span className="text-rose-700 text-[11px]">
-                      Temuan ini akan langsung tercatat di menu Monitoring Abnormality untuk ditindaklanjuti.
+                    <span className="text-red-700 text-[10px]">
+                      Temuan ini akan langsung tercatat di Monitoring Abnormality.
                     </span>
                   </div>
                 </label>
@@ -1681,14 +1928,14 @@ export default function TPMPage() {
                 <button
                   type="button"
                   onClick={() => setShowChecklistModal(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold"
+                  className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50"
+                  className="px-3.5 py-1.5 bg-[#0063ff] text-white hover:bg-[#0052d4] rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? 'Menyimpan...' : 'Simpan Checklist'}
                 </button>
@@ -1699,41 +1946,41 @@ export default function TPMPage() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 3: TAMBAH MAINTENANCE LOG                           */}
+      {/* QUICK MODAL 4: TAMBAH MAINTENANCE LOG                     */}
       {/* ========================================================= */}
       {showLogModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 my-8 animate-scale-up">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95] overflow-y-auto">
+          <div className="bg-white border border-gray-300 rounded-2xl max-w-lg w-full p-5 shadow-2xl relative my-6 text-gray-800">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-150">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
                   <span className="material-symbols-outlined text-lg">handyman</span>
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Catat Aktivitas Maintenance</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Log riwayat servis preventif, perbaikan kerusakan, kalibrasi, atau renewal
+                  <h3 className="text-xs font-bold text-gray-900">Catat Aktivitas Maintenance</h3>
+                  <p className="text-[9px] text-gray-500">
+                    Log riwayat servis preventif, perbaikan kerusakan, atau renewal
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowLogModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
               >
-                <span className="material-symbols-outlined">close</span>
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleSubmitLog} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmitLog} className="mt-3 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                   Pilih Jig / Fixture Induk *
                 </label>
                 <select
                   required
                   value={logForm.designId}
                   onChange={(e) => setLogForm((prev) => ({ ...prev, designId: e.target.value, cellPartId: '' }))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 >
                   <option value="">-- Pilih Jig / Fixture --</option>
                   {designOptions.map((opt) => (
@@ -1744,42 +1991,42 @@ export default function TPMPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Jenis Tindakan
                   </label>
                   <select
                     value={logForm.actionType}
                     onChange={(e) => setLogForm((prev) => ({ ...prev, actionType: e.target.value as any }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   >
-                    <option value="PREVENTIVE">🔧 Preventive Maintenance (PM)</option>
-                    <option value="CORRECTIVE">⚠️ Corrective Maintenance (CM)</option>
-                    <option value="RENEWAL">🔄 Renewal / Ganti Komponen</option>
-                    <option value="CALIBRATION">📐 Kalibrasi &amp; Alignment</option>
-                    <option value="OVERHAUL">⚙️ Total Overhaul</option>
+                    <option value="PREVENTIVE">Preventive Maintenance (PM)</option>
+                    <option value="CORRECTIVE">Corrective Maintenance (CM)</option>
+                    <option value="RENEWAL">Renewal / Ganti Komponen</option>
+                    <option value="CALIBRATION">Kalibrasi &amp; Alignment</option>
+                    <option value="OVERHAUL">Total Overhaul</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Status Pengerjaan
                   </label>
                   <select
                     value={logForm.status}
                     onChange={(e) => setLogForm((prev) => ({ ...prev, status: e.target.value as any }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   >
-                    <option value="COMPLETED">✅ Selesai (Completed)</option>
-                    <option value="IN_PROGRESS">⏳ Sedang Berjalan (In Progress)</option>
-                    <option value="SCHEDULED">📅 Terjadwal (Scheduled)</option>
+                    <option value="COMPLETED">Selesai (Completed)</option>
+                    <option value="IN_PROGRESS">Sedang Berjalan (In Progress)</option>
+                    <option value="SCHEDULED">Terjadwal (Scheduled)</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                   Judul Aktivitas Servis *
                 </label>
                 <input
@@ -1788,27 +2035,27 @@ export default function TPMPage() {
                   placeholder="Contoh: Preventive Maintenance Bulanan OP#1"
                   value={logForm.title}
                   onChange={(e) => setLogForm((prev) => ({ ...prev, title: e.target.value }))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                   Rincian Deskripsi Pengerjaan *
                 </label>
                 <textarea
                   required
                   rows={2}
-                  placeholder="Jelaskan tindakan servis, penyetelan, atau perbaikan yang dilakukan..."
+                  placeholder="Jelaskan tindakan servis, penyetelan, atau perbaikan..."
                   value={logForm.description}
                   onChange={(e) => setLogForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Teknisi / PIC
                   </label>
                   <input
@@ -1816,22 +2063,22 @@ export default function TPMPage() {
                     required
                     value={logForm.performedBy}
                     onChange={(e) => setLogForm((prev) => ({ ...prev, performedBy: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Tanggal Servis
                   </label>
                   <input
                     type="date"
                     value={logForm.performedAt}
                     onChange={(e) => setLogForm((prev) => ({ ...prev, performedAt: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Durasi (Menit)
                   </label>
                   <input
@@ -1841,26 +2088,26 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setLogForm((prev) => ({ ...prev, durationMinutes: parseInt(e.target.value) || 60 }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Part yang Diganti (Opsional)
                   </label>
                   <input
                     type="text"
-                    placeholder="Contoh: Locator Pin D10, O-ring, Spring..."
+                    placeholder="Contoh: Locator Pin D10, O-ring..."
                     value={logForm.partsReplaced}
                     onChange={(e) => setLogForm((prev) => ({ ...prev, partsReplaced: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
                     Estimasi Biaya (Rp)
                   </label>
                   <input
@@ -1870,13 +2117,13 @@ export default function TPMPage() {
                     onChange={(e) =>
                       setLogForm((prev) => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
                   />
                 </div>
               </div>
 
               {/* Reset lifetime checkbox */}
-              <label className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl cursor-pointer">
+              <label className="flex items-start gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl cursor-pointer">
                 <input
                   type="checkbox"
                   checked={logForm.resetLifetime}
@@ -1884,10 +2131,10 @@ export default function TPMPage() {
                   className="mt-0.5 text-emerald-600 rounded"
                 />
                 <div className="text-xs">
-                  <span className="font-bold text-emerald-950 block">
+                  <span className="font-bold text-emerald-950 block text-[11px]">
                     Reset Lifetime &amp; Counter Pemakaian (Kembali ke 0)
-                  </span >
-                  <span className="text-emerald-800 text-[11px]">
+                  </span>
+                  <span className="text-emerald-800 text-[10px]">
                     Centang jika maintenance ini memulihkan kondisi fixture menjadi baru/siap pakai kembali.
                   </span>
                 </div>
@@ -1897,14 +2144,14 @@ export default function TPMPage() {
                 <button
                   type="button"
                   onClick={() => setShowLogModal(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold"
+                  className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50"
+                  className="px-3.5 py-1.5 bg-[#0063ff] text-white hover:bg-[#0052d4] rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? 'Menyimpan...' : 'Simpan Maintenance'}
                 </button>
@@ -1915,63 +2162,92 @@ export default function TPMPage() {
       )}
 
       {/* ========================================================= */}
-      {/* MODAL 4: QUICK RENEW LIFETIME                             */}
+      {/* QUICK MODAL 5: QUICK RENEW LIFETIME                       */}
       {/* ========================================================= */}
       {showRenewModal && renewTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 animate-scale-up">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-xl">replay</span>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-lg">autorenew</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs text-gray-800">Renew Lifetime</h3>
+                  <p className="text-[9px] text-gray-500">Reset parameter keausan setelah perbaikan atau rekondisi</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Renew Lifetime</h3>
-                <p className="text-xs text-slate-500">{renewTarget.name}</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 mb-4">
-              Pilih parameter lifetime yang ingin di-reset kembali ke awal:
-            </p>
-
-            <div className="space-y-2 mb-5">
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer p-2 bg-slate-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  checked={renewResetDays}
-                  onChange={(e) => setRenewResetDays(e.target.checked)}
-                  className="text-emerald-600 rounded"
-                />
-                <span>Reset Tanggal Pemasangan / Perpanjang Hari</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer p-2 bg-slate-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  checked={renewResetUsage}
-                  onChange={(e) => setRenewResetUsage(e.target.checked)}
-                  className="text-emerald-600 rounded"
-                />
-                <span>Reset Counter Pemakaian (Kembali ke 0x)</span>
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowRenewModal(false)}
-                className="px-3.5 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold"
+                onClick={() => {
+                  setShowRenewModal(false);
+                  setRenewTarget(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
               >
-                Batal
+                ✕
               </button>
-              <button
-                type="button"
-                disabled={submitting || (!renewResetDays && !renewResetUsage)}
-                onClick={handleQuickRenew}
-                className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50"
-              >
-                {submitting ? 'Memproses...' : 'Konfirmasi Renew'}
-              </button>
+            </div>
+
+            {/* Target Card & Options */}
+            <div className="p-4 space-y-3">
+              <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[8.5px] font-bold text-gray-500 uppercase">
+                    {renewTarget.isCellPart ? 'CellPart (Komponen)' : 'Jig & Fixture (Induk)'}
+                  </span>
+                  <span className="font-mono text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    {renewTarget.isCellPart ? renewTarget.partNumber : renewTarget.noReg}
+                  </span>
+                </div>
+                <div className="font-bold text-xs text-gray-900 truncate" title={renewTarget.name}>
+                  {renewTarget.name}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={renewResetDays}
+                    onChange={(e) => setRenewResetDays(e.target.checked)}
+                    className="text-[#0063ff] rounded"
+                  />
+                  <span>Reset Tanggal Pemasangan / Hari</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={renewResetUsage}
+                    onChange={(e) => setRenewResetUsage(e.target.checked)}
+                    className="text-[#0063ff] rounded"
+                  />
+                  <span>Reset Counter Pemakaian (Kembali ke 0x)</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRenewModal(false);
+                    setRenewTarget(null);
+                  }}
+                  className="px-3.5 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting || (!renewResetDays && !renewResetUsage)}
+                  onClick={handleQuickRenew}
+                  className="px-4 py-1.5 bg-amber-600 text-white hover:bg-amber-700 rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? 'Memproses...' : 'Konfirmasi Renew'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
