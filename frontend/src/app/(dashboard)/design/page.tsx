@@ -252,9 +252,10 @@ export function DesignPageContent() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number | 'All'>(25);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedCpIds, setSelectedCpIds] = useState<Set<string>>(new Set()); // set of cp.id
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfDownloadProgress, setPdfDownloadProgress] = useState<{ current: number; total: number } | null>(null);
   const [exportScope, setExportScope] = useState<'selected' | 'all'>('selected');
-  const [isZippingPdf, setIsZippingPdf] = useState(false);
-  const [zipProgress, setZipProgress] = useState<{ current: number; total: number } | null>(null);
   const [showSelectDropdown, setShowSelectDropdown] = useState(false);
   const selectDropdownRef = React.useRef<HTMLDivElement>(null);
   const headerCheckboxRef = React.useRef<HTMLInputElement>(null);
@@ -909,6 +910,28 @@ export function DesignPageContent() {
     });
   };
 
+  const toggleSelectCpItem = (cpId: string) => {
+    setSelectedCpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cpId)) next.delete(cpId);
+      else next.add(cpId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllCellPartsOfItem = (itemCellParts: any[]) => {
+    setSelectedCpIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = itemCellParts.every((cp) => next.has(cp.id));
+      if (allSelected) {
+        itemCellParts.forEach((cp) => next.delete(cp.id));
+      } else {
+        itemCellParts.forEach((cp) => next.add(cp.id));
+      }
+      return next;
+    });
+  };
+
   const toggleSelectCurrentPage = () => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -928,64 +951,87 @@ export function DesignPageContent() {
 
   const clearSelection = () => {
     setSelectedIds(new Set());
+    setSelectedCpIds(new Set());
     setShowSelectDropdown(false);
   };
 
-  // ─── Batch Download PDF Drawings (.zip) ───────────────────────────────────
-  const handleBatchDownloadPdfZip = async () => {
+  // ─── Direct Batch Download PDF (No ZIP / No Excel) ──────────────────────────
+  const handleBatchDownloadPdfDirect = async () => {
+    // Collect all items to download
     const selectedItemsList = items.filter((item) => selectedIds.has(item.id));
     const itemsWithApprovedPdf = selectedItemsList.filter((item) => {
       const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
       return doc && doc.approvalStatus === 'APPROVED';
     });
 
-    if (itemsWithApprovedPdf.length === 0) {
-      alert('Tidak ada item terpilih yang memiliki Drawing PDF Resmi (Approved).');
+    // Collect all selected cell parts
+    const selectedCpList: { item: MasterItem; cp: any }[] = [];
+    for (const item of items) {
+      if (item.cellParts && item.cellParts.length > 0) {
+        for (const cp of item.cellParts) {
+          if (selectedCpIds.has(cp.id)) {
+            selectedCpList.push({ item, cp });
+          }
+        }
+      }
+    }
+
+    const totalDownloadCount = itemsWithApprovedPdf.length + selectedCpList.length;
+
+    if (totalDownloadCount === 0) {
+      alert('Tidak ada item atau CellPart terpilih yang memiliki dokumen PDF drawing resmi.');
       return;
     }
 
-    setIsZippingPdf(true);
-    setZipProgress({ current: 0, total: itemsWithApprovedPdf.length });
+    setIsDownloadingPdf(true);
+    setPdfDownloadProgress({ current: 0, total: totalDownloadCount });
 
+    let successCount = 0;
     try {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      const folderName = `Drawing_Resmi_${new Date().toISOString().split('T')[0]}`;
-      const folder = zip.folder(folderName);
-
-      for (let i = 0; i < itemsWithApprovedPdf.length; i++) {
-        const item = itemsWithApprovedPdf[i];
-        setZipProgress({ current: i + 1, total: itemsWithApprovedPdf.length });
+      // 1. Download Master Jig PDFs
+      for (const item of itemsWithApprovedPdf) {
+        setPdfDownloadProgress({ current: successCount + 1, total: totalDownloadCount });
         try {
-          const { blob, filename } = await fetchDesignPdfBlob(item.id);
           const safeNoReg = item.noReg.replace(/[/\\?%*:|"<>]/g, '_');
-          const saveName = `${safeNoReg}_${filename}`;
-          folder?.file(saveName, blob);
+          await downloadDesignPdfFull(item.id, `${safeNoReg}_Drawing_Resmi.pdf`);
+          successCount++;
+          // Delay to prevent browser throttling downloads
+          await new Promise((r) => setTimeout(r, 600));
         } catch (err) {
           console.error(`Gagal mengunduh PDF untuk ${item.noReg}`, err);
         }
       }
 
-      const zipContent = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipContent);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Batch_Drawing_JigFixture_${selectedIds.size}_Items_${new Date().toISOString().split('T')[0]}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // 2. Download Selected CellPart PDFs (single page)
+      for (const { item, cp } of selectedCpList) {
+        setPdfDownloadProgress({ current: successCount + 1, total: totalDownloadCount });
+        try {
+          const pageIndex = cp.pdfPageIndex || 1;
+          const safeNoReg = item.noReg.replace(/[/\\?%*:|"<>]/g, '_');
+          const safeCpPart = (cp.partNumber || 'CP').replace(/[/\\?%*:|"<>]/g, '_');
+          await downloadDesignPdfPage(
+            item.id,
+            pageIndex,
+            `${safeNoReg}_CP_${safeCpPart}_Hal_${pageIndex}.pdf`
+          );
+          successCount++;
+          // Delay to prevent browser throttling downloads
+          await new Promise((r) => setTimeout(r, 600));
+        } catch (err) {
+          console.error(`Gagal mengunduh PDF CellPart ${cp.partNumber}`, err);
+        }
+      }
 
       setToast({
         type: 'success',
-        msg: `Berhasil mengunduh ${itemsWithApprovedPdf.length} Drawing PDF dalam format ZIP!`,
+        msg: `Berhasil mengunduh ${successCount} file PDF Drawing secara langsung!`,
       });
     } catch (err: any) {
-      console.error('Failed to generate ZIP:', err);
-      alert('Gagal mengemas file PDF ke dalam ZIP. Silakan coba lagi.');
+      console.error('Error saat unduh file PDF:', err);
+      alert('Terjadi kesalahan saat mengunduh berkas PDF.');
     } finally {
-      setIsZippingPdf(false);
-      setZipProgress(null);
+      setIsDownloadingPdf(false);
+      setPdfDownloadProgress(null);
     }
   };
 
@@ -1437,14 +1483,14 @@ export function DesignPageContent() {
                           <span className="text-[9px] font-bold text-blue-600">({filteredItems.length})</span>
                         </button>
 
-                        {selectedIds.size > 0 && (
+                        {(selectedIds.size > 0 || selectedCpIds.size > 0) && (
                           <button
                             type="button"
                             onClick={clearSelection}
                             className="w-full text-left px-2.5 py-1.5 hover:bg-red-50 text-red-600 rounded-lg flex items-center justify-between cursor-pointer mt-0.5 border-t border-gray-100 pt-1.5"
                           >
                             <span>Hapus Semua Pilihan</span>
-                            <span className="text-[9px] font-bold">({selectedIds.size})</span>
+                            <span className="text-[9px] font-bold">({selectedIds.size + selectedCpIds.size})</span>
                           </button>
                         )}
                       </div>
@@ -1735,6 +1781,15 @@ export function DesignPageContent() {
                                 <table className="w-full text-[10px]">
                                   <thead>
                                     <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-150">
+                                      <th className="px-2 py-1.5 text-center w-8">
+                                        <input
+                                          type="checkbox"
+                                          checked={cellParts.length > 0 && cellParts.every((cp) => selectedCpIds.has(cp.id))}
+                                          onChange={() => toggleSelectAllCellPartsOfItem(cellParts)}
+                                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                          title="Pilih semua CellPart untuk Jig ini"
+                                        />
+                                      </th>
                                       <th className="px-3 py-1.5 text-left">Part Number</th>
                                       <th className="px-2 py-1.5 text-left">Nama</th>
                                       <th className="px-2 py-1.5 text-center">Hal Drawing</th>
@@ -1746,10 +1801,20 @@ export function DesignPageContent() {
                                   </thead>
                                   <tbody>
                                     {cellParts.map((cp) => {
+                                      const isCpSelected = selectedCpIds.has(cp.id);
                                       const cpStockRed = cp.actualStock === 0;
                                       const cpStockYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
                                       return (
-                                        <tr key={cp.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                                        <tr key={cp.id} className={`border-b border-gray-100 hover:bg-gray-50/50 ${isCpSelected ? 'bg-blue-50/60' : ''}`}>
+                                          <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                              type="checkbox"
+                                              checked={isCpSelected}
+                                              onChange={() => toggleSelectCpItem(cp.id)}
+                                              className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                              title={`Pilih CellPart ${cp.partNumber}`}
+                                            />
+                                          </td>
                                           <td className="px-3 py-1.5 font-mono font-bold text-gray-800">
                                             <Link href={`/design/${item.id}`} className="hover:text-blue-600 hover:underline">
                                               {cp.partNumber}
@@ -2013,66 +2078,55 @@ export function DesignPageContent() {
         )}
       </div>
 
-      {/* ─── FLOATING MULTI-PAGE BATCH ACTION BAR ───────────────────────────── */}
-      {selectedIds.size > 0 && (
+      {/* ─── FLOATING MULTI-PAGE BATCH ACTION BAR (DIRECT PDF DOWNLOAD ONLY) ───────────────────────────── */}
+      {(selectedIds.size > 0 || selectedCpIds.size > 0) && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur-md border border-slate-700 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-5 animate-in fade-in slide-in-from-bottom-5 duration-200">
           <div className="flex items-center gap-3 border-r border-slate-700 pr-4">
             <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xs text-white shadow-inner">
-              {selectedIds.size}
+              {selectedIds.size + selectedCpIds.size}
             </div>
             <div>
               <div className="text-xs font-bold leading-tight">
-                {selectedIds.size} Data Master Terpilih
+                {selectedIds.size > 0 && <span>{selectedIds.size} Jig</span>}
+                {selectedIds.size > 0 && selectedCpIds.size > 0 && <span> + </span>}
+                {selectedCpIds.size > 0 && <span>{selectedCpIds.size} CellPart</span>} Terpilih
               </div>
               <div className="text-[9px] text-slate-400">
-                Pilihan tersimpan di {totalPages > 1 ? 'semua halaman' : 'tabel'}
+                Unduh langsung berkas PDF drawing resmi
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Quick Action: Select All Filtered */}
+            {/* Quick Action: Select All Filtered Jigs */}
             {selectedIds.size < filteredItems.length && (
               <button
                 type="button"
                 onClick={selectAllFiltered}
                 className="text-[10px] font-semibold text-blue-300 hover:text-white underline cursor-pointer px-1"
               >
-                Pilih Semua ({filteredItems.length})
+                Pilih Semua Jig ({filteredItems.length})
               </button>
             )}
 
-            {/* Action 1: Export Selected to Excel */}
+            {/* Direct PDF Download Button (NO ZIP, NO EXCEL) */}
             <button
               type="button"
-              onClick={() => {
-                setExportScope('selected');
-                setShowExportModal(true);
-              }}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              disabled={isDownloadingPdf}
+              onClick={handleBatchDownloadPdfDirect}
+              className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-sm">table_chart</span>
-              <span>Ekspor Excel ({selectedIds.size})</span>
-            </button>
-
-            {/* Action 2: Download Batch PDF Drawing (.zip) */}
-            <button
-              type="button"
-              disabled={isZippingPdf}
-              onClick={handleBatchDownloadPdfZip}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {isZippingPdf ? (
+              {isDownloadingPdf ? (
                 <>
                   <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   <span>
-                    Proses ZIP ({zipProgress?.current}/{zipProgress?.total})...
+                    Mengunduh PDF ({pdfDownloadProgress?.current}/{pdfDownloadProgress?.total})...
                   </span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-sm">folder_zip</span>
-                  <span>Unduh Drawing PDF (.zip)</span>
+                  <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                  <span>Unduh Dokumen PDF ({selectedIds.size + selectedCpIds.size})</span>
                 </>
               )}
             </button>

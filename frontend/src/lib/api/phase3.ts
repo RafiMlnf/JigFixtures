@@ -133,6 +133,69 @@ export async function updateAbnormalityStatus(id: string, status: 'OPEN' | 'MONI
   return res.json();
 }
 
+export interface MachineDashboardItem {
+  id: string;
+  name: string;
+  code: string;
+  lineId: string;
+  lineName: string;
+  lineCode?: string;
+  location?: string;
+  description?: string;
+  status: string;
+  designId?: string;
+  designNoReg?: string;
+  designName?: string;
+  jigCondition: 'SAFE' | 'WARNING' | 'OVERDUE';
+  tpmSchedule: 'SAFE' | 'WARNING' | 'OVERDUE';
+}
+
+/** Fetch machines dashboard list with 2-circle status */
+export async function fetchMachinesDashboard(lineFilter?: string): Promise<MachineDashboardItem[]> {
+  const url = lineFilter && lineFilter !== 'All' 
+    ? `${BASE}/api/abnormality/machines?line=${encodeURIComponent(lineFilter)}`
+    : `${BASE}/api/abnormality/machines`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error('Failed to fetch machines dashboard');
+  return res.json();
+}
+
+/** Register new machine */
+export async function registerMachine(data: {
+  name: string;
+  code: string;
+  lineId: string;
+  designId?: string;
+  location?: string;
+  description?: string;
+}) {
+  const res = await fetch(`${BASE}/api/abnormality/machines`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Gagal mendaftarkan mesin');
+  }
+  return res.json();
+}
+
+/** Delete machine */
+export async function deleteMachine(id: string) {
+  const res = await fetch(`${BASE}/api/abnormality/machines/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error('Gagal menghapus mesin');
+  return res.json();
+}
+
 /** Fetch dashboard high-priority alerts */
 export async function fetchDashboardAlerts() {
   const res = await fetch(`${BASE}/api/inventory/alerts`, {

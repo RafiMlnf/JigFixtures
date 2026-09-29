@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Request, UseGuards } from '@nestjs/common';
 import { AbnormalityService } from './abnormality.service';
 import { CreateAbnormalityDto } from './dto/create-abnormality.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -27,5 +27,33 @@ export class AbnormalityController {
     @Body('status') status: 'OPEN' | 'MONITORING' | 'CLOSED',
   ) {
     return this.abnormalityService.updateStatus(id, status);
+  }
+
+  /** Get Machine Dashboard Cards (with 2-circle status) */
+  @Get('machines')
+  getMachines(@Query('line') line?: string) {
+    return this.abnormalityService.getMachinesDashboard(line);
+  }
+
+  /** Register a new machine */
+  @Post('machines')
+  createMachine(
+    @Body()
+    dto: {
+      name: string;
+      code: string;
+      lineId: string;
+      designId?: string;
+      location?: string;
+      description?: string;
+    },
+  ) {
+    return this.abnormalityService.createMachine(dto);
+  }
+
+  /** Delete a machine */
+  @Delete('machines/:id')
+  deleteMachine(@Param('id') id: string) {
+    return this.abnormalityService.deleteMachine(id);
   }
 }

@@ -33,10 +33,23 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         ALTER TABLE "cell_part" ADD COLUMN IF NOT EXISTS "tpm_schedule_start" TIMESTAMPTZ;
         ALTER TABLE "cell_part" ADD COLUMN IF NOT EXISTS "tpm_schedule_deadline" TIMESTAMPTZ;
         ALTER TABLE "cell_part" ADD COLUMN IF NOT EXISTS "tpm_lifetime_set_at" TIMESTAMPTZ;
+
+        CREATE TABLE IF NOT EXISTS "machine" (
+          "id" VARCHAR(64) PRIMARY KEY,
+          "name" VARCHAR(255) NOT NULL,
+          "code" VARCHAR(100) NOT NULL,
+          "line_id" TEXT NOT NULL,
+          "design_id" TEXT,
+          "location" VARCHAR(255),
+          "description" TEXT,
+          "status" VARCHAR(50) DEFAULT 'ACTIVE',
+          "created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          "updated_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
       `);
-      console.log('2-Way lifetime + TPM columns verified / migrated successfully.');
+      console.log('Lifetime, TPM, and Machine columns/tables verified successfully.');
     } catch (err) {
-      console.warn('Could not run raw migration for lifetime/TPM columns:', err);
+      console.warn('Could not run raw migration for lifetime/TPM/machine:', err);
     }
   }
 }

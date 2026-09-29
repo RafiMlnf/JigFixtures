@@ -1,9 +1,20 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { canEdit } from '@/lib/rbac';
-import { fetchDesignItems, fetchAbnormalities, createAbnormality, updateAbnormalityStatus } from '@/lib/api/phase3';
+import {
+  fetchDesignItems,
+  fetchAbnormalities,
+  createAbnormality,
+  updateAbnormalityStatus,
+  fetchMachinesDashboard,
+  registerMachine,
+  deleteMachine,
+  fetchLinesAndProcesses,
+  MachineDashboardItem,
+} from '@/lib/api/phase3';
 
 const ABNORMALITY_TYPES = ['RUSAK', 'AUS', 'DEFORMASI', 'LAINNYA'];
 
@@ -50,16 +61,35 @@ export default function UpdateAbnormalityPage() {
   const { user, isLoading } = useApp();
   const isPic = !isLoading && canEdit(user?.role);
 
+  // Active view tab: 'dashboard' (cards), 'reports' (table), 'form' (create report)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'form'>('dashboard');
+
+  // Data states
+  const [machines, setMachines] = useState<MachineDashboardItem[]>([]);
+  const [lines, setLines] = useState<any[]>([]);
   const [items, setItems] = useState<DesignItem[]>([]);
   const [reports, setReports] = useState<AbnormalityReport[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Filter states for list
-  const [searchRegId, setSearchRegId] = useState('');
+  // Filters
+  const [search, setSearch] = useState('');
   const [lineFilter, setLineFilter] = useState('All');
-  const [processFilter, setProcessFilter] = useState('All');
-  const [typeFilter, setTypeFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'SAFE' | 'WARNING' | 'OVERDUE'>('ALL');
 
-  // Form states
+  // Selected Machine modal
+  const [selectedMachineDetail, setSelectedMachineDetail] = useState<MachineDashboardItem | null>(null);
+
+  // Register Machine Modal
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [mName, setMName] = useState('');
+  const [mCode, setMCode] = useState('');
+  const [mLineId, setMLineId] = useState('');
+  const [mDesignId, setMDesignId] = useState('');
+  const [mLocation, setMLocation] = useState('');
+  const [mDescription, setMDescription] = useState('');
+  const [registering, setRegistering] = useState(false);
+
+  // Create Abnormality Form states
   const [selectedItemId, setSelectedItemId] = useState('');
   const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
@@ -71,40 +101,142 @@ export default function UpdateAbnormalityPage() {
   const [tempAction, setTempAction] = useState('');
   const [correctiveAction, setCorrectiveAction] = useState('');
   const [actionPic, setActionPic] = useState('');
-  const [status, setStatus] = useState<'OPEN' | 'MONITORING' | 'CLOSED'>('OPEN');
+  const [abnStatus, setAbnStatus] = useState<'OPEN' | 'MONITORING' | 'CLOSED'>('OPEN');
   const [linkToRevision, setLinkToRevision] = useState<boolean>(false);
   const [linkToSpare, setLinkToSpare] = useState<boolean>(false);
-
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'form' | 'list'>('form');
 
   const loadData = useCallback(async () => {
-    const [itemsData, reportsData] = await Promise.all([
-      fetchDesignItems().catch(() => []),
-      fetchAbnormalities().catch(() => []),
-    ]);
-    setItems(itemsData);
-    setReports(reportsData);
-  }, []);
+    setLoading(true);
+    try {
+      const [mList, dItems, rList, meta] = await Promise.all([
+        fetchMachinesDashboard().catch(() => []),
+        fetchDesignItems().catch(() => []),
+        fetchAbnormalities().catch(() => []),
+        fetchLinesAndProcesses().catch(() => ({ lines: [], processes: [] })),
+      ]);
+      setMachines(mList || []);
+      setItems(dItems || []);
+      setReports(rList || []);
+      setLines(meta?.lines || []);
+      if (!mLineId && meta?.lines?.length > 0) {
+        setMLineId(meta.lines[0].id);
+      }
+    } catch (err: any) {
+      console.error('Failed to load abnormality dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [mLineId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Unique list filters derivation
-  const uniqueLines = Array.from(new Set(reports.map((r) => r.item.lineProduct).filter(Boolean)));
-  const uniqueProcesses = Array.from(new Set(reports.map((r) => r.item.process).filter(Boolean)));
+  // Toast timeout
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
 
-  const filteredReports = reports.filter((r) => {
-    const matchesReg = r.item.noReg.toLowerCase().includes(searchRegId.toLowerCase());
-    const matchesLine = lineFilter === 'All' || r.item.lineProduct === lineFilter;
-    const matchesProcess = processFilter === 'All' || r.item.process === processFilter;
-    const matchesType = typeFilter === 'All' || r.item.type === typeFilter;
-    return matchesReg && matchesLine && matchesProcess && matchesType;
-  });
+  // Unique lines
+  const uniqueLines = useMemo(() => {
+    const list = Array.from(
+      new Set([...lines.map((l) => l.lineName), ...machines.map((m) => m.lineName)].filter(Boolean))
+    );
+    return ['All', ...list];
+  }, [lines, machines]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Machine counts by status
+  const safeCount = machines.filter(
+    (m) => m.jigCondition === 'SAFE' && m.tpmSchedule === 'SAFE'
+  ).length;
+  const warningCount = machines.filter(
+    (m) => m.jigCondition === 'WARNING' || m.tpmSchedule === 'WARNING'
+  ).length;
+  const overdueCount = machines.filter(
+    (m) => m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE'
+  ).length;
+
+  // Filtered Machines
+  const filteredMachines = useMemo(() => {
+    return machines.filter((m) => {
+      const matchesLine = lineFilter === 'All' || m.lineName === lineFilter || m.lineId === lineFilter;
+      const q = search.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        m.code.toLowerCase().includes(q) ||
+        (m.designNoReg && m.designNoReg.toLowerCase().includes(q));
+
+      let matchesStatus = true;
+      if (statusFilter === 'SAFE') {
+        matchesStatus = m.jigCondition === 'SAFE' && m.tpmSchedule === 'SAFE';
+      } else if (statusFilter === 'WARNING') {
+        matchesStatus =
+          (m.jigCondition === 'WARNING' || m.tpmSchedule === 'WARNING') &&
+          m.jigCondition !== 'OVERDUE' &&
+          m.tpmSchedule !== 'OVERDUE';
+      } else if (statusFilter === 'OVERDUE') {
+        matchesStatus = m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE';
+      }
+
+      return matchesLine && matchesSearch && matchesStatus;
+    });
+  }, [machines, lineFilter, search, statusFilter]);
+
+  // Register Machine Handler
+  const handleRegisterMachine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mName.trim() || !mCode.trim() || !mLineId) {
+      setToast({ type: 'error', msg: 'Harap isi Nama Mesin, Kode Mesin, dan Line Produksi!' });
+      return;
+    }
+    setRegistering(true);
+    try {
+      await registerMachine({
+        name: mName.trim(),
+        code: mCode.trim(),
+        lineId: mLineId,
+        designId: mDesignId || undefined,
+        location: mLocation.trim() || undefined,
+        description: mDescription.trim() || undefined,
+      });
+      setToast({ type: 'success', msg: `Mesin "${mName}" berhasil didaftarkan!` });
+      setShowRegisterModal(false);
+      setMName('');
+      setMCode('');
+      setMDesignId('');
+      setMLocation('');
+      setMDescription('');
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal mendaftarkan mesin' });
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  // Delete Machine Handler
+  const handleDeleteMachine = async (id: string, name: string) => {
+    if (!window.confirm(`Hapus pendaftaran mesin "${name}"?`)) return;
+    try {
+      await deleteMachine(id);
+      setToast({ type: 'success', msg: `Mesin "${name}" telah dihapus.` });
+      if (selectedMachineDetail?.id === id) {
+        setSelectedMachineDetail(null);
+      }
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal menghapus mesin' });
+    }
+  };
+
+  // Submit Abnormality Report Form
+  const handleSubmitAbnormality = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItemId || !description.trim() || !foundBy.trim()) {
       setToast({ type: 'error', msg: 'Harap isi semua input wajib.' });
@@ -123,17 +255,16 @@ export default function UpdateAbnormalityPage() {
         tempAction,
         correctiveAction,
         actionPic,
-        status,
+        status: abnStatus,
         linkToRevision,
         linkToSpare,
       });
 
       setToast({
         type: 'success',
-        msg: 'Laporan abnormality berhasil diajukan! Notifikasi dikirim ke Section & Dept Head.',
+        msg: 'Laporan abnormality berhasil diajukan! Notifikasi terkirim.',
       });
 
-      // Reset form
       setSelectedItemId('');
       setItemSearchQuery('');
       setDescription('');
@@ -144,10 +275,10 @@ export default function UpdateAbnormalityPage() {
       setActionPic('');
       setLinkToRevision(false);
       setLinkToSpare(false);
-      setStatus('OPEN');
+      setAbnStatus('OPEN');
 
       await loadData();
-      setActiveTab('list');
+      setActiveTab('reports');
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message || 'Gagal mengirim laporan.' });
     } finally {
@@ -165,80 +296,411 @@ export default function UpdateAbnormalityPage() {
     }
   };
 
+  // Helper circle color mapper
+  // Top: Jig Condition, Bottom: TPM Schedule
+  // Green: SAFE, Yellow: WARNING, Red: OVERDUE
+  const getCircleColor = (status: 'SAFE' | 'WARNING' | 'OVERDUE') => {
+    if (status === 'OVERDUE') {
+      return 'bg-rose-500 shadow-rose-300 ring-rose-200 border-rose-600';
+    }
+    if (status === 'WARNING') {
+      return 'bg-amber-400 shadow-amber-200 ring-amber-200 border-amber-500';
+    }
+    return 'bg-emerald-500 shadow-emerald-200 ring-emerald-200 border-emerald-600';
+  };
+
   return (
-    <div className="flex-1 flex flex-col px-4 pb-3 pt-1.5 bg-white h-full overflow-hidden relative">
-      {/* Toast */}
+    <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden">
+      {/* Toast Notification */}
       {toast && (
-        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-50 text-xs font-semibold px-4 py-1.5 rounded-xl shadow-lg flex items-center gap-2 max-w-sm ${toast.type === 'success' ? 'bg-orange-600 text-white' : 'bg-red-600 text-white'}`}>
-          <span className="material-symbols-outlined text-sm">{toast.type === 'success' ? 'check_circle' : 'error'}</span>
+        <div
+          className={`fixed top-4 right-4 z-[99] px-4 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
+            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+          }`}
+        >
           {toast.msg}
-          <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100">✕</button>
         </div>
       )}
 
-      {/* Header & Tabs Inline */}
-      <header className="h-10 flex justify-between items-center border-b border-gray-150 mb-2 shrink-0">
-        <div className="flex items-center gap-4">
-          <h2 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[#0063ff] text-base">report_problem</span>
+      {/* ─── STANDARD TOPBAR (Matching Design, Inventory, TPM, Approval Center) ──────────────── */}
+      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
+        <div className="flex items-center gap-4 flex-1">
+          {/* Title */}
+          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
+            <span className="material-symbols-outlined text-[#0063ff] text-lg">report_problem</span>
             Monitoring Abnormality
           </h2>
 
-          {/* Tabs */}
-          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg">
-            <button
-              onClick={() => setActiveTab('form')}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'form' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          {/* Unified search bar inside topbar */}
+          <div className="relative w-72">
+            <span
+              className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[11px]"
+              style={{ fontSize: '11px' }}
             >
-              <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">add_circle</span>
-              Buat Laporan
+              search
+            </span>
+            <input
+              className="pl-7 pr-2.5 py-1.5 bg-gray-50 hover:bg-gray-100/70 border border-gray-300 rounded-lg w-full text-[10px] outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-medium transition-all"
+              placeholder="Cari nama mesin, kode, atau No. Reg..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Line Filter pill in header */}
+          <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2.5 py-1 cursor-pointer hover:bg-gray-50">
+            <span>Line: {lineFilter}</span>
+            <span className="material-symbols-outlined text-[12px]">expand_more</span>
+            <select
+              value={lineFilter}
+              onChange={(e) => setLineFilter(e.target.value)}
+              className="absolute inset-0 opacity-0 cursor-pointer text-xs"
+            >
+              {uniqueLines.map((l) => (
+                <option key={l} value={l}>
+                  {l === 'All' ? 'All Lines' : `Line ${l}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Right side actions group */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Daftarkan Mesin Button in topbar */}
+          {isPic && (
+            <button
+              type="button"
+              onClick={() => setShowRegisterModal(true)}
+              className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Daftarkan Mesin Baru di Line Produksi"
+            >
+              <span className="material-symbols-outlined text-xs">add</span>
+              <span>Daftarkan Mesin</span>
+            </button>
+          )}
+
+          {/* Buat Laporan / Tab buttons */}
+          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                activeTab === 'dashboard'
+                  ? 'bg-white text-[#0063ff] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">dashboard</span>
+              <span>Dashboard Mesin</span>
             </button>
             <button
-              onClick={() => setActiveTab('list')}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${activeTab === 'list' ? 'bg-white text-[#0063ff] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setActiveTab('reports')}
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                activeTab === 'reports'
+                  ? 'bg-white text-[#0063ff] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
             >
-              <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">list</span>
-              Daftar Laporan
+              <span className="material-symbols-outlined text-xs">list</span>
+              <span>Daftar Laporan</span>
               {reports.filter((r) => r.status === 'OPEN').length > 0 && (
-                <span className="ml-1 bg-red-500 text-white text-[8px] px-1 py-0.25 rounded-full">
+                <span className="ml-1 bg-red-500 text-white text-[8px] px-1 py-0.2 rounded-full font-mono">
                   {reports.filter((r) => r.status === 'OPEN').length}
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab('form')}
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                activeTab === 'form'
+                  ? 'bg-white text-[#0063ff] shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">add_circle</span>
+              <span>Buat Laporan</span>
+            </button>
           </div>
         </div>
-
-        {activeTab === 'form' && isPic && (
-          <button
-            type="submit"
-            form="abnormalityForm"
-            disabled={submitting}
-            className="py-1 px-3.5 bg-[#0063ff] text-white rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
-          >
-            {submitting ? (
-              <span className="material-symbols-outlined animate-spin text-sm">sync</span>
-            ) : (
-              <span className="material-symbols-outlined text-sm">send</span>
-            )}
-            {submitting ? 'Mengirim...' : 'Laporkan Abnormality'}
-          </button>
-        )}
       </header>
 
-      {/* Tab: Form */}
+      {/* ─── TAB 1: DASHBOARD MESIN (CARDS) ─────────────────────────────────── */}
+      {activeTab === 'dashboard' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Summary / Filter Bar (Matching other dashboard pages) */}
+          <div className="flex items-center justify-between gap-3 bg-gray-50 p-2.5 rounded-xl mb-3 border border-gray-150 shrink-0">
+            {/* 3 Clickable Status Filters */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                  statusFilter === 'SAFE'
+                    ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                    : 'bg-white text-green-700 border-green-200 hover:bg-green-50'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                <span>Aman ({safeCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                  statusFilter === 'WARNING'
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                    : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[12px]">warning</span>
+                <span>Warning ({warningCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                  statusFilter === 'OVERDUE'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                    : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[12px]">error</span>
+                <span>Lewat Lifetime ({overdueCount})</span>
+              </button>
+
+              {statusFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('ALL')}
+                  className="text-[9px] text-gray-400 hover:text-gray-600 font-bold underline ml-1 cursor-pointer"
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+
+            {/* Strict 2-Bulatan Status Legend (Clean & Minimal) */}
+            <div className="flex items-center gap-3 text-[9px] bg-white border border-gray-200 px-3 py-1 rounded-lg text-gray-500 font-medium">
+              <span className="text-gray-700 font-bold">Keterangan Card:</span>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shadow-2xs"></span>
+                <span>Aman</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block shadow-2xs"></span>
+                <span>Warning</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-2xs"></span>
+                <span>Lewat Lifetime</span>
+              </div>
+              <span className="text-gray-300">|</span>
+              <span>
+                <strong className="text-gray-700">Bulat Atas:</strong> Kondisi Jig ·{' '}
+                <strong className="text-gray-700">Bulat Bawah:</strong> Jadwal TPM
+              </span>
+            </div>
+          </div>
+
+          {/* Cards Grid Container */}
+          <div className="flex-1 overflow-y-auto pr-1 pb-4">
+            {loading ? (
+              <div className="flex items-center justify-center h-48 text-gray-400 text-xs">
+                <span className="material-symbols-outlined animate-spin mr-2 text-blue-600">sync</span>
+                Memuat data mesin di line...
+              </div>
+            ) : filteredMachines.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-300 p-8">
+                <span className="material-symbols-outlined text-4xl text-gray-300 mb-2">
+                  precision_manufacturing
+                </span>
+                <p className="text-xs font-bold text-gray-600">Belum ada mesin yang terdaftar</p>
+                <p className="text-[10px] text-gray-400 max-w-xs mt-1">
+                  Klik tombol <strong>"Daftarkan Mesin"</strong> di topbar untuk menambahkan mesin di line produksi.
+                </p>
+                {isPic && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterModal(true)}
+                    className="mt-3 bg-[#0063ff] text-white text-xs font-bold px-3.5 py-1.5 rounded-lg hover:bg-[#0052d4] transition-colors cursor-pointer shadow-sm"
+                  >
+                    + Daftarkan Mesin Sekarang
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {filteredMachines.map((machine) => {
+                  const topCircleClass = getCircleColor(machine.jigCondition);
+                  const btmCircleClass = getCircleColor(machine.tpmSchedule);
+
+                  return (
+                    <div
+                      key={machine.id}
+                      onClick={() => setSelectedMachineDetail(machine)}
+                      className="bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all p-3 flex flex-col justify-between cursor-pointer group relative overflow-hidden"
+                    >
+                      {/* Top Header inside Card: Machine Code & Line Badge */}
+                      <div className="flex items-center justify-between gap-1 mb-2">
+                        <span className="text-[9px] font-black font-mono text-gray-500 uppercase tracking-tight truncate">
+                          {machine.code}
+                        </span>
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200 shrink-0">
+                          {machine.lineName}
+                        </span>
+                      </div>
+
+                      {/* Machine Name */}
+                      <h4 className="text-xs font-bold text-gray-800 line-clamp-1 mb-3 group-hover:text-blue-600 transition-colors">
+                        {machine.name}
+                      </h4>
+
+                      {/* ─── STRICT 2-BULAT STATUS INDICATOR ───────────────── */}
+                      {/* Inside card: ONLY 2 simple circles as requested, no extra descriptions */}
+                      <div className="py-2.5 my-auto flex flex-col items-center justify-center gap-3 bg-gray-50/80 rounded-xl border border-gray-150">
+                        {/* Bulat Atas: Jig Condition */}
+                        <div
+                          className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${topCircleClass}`}
+                          title={`Bulat Atas: Kondisi Jig (${machine.jigCondition})`}
+                        />
+
+                        {/* Bulat Bawah: TPM Schedule */}
+                        <div
+                          className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${btmCircleClass}`}
+                          title={`Bulat Bawah: Jadwal TPM (${machine.tpmSchedule})`}
+                        />
+                      </div>
+
+                      {/* Minimal bottom footer */}
+                      <div className="mt-2.5 pt-1.5 border-t border-gray-100 flex items-center justify-between text-[9px] text-gray-400">
+                        <span className="truncate">
+                          {machine.designNoReg || 'Jig Standar'}
+                        </span>
+                        <span className="material-symbols-outlined text-[13px] opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">
+                          info
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 2: LAPORAN HISTORIS ABNORMALITY ────────────────────────────── */}
+      {activeTab === 'reports' && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-lg border border-gray-200">
+          <div className="flex-1 overflow-y-auto no-scrollbar">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 border-b border-gray-200 text-[10px]">
+                  <th className="px-3 py-2">No. Reg</th>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2">Found By</th>
+                  <th className="px-2 py-2">Problem Description</th>
+                  <th className="px-2 py-2">Root Cause</th>
+                  <th className="px-2 py-2">PIC Action</th>
+                  <th className="px-2 py-2 text-center">Status</th>
+                  {isPic && <th className="px-2 py-2 text-center">Aksi</th>}
+                </tr>
+              </thead>
+              <tbody className="text-gray-700 text-xs">
+                {reports.length === 0 ? (
+                  <tr>
+                    <td colSpan={isPic ? 8 : 7} className="text-center py-12 text-gray-400 text-xs">
+                      Belum ada laporan abnormality.
+                    </td>
+                  </tr>
+                ) : (
+                  reports
+                    .filter((r) => {
+                      const q = search.toLowerCase().trim();
+                      const matchesReg = !q || r.item.noReg.toLowerCase().includes(q);
+                      const matchesLine =
+                        lineFilter === 'All' || r.item.lineProduct === lineFilter;
+                      return matchesReg && matchesLine;
+                    })
+                    .map((r) => {
+                      const sc = STATUS_CONFIG[r.status] || STATUS_CONFIG.OPEN;
+                      return (
+                        <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="px-3 py-2 font-mono font-bold text-[10px] text-gray-800">
+                            {r.item.noReg}
+                          </td>
+                          <td className="px-2 py-2">
+                            <span className="bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[8px] font-bold">
+                              {r.item.type || 'JF'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 text-gray-600 font-medium">
+                            {r.foundBy}{' '}
+                            <span className="block text-[8px] text-gray-400">
+                              {new Date(r.dateFound).toLocaleDateString('id-ID')}
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 max-w-[160px]" title={r.description}>
+                            <p className="truncate text-[10px] text-gray-800">{r.description}</p>
+                          </td>
+                          <td className="px-2 py-2 max-w-[160px]" title={r.rootCause || 'N/A'}>
+                            <p className="truncate text-[10px] text-gray-500 italic">
+                              {r.rootCause || 'N/A'}
+                            </p>
+                          </td>
+                          <td className="px-2 py-2 font-medium text-gray-700">
+                            {r.actionPic || <span className="text-gray-400 italic">None</span>}
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <span
+                              className={`text-[8px] font-bold px-2 py-0.5 rounded-full border ${sc.color}`}
+                            >
+                              {sc.label}
+                            </span>
+                          </td>
+                          {isPic && (
+                            <td className="px-2 py-2 text-center">
+                              <select
+                                value={r.status}
+                                onChange={(e) => handleStatusChange(r.id, e.target.value as any)}
+                                className="text-[9px] border border-gray-200 rounded px-1.5 py-0.5 bg-white cursor-pointer font-bold text-gray-700"
+                              >
+                                <option value="OPEN">Open</option>
+                                <option value="MONITORING">Monitoring</option>
+                                <option value="CLOSED">Closed</option>
+                              </select>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 3: FORM LAPORAN ABNORMALITY ───────────────────────────────── */}
       {activeTab === 'form' && (
-        <form id="abnormalityForm" onSubmit={handleSubmit} className="flex-1 grid grid-cols-2 gap-4 overflow-hidden pr-0.5 pb-0.5">
-          
+        <form
+          onSubmit={handleSubmitAbnormality}
+          className="flex-1 grid grid-cols-2 gap-4 overflow-hidden bg-white p-4 rounded-xl border border-gray-200 shadow-sm"
+        >
           {/* Left Column: Problem Definition */}
           <div className="space-y-2 flex flex-col justify-start h-full">
             <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-1 flex items-center gap-1.5 shrink-0">
-              <span className="material-symbols-outlined text-[#0063ff] text-sm">assignment_late</span>
+              <span className="material-symbols-outlined text-blue-600 text-sm">assignment_late</span>
               Informasi Masalah
             </h3>
-            
+
             {/* Item selector */}
             <div className="shrink-0">
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Pilih Item Jig/Fixture *</label>
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Pilih Item Jig/Fixture *
+              </label>
               {(() => {
                 const selectedItem = items.find((item) => item.id === selectedItemId);
                 const filteredItems = items.filter((item) => {
@@ -252,214 +714,202 @@ export default function UpdateAbnormalityPage() {
 
                 return (
                   <div className="relative">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="-- Cari berdasarkan No. Reg / Part Name / Line --"
-                        value={isItemDropdownOpen ? itemSearchQuery : (selectedItem ? `${selectedItem.noReg} — ${selectedItem.assyPartName} [${selectedItem.lineProduct}]` : '')}
-                        onChange={(e) => {
-                          setItemSearchQuery(e.target.value);
-                          if (!isItemDropdownOpen) setIsItemDropdownOpen(true);
-                        }}
-                        onFocus={() => {
-                          setIsItemDropdownOpen(true);
-                          setItemSearchQuery('');
-                        }}
-                        className="w-full border border-gray-300 rounded-lg pl-3 pr-12 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700 font-medium"
-                      />
-                      <input type="hidden" required value={selectedItemId} />
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                        {selectedItemId && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedItemId('');
-                              setItemSearchQuery('');
-                            }}
-                            className="text-gray-400 hover:text-gray-650 cursor-pointer flex"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">close</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setIsItemDropdownOpen(!isItemDropdownOpen)}
-                          className="text-gray-400 hover:text-gray-650 cursor-pointer flex"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">
-                            {isItemDropdownOpen ? 'expand_less' : 'expand_more'}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsItemDropdownOpen(!isItemDropdownOpen)}
+                      className="w-full border border-gray-300 bg-white rounded-lg px-2.5 py-1.5 text-xs text-left outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="truncate">
+                        {selectedItem
+                          ? `${selectedItem.noReg} — ${selectedItem.assyPartName} (${selectedItem.lineProduct})`
+                          : 'Cari & Pilih Item Jig/Fixture...'}
+                      </span>
+                      <span className="material-symbols-outlined text-[14px] text-gray-400">
+                        arrow_drop_down
+                      </span>
+                    </button>
 
-                    {/* Dropdown Options */}
                     {isItemDropdownOpen && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={() => setIsItemDropdownOpen(false)}
-                        ></div>
+                      <div className="absolute left-0 mt-1 w-full rounded-lg bg-white border border-gray-250 shadow-xl p-2 z-50 text-xs">
+                        <div className="relative mb-2">
+                          <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                            search
+                          </span>
+                          <input
+                            type="text"
+                            className="w-full pl-6 pr-2 py-1 bg-gray-50 border border-gray-200 rounded-md text-[10px] focus:ring-1 focus:ring-blue-500 outline-none text-gray-700 font-medium"
+                            placeholder="Ketik No. Reg / Part Name / Line..."
+                            value={itemSearchQuery}
+                            onChange={(e) => setItemSearchQuery(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
 
-                        <ul className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-lg z-50 text-xs no-scrollbar py-1">
-                          {filteredItems.length > 0 ? (
-                            filteredItems.map((item) => {
-                              const isSelected = item.id === selectedItemId;
-                              return (
-                                <li
-                                  key={item.id}
-                                  onClick={() => {
-                                    setSelectedItemId(item.id);
-                                    setIsItemDropdownOpen(false);
-                                    setItemSearchQuery('');
-                                  }}
-                                  className={`px-3 py-2 cursor-pointer transition-colors flex flex-col gap-0.5 ${
-                                    isSelected
-                                      ? 'bg-blue-50 text-blue-700 font-bold'
-                                      : 'text-gray-700 hover:bg-gray-50'
-                                  }`}
-                                >
-                                  <div className="flex justify-between items-center">
-                                    <span className="font-semibold text-gray-800">{item.noReg}</span>
-                                    <span className="text-[8px] uppercase font-bold bg-gray-150 text-gray-600 px-1.5 py-0.25 rounded font-mono">
-                                      {item.lineProduct}
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] text-gray-500 font-medium truncate">{item.assyPartName}</span>
-                                </li>
-                              );
-                            })
+                        <div className="max-h-48 overflow-y-auto no-scrollbar space-y-0.5">
+                          {filteredItems.length === 0 ? (
+                            <p className="text-[10px] text-gray-400 text-center py-2">
+                              Tidak ditemukan.
+                            </p>
                           ) : (
-                            <li className="px-3 py-2 text-gray-400 italic text-center">Item tidak ditemukan</li>
+                            filteredItems.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedItemId(item.id);
+                                  setIsItemDropdownOpen(false);
+                                  setItemSearchQuery('');
+                                }}
+                                className={`w-full text-left px-2 py-1.5 rounded hover:bg-blue-50 hover:text-blue-800 transition-colors block text-[10px] ${
+                                  selectedItemId === item.id
+                                    ? 'bg-blue-50 text-blue-700 font-bold'
+                                    : 'text-gray-700 font-medium'
+                                }`}
+                              >
+                                <span className="font-mono font-bold mr-1">{item.noReg}</span> —{' '}
+                                {item.assyPartName}{' '}
+                                <span className="text-gray-400 text-[9px]">({item.lineProduct})</span>
+                              </button>
+                            ))
                           )}
-                        </ul>
-                      </>
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
               })()}
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 shrink-0">
-              {/* Date Found */}
+            {/* Type & Date */}
+            <div className="grid grid-cols-2 gap-2 shrink-0">
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Tanggal Ditemukan *</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                  Tipe Abnormality *
+                </label>
+                <select
+                  value={abnType}
+                  onChange={(e) => setAbnType(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-semibold text-gray-700"
+                >
+                  {ABNORMALITY_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                  Tanggal Ditemukan *
+                </label>
                 <input
                   type="date"
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
                   value={dateFound}
                   onChange={(e) => setDateFound(e.target.value)}
-                />
-              </div>
-
-              {/* Found By */}
-              <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Ditemukan Oleh *</label>
-                <input
-                  type="text"
-                  placeholder="Nama pelapor..."
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
-                  value={foundBy}
-                  onChange={(e) => setFoundBy(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
                 />
               </div>
             </div>
 
-            {/* Type */}
+            {/* Found By */}
             <div className="shrink-0">
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Tipe Abnormality</label>
-              <div className="flex gap-1.5 flex-wrap">
-                {ABNORMALITY_TYPES.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setAbnType(t)}
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all ${abnType === t ? 'bg-[#0063ff] text-white border-[#0063ff]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#0063ff]'}`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Ditemukan Oleh (Operator / Inspector) *
+              </label>
+              <input
+                type="text"
+                placeholder="Contoh: Budi Santoso (QC)"
+                value={foundBy}
+                onChange={(e) => setFoundBy(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
+              />
             </div>
 
             {/* Description */}
             <div className="flex-1 flex flex-col min-h-0">
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Problem Description (Deskripsi Masalah) *</label>
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Deskripsi Masalah / Kerusakan *
+              </label>
               <textarea
-                placeholder="Detail gejala abnormal..."
-                required
-                className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700"
+                placeholder="Jelaskan kondisi abnormality secara detail..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                className="w-full flex-1 border border-gray-300 rounded-lg p-2 text-xs outline-none focus:ring-1 focus:ring-blue-500 resize-none font-medium text-gray-700"
               />
             </div>
           </div>
 
-          {/* Right Column: Actions & Root Causes */}
+          {/* Right Column: Actions & Cause */}
           <div className="space-y-2 flex flex-col justify-start h-full">
             <h3 className="font-bold text-xs text-gray-800 border-b border-gray-150 pb-1 flex items-center gap-1.5 shrink-0">
-              <span className="material-symbols-outlined text-[#0063ff] text-sm">build</span>
-              Analisa & Tindakan
+              <span className="material-symbols-outlined text-blue-600 text-sm">build</span>
+              Analisis & Tindakan Perbaikan
             </h3>
 
             {/* Root Cause */}
             <div className="shrink-0">
-              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Root Cause (Penyebab Akar)</label>
-              <textarea
-                placeholder="Penyebab akar dari masalah..."
-                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Root Cause (Penyebab Akar Masalah)
+              </label>
+              <input
+                type="text"
+                placeholder="Penyebab kerusakan..."
                 value={rootCause}
                 onChange={(e) => setRootCause(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 shrink-0">
-              {/* Temporary Action */}
-              <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Temporary Action (Sementara)</label>
-                <textarea
-                  placeholder="Solusi sementara..."
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
-                  value={tempAction}
-                  onChange={(e) => setTempAction(e.target.value)}
-                />
-              </div>
-
-              {/* Corrective Action */}
-              <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Corrective Action (Permanen)</label>
-                <textarea
-                  placeholder="Solusi jangka panjang..."
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none resize-none text-gray-700 h-[46px]"
-                  value={correctiveAction}
-                  onChange={(e) => setCorrectiveAction(e.target.value)}
-                />
-              </div>
+            {/* Temporary Action */}
+            <div className="shrink-0">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Tindakan Sementara (Quick Action)
+              </label>
+              <input
+                type="text"
+                placeholder="Tindakan penanganan sementara..."
+                value={tempAction}
+                onChange={(e) => setTempAction(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 shrink-0">
-              {/* Action PIC */}
+            {/* Corrective Action */}
+            <div className="shrink-0">
+              <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                Tindakan Korektif (Permanen)
+              </label>
+              <input
+                type="text"
+                placeholder="Tindakan pencegahan & perbaikan permanen..."
+                value={correctiveAction}
+                onChange={(e) => setCorrectiveAction(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
+              />
+            </div>
+
+            {/* Action PIC & Status */}
+            <div className="grid grid-cols-2 gap-2 shrink-0">
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Action PIC</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                  PIC Tindakan
+                </label>
                 <input
                   type="text"
-                  placeholder="Nama PIC Tindakan..."
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
+                  placeholder="Nama PIC..."
                   value={actionPic}
                   onChange={(e) => setActionPic(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium text-gray-700"
                 />
               </div>
-
-              {/* Initial Status */}
               <div>
-                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Status Laporan</label>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                  Status Laporan
+                </label>
                 <select
-                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700 font-bold"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
+                  value={abnStatus}
+                  onChange={(e) => setAbnStatus(e.target.value as any)}
+                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 font-semibold text-gray-700"
                 >
                   <option value="OPEN">Open</option>
                   <option value="MONITORING">Monitoring</option>
@@ -468,205 +918,297 @@ export default function UpdateAbnormalityPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 shrink-0">
-              {/* Link to Revision */}
-              <div className="flex flex-col justify-center border border-gray-200 rounded-lg p-1.5 bg-gray-50">
-                <label className="block text-[8px] font-bold text-gray-500 uppercase mb-0.5">Link to Revision?</label>
-                <div className="flex gap-3 text-xs">
-                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
-                    <input
-                      type="radio"
-                      name="linkToRevision"
-                      checked={linkToRevision === true}
-                      onChange={() => setLinkToRevision(true)}
-                    />
-                    <span>Ya</span>
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
-                    <input
-                      type="radio"
-                      name="linkToRevision"
-                      checked={linkToRevision === false}
-                      onChange={() => setLinkToRevision(false)}
-                    />
-                    <span>Tidak</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Link to Spare Replacement */}
-              <div className="flex flex-col justify-center border border-gray-200 rounded-lg p-1.5 bg-gray-50">
-                <label className="block text-[8px] font-bold text-gray-500 uppercase mb-0.5">Link to Spare?</label>
-                <div className="flex gap-3 text-xs">
-                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
-                    <input
-                      type="radio"
-                      name="linkToSpare"
-                      checked={linkToSpare === true}
-                      onChange={() => setLinkToSpare(true)}
-                    />
-                    <span>Ya</span>
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer text-gray-700">
-                    <input
-                      type="radio"
-                      name="linkToSpare"
-                      checked={linkToSpare === false}
-                      onChange={() => setLinkToSpare(false)}
-                    />
-                    <span>Tidak</span>
-                  </label>
-                </div>
-              </div>
+            {/* Options Checkbox */}
+            <div className="flex gap-4 pt-1 shrink-0 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer text-gray-700 font-medium text-[10px]">
+                <input
+                  type="checkbox"
+                  checked={linkToRevision}
+                  onChange={(e) => setLinkToRevision(e.target.checked)}
+                  className="w-3.5 h-3.5 text-blue-600 rounded"
+                />
+                Kaitkan dengan Pengajuan Revisi Desain
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-gray-700 font-medium text-[10px]">
+                <input
+                  type="checkbox"
+                  checked={linkToSpare}
+                  onChange={(e) => setLinkToSpare(e.target.checked)}
+                  className="w-3.5 h-3.5 text-blue-600 rounded"
+                />
+                Perlu Penggantian Sparepart
+              </label>
             </div>
 
-            {/* Alert info banner */}
-            <div className="bg-orange-50 border border-orange-200 text-orange-850 text-[9px] p-1.5 rounded-lg flex items-center gap-1 font-medium leading-tight shrink-0 mt-auto">
-              <span className="material-symbols-outlined text-[13px] text-orange-600">warning</span>
-              <span>Submit otomatis mengirimkan <strong>notifikasi darurat</strong> ke Section &amp; Dept Head.</span>
+            {/* Form submit button */}
+            <div className="pt-2 mt-auto">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-2 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {submitting ? (
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                ) : (
+                  <span className="material-symbols-outlined text-sm">send</span>
+                )}
+                {submitting ? 'Mengirim Laporan...' : 'Kirim Laporan Abnormality'}
+              </button>
             </div>
-            
-            {!isPic && (
-              <p className="text-[9px] text-red-500 flex items-center gap-1 shrink-0">
-                <span className="material-symbols-outlined text-[11px]">lock</span>
-                Hanya PIC Jig Fixture yang dapat membuat laporan.
-              </p>
-            )}
           </div>
         </form>
       )}
 
-      {/* Tab: Report List */}
-      {activeTab === 'list' && (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Detailed Filters row */}
-          <div className="flex flex-wrap gap-2 items-center bg-gray-50 p-2 rounded-xl mb-2 border border-gray-150 text-[10px] shrink-0">
-            {/* Search Reg ID */}
-            <div className="flex-1 min-w-[150px] relative">
-              <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">search</span>
-              <input
-                className="pl-6 pr-2 py-1 bg-white border border-gray-300 rounded-full text-[10px] w-full focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700"
-                placeholder="Cari No. Reg..."
-                value={searchRegId}
-                onChange={(e) => setSearchRegId(e.target.value)}
-              />
+      {/* ─── MODAL 1: DAFTARKAN MESIN (TRIGGERED FROM TOPBAR) ──────────────── */}
+      {showRegisterModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">precision_manufacturing</span>
+                <h3 className="text-sm font-bold">Daftarkan Mesin Baru di Line</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(false)}
+                className="text-white/80 hover:text-white cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
             </div>
 
-            {/* Line Filter */}
-            <div className="relative border border-gray-300 rounded-full px-2.5 py-1 bg-white text-gray-700 font-semibold hover:bg-gray-50 transition-all cursor-pointer">
-              <span>Line: {lineFilter}</span>
-              <select
-                value={lineFilter}
-                onChange={(e) => setLineFilter(e.target.value)}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              >
-                <option value="All">All Lines</option>
-                {uniqueLines.map((line) => (
-                  <option key={line} value={line}>{line}</option>
-                ))}
-              </select>
-            </div>
+            {/* Form */}
+            <form onSubmit={handleRegisterMachine} className="p-5 space-y-3.5 text-xs">
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Nama Mesin *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: CNC Milling 01 / Spot Welding A1"
+                  value={mName}
+                  onChange={(e) => setMName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-800"
+                />
+              </div>
 
-            {/* Process Filter */}
-            <div className="relative border border-gray-300 rounded-full px-2.5 py-1 bg-white text-gray-700 font-semibold hover:bg-gray-50 transition-all cursor-pointer">
-              <span>OP Number: {processFilter}</span>
-              <select
-                value={processFilter}
-                onChange={(e) => setProcessFilter(e.target.value)}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              >
-                <option value="All">All Processes</option>
-                {uniqueProcesses.map((proc) => (
-                  <option key={proc} value={proc}>{proc}</option>
-                ))}
-              </select>
-            </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Kode Mesin *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: MCH-WELD-01"
+                    value={mCode}
+                    onChange={(e) => setMCode(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-mono font-bold text-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Line Produksi *
+                  </label>
+                  <select
+                    required
+                    value={mLineId}
+                    onChange={(e) => setMLineId(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-gray-700 bg-white"
+                  >
+                    {lines.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        Line {l.lineName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-            {/* Type Filter */}
-            <div className="relative border border-gray-300 rounded-full px-2.5 py-1 bg-white text-gray-700 font-semibold hover:bg-gray-50 transition-all cursor-pointer">
-              <span>Type: {typeFilter}</span>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              >
-                <option value="All">All Types</option>
-                <option value="JF">JF (Jig Fixture)</option>
-                <option value="EQ">EQ (Equipment)</option>
-              </select>
-            </div>
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Jig / Fixture Terpasang (Opsional)
+                </label>
+                <select
+                  value={mDesignId}
+                  onChange={(e) => setMDesignId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700 bg-white"
+                >
+                  <option value="">-- Tanpa Jig Terpasang (Otomatis match Line) --</option>
+                  {items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.noReg} — {i.assyPartName} ({i.lineProduct})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Lokasi / Posisi Station (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Station 3 OP-10"
+                  value={mLocation}
+                  onChange={(e) => setMLocation(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Keterangan Tambahan
+                </label>
+                <textarea
+                  placeholder="Catatan mengenai mesin..."
+                  value={mDescription}
+                  onChange={(e) => setMDescription(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-800 h-16 resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-150">
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterModal(false)}
+                  className="px-4 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={registering}
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors cursor-pointer shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {registering && (
+                    <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                  )}
+                  {registering ? 'Menyimpan...' : 'Simpan Mesin'}
+                </button>
+              </div>
+            </form>
           </div>
+        </div>
+      )}
 
-          <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 border-b border-gray-200">
-                  <th className="px-3 py-2">No. Reg</th>
-                  <th className="px-2 py-2">Type</th>
-                  <th className="px-2 py-2">Found By</th>
-                  <th className="px-2 py-2">Problem Description</th>
-                  <th className="px-2 py-2">Root Cause</th>
-                  <th className="px-2 py-2">PIC Action</th>
-                  <th className="px-2 py-2 text-center">Status</th>
-                  {isPic && <th className="px-2 py-2 text-center">Aksi</th>}
-                </tr>
-              </thead>
-              <tbody className="text-gray-700">
-                {filteredReports.length === 0 ? (
-                  <tr>
-                    <td colSpan={isPic ? 8 : 7} className="text-center py-12 text-gray-400">
-                      Belum ada laporan abnormality yang cocok dengan filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredReports.map((r) => {
-                    const sc = STATUS_CONFIG[r.status] || STATUS_CONFIG.OPEN;
-                    return (
-                      <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-3 py-2 font-mono font-bold text-[9px] text-gray-850" title={`Line: ${r.item.lineProduct} | OP: ${r.item.process}`}>
-                          {r.item.noReg}
-                        </td>
-                        <td className="px-2 py-2">
-                          <span className="bg-blue-50 text-[#0063ff] border border-blue-200 px-1.5 py-0.5 rounded text-[8px] font-bold">
-                            {r.item.type || 'JF'}
-                          </span>
-                        </td>
-                        <td className="px-2 py-2 text-gray-600 font-medium">
-                          {r.foundBy} <span className="block text-[8px] text-gray-400">{new Date(r.dateFound).toLocaleDateString('id-ID')}</span>
-                        </td>
-                        <td className="px-2 py-2 max-w-[150px]" title={r.description}>
-                          <p className="truncate text-[9px] text-gray-800">{r.description}</p>
-                        </td>
-                        <td className="px-2 py-2 max-w-[150px]" title={r.rootCause || 'N/A'}>
-                          <p className="truncate text-[9px] text-gray-500 italic">{r.rootCause || 'N/A'}</p>
-                        </td>
-                        <td className="px-2 py-2 font-medium text-gray-700">
-                          {r.actionPic || <span className="text-gray-400 italic">None</span>}
-                        </td>
-                        <td className="px-2 py-2 text-center">
-                          <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full border ${sc.color}`}>
-                            {sc.label}
-                          </span>
-                        </td>
-                        {isPic && (
-                          <td className="px-2 py-2 text-center">
-                            <select
-                              value={r.status}
-                              onChange={(e) => handleStatusChange(r.id, e.target.value as any)}
-                              className="text-[9px] border border-gray-200 rounded px-1 py-0.5 bg-white cursor-pointer font-bold text-gray-700"
-                            >
-                              <option value="OPEN">Open</option>
-                              <option value="MONITORING">Monitoring</option>
-                              <option value="CLOSED">Closed</option>
-                            </select>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
+      {/* ─── MODAL 2: DETAIL MESIN ────────────────────────────────────────── */}
+      {selectedMachineDetail && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[9px] text-blue-400 font-mono font-bold">
+                  {selectedMachineDetail.code}
+                </span>
+                <h3 className="text-xs font-bold">{selectedMachineDetail.name}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedMachineDetail(null)}
+                className="text-gray-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                <span className="text-[10px] text-gray-500 font-bold uppercase">Line Produksi</span>
+                <span className="font-bold text-gray-800">{selectedMachineDetail.lineName}</span>
+              </div>
+
+              {/* Status explanation */}
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-3.5 h-3.5 rounded-full inline-block ${getCircleColor(
+                        selectedMachineDetail.jigCondition
+                      )}`}
+                    ></span>
+                    <span className="text-[10px] font-bold text-gray-700">Bulat Atas: Kondisi Jig</span>
+                  </div>
+                  <span
+                    className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                      selectedMachineDetail.jigCondition === 'OVERDUE'
+                        ? 'bg-rose-100 text-rose-700'
+                        : selectedMachineDetail.jigCondition === 'WARNING'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {selectedMachineDetail.jigCondition}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-3.5 h-3.5 rounded-full inline-block ${getCircleColor(
+                        selectedMachineDetail.tpmSchedule
+                      )}`}
+                    ></span>
+                    <span className="text-[10px] font-bold text-gray-700">Bulat Bawah: Jadwal TPM</span>
+                  </div>
+                  <span
+                    className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                      selectedMachineDetail.tpmSchedule === 'OVERDUE'
+                        ? 'bg-rose-100 text-rose-700'
+                        : selectedMachineDetail.tpmSchedule === 'WARNING'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {selectedMachineDetail.tpmSchedule}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1 text-[11px] text-gray-600">
+                <p>
+                  <strong>Jig Terkait:</strong>{' '}
+                  {selectedMachineDetail.designNoReg
+                    ? `${selectedMachineDetail.designNoReg} (${selectedMachineDetail.designName || ''})`
+                    : 'Mengikuti status line'}
+                </p>
+                {selectedMachineDetail.location && (
+                  <p>
+                    <strong>Lokasi:</strong> {selectedMachineDetail.location}
+                  </p>
                 )}
-              </tbody>
-            </table>
+                {selectedMachineDetail.description && (
+                  <p>
+                    <strong>Keterangan:</strong> {selectedMachineDetail.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Actions inside modal */}
+              {isPic && (
+                <div className="pt-2 border-t border-gray-150 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleDeleteMachine(selectedMachineDetail.id, selectedMachineDetail.name)
+                    }
+                    className="text-rose-600 hover:text-rose-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-xs">delete</span>
+                    Hapus Mesin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMachineDetail(null)}
+                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-200 cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
