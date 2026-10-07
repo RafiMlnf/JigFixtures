@@ -235,6 +235,15 @@ export default function UpdateAbnormalityPage() {
     }
   };
 
+  // Open Abnormality Form from Machine Card / Detail Modal
+  const handleOpenReportFromMachine = (machine: MachineDashboardItem) => {
+    if (machine.designId) {
+      setSelectedItemId(machine.designId);
+    }
+    setSelectedMachineDetail(null);
+    setActiveTab('form');
+  };
+
   // Submit Abnormality Report Form
   const handleSubmitAbnormality = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -331,21 +340,6 @@ export default function UpdateAbnormalityPage() {
             Monitoring Abnormality
           </h2>
 
-          {/* Unified search bar inside topbar */}
-          <div className="relative w-72">
-            <span
-              className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[11px]"
-              style={{ fontSize: '11px' }}
-            >
-              search
-            </span>
-            <input
-              className="pl-7 pr-2.5 py-1.5 bg-gray-50 hover:bg-gray-100/70 border border-gray-300 rounded-lg w-full text-[10px] outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-medium transition-all"
-              placeholder="Cari nama mesin, kode, atau No. Reg..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
 
           {/* Line Filter pill in header */}
           <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2.5 py-1 cursor-pointer hover:bg-gray-50">
@@ -367,20 +361,7 @@ export default function UpdateAbnormalityPage() {
 
         {/* Right side actions group */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Daftarkan Mesin Button in topbar */}
-          {isPic && (
-            <button
-              type="button"
-              onClick={() => setShowRegisterModal(true)}
-              className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Daftarkan Mesin Baru di Line Produksi"
-            >
-              <span className="material-symbols-outlined text-xs">add</span>
-              <span>Daftarkan Mesin</span>
-            </button>
-          )}
-
-          {/* Buat Laporan / Tab buttons */}
+          {/* Tab buttons */}
           <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -409,17 +390,16 @@ export default function UpdateAbnormalityPage() {
                 </span>
               )}
             </button>
-            <button
-              onClick={() => setActiveTab('form')}
-              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                activeTab === 'form'
-                  ? 'bg-white text-[#0063ff] shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
-              }`}
-            >
-              <span className="material-symbols-outlined text-xs">add_circle</span>
-              <span>Buat Laporan</span>
-            </button>
+            {activeTab === 'form' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('form')}
+                className="px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 bg-white text-[#0063ff] shadow-sm"
+              >
+                <span className="material-symbols-outlined text-xs">edit_note</span>
+                <span>Form Laporan</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -427,81 +407,81 @@ export default function UpdateAbnormalityPage() {
       {/* ─── TAB 1: DASHBOARD MESIN (CARDS) ─────────────────────────────────── */}
       {activeTab === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Summary / Filter Bar (Matching other dashboard pages) */}
-          <div className="flex items-center justify-between gap-3 bg-gray-50 p-2.5 rounded-xl mb-3 border border-gray-150 shrink-0">
-            {/* 3 Clickable Status Filters */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                  statusFilter === 'SAFE'
-                    ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                    : 'bg-white text-green-700 border-green-200 hover:bg-green-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[12px]">check_circle</span>
-                <span>Aman ({safeCount})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                  statusFilter === 'WARNING'
-                    ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                    : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[12px]">warning</span>
-                <span>Warning ({warningCount})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
-                  statusFilter === 'OVERDUE'
-                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                    : 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[12px]">error</span>
-                <span>Lewat Lifetime ({overdueCount})</span>
-              </button>
-
-              {statusFilter !== 'ALL' && (
+          {/* Status Row & Action (Flat style with bottom divider) */}
+          <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-gray-200 shrink-0">
+            {/* Status Filters (Super compact vertical 3-row layout) */}
+            <div className="flex flex-col gap-0.5 text-[9px] leading-tight">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setStatusFilter('ALL')}
-                  className="text-[9px] text-gray-400 hover:text-gray-600 font-bold underline ml-1 cursor-pointer"
+                  onClick={() => setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE')}
+                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    statusFilter === 'SAFE'
+                      ? 'text-emerald-700 font-bold'
+                      : 'text-gray-500 hover:text-gray-800 font-medium'
+                  }`}
                 >
-                  Reset Filter
+                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ${statusFilter === 'SAFE' ? 'ring-1.5 ring-emerald-300' : ''}`} />
+                  <span>Aman</span>
+                  <span className="text-[8px] text-gray-400 font-mono">({safeCount})</span>
                 </button>
-              )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING')}
+                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    statusFilter === 'WARNING'
+                      ? 'text-amber-700 font-bold'
+                      : 'text-gray-500 hover:text-gray-800 font-medium'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 ${statusFilter === 'WARNING' ? 'ring-1.5 ring-amber-300' : ''}`} />
+                  <span>Warning</span>
+                  <span className="text-[8px] text-gray-400 font-mono">({warningCount})</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    statusFilter === 'OVERDUE'
+                      ? 'text-rose-700 font-bold'
+                      : 'text-gray-500 hover:text-gray-800 font-medium'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 ${statusFilter === 'OVERDUE' ? 'ring-1.5 ring-rose-300' : ''}`} />
+                  <span>Lewat Lifetime</span>
+                  <span className="text-[8px] text-gray-400 font-mono">({overdueCount})</span>
+                </button>
+
+                {statusFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('ALL')}
+                    className="text-[8px] text-gray-400 hover:text-gray-600 font-semibold underline cursor-pointer ml-1"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Strict 2-Bulatan Status Legend (Clean & Minimal) */}
-            <div className="flex items-center gap-3 text-[9px] bg-white border border-gray-200 px-3 py-1 rounded-lg text-gray-500 font-medium">
-              <span className="text-gray-700 font-bold">Keterangan Card:</span>
-              <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shadow-2xs"></span>
-                <span>Aman</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block shadow-2xs"></span>
-                <span>Warning</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-2xs"></span>
-                <span>Lewat Lifetime</span>
-              </div>
-              <span className="text-gray-300">|</span>
-              <span>
-                <strong className="text-gray-700">Bulat Atas:</strong> Kondisi Jig ·{' '}
-                <strong className="text-gray-700">Bulat Bawah:</strong> Jadwal TPM
-              </span>
-            </div>
+            {/* Tombol Daftarkan Mesin (Sebaris dengan status) */}
+            {isPic && (
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(true)}
+                className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Daftarkan Mesin Baru di Line Produksi"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                <span>Daftarkan Mesin</span>
+              </button>
+            )}
           </div>
 
           {/* Cards Grid Container */}
@@ -518,7 +498,7 @@ export default function UpdateAbnormalityPage() {
                 </span>
                 <p className="text-xs font-bold text-gray-600">Belum ada mesin yang terdaftar</p>
                 <p className="text-[10px] text-gray-400 max-w-xs mt-1">
-                  Klik tombol <strong>"Daftarkan Mesin"</strong> di topbar untuk menambahkan mesin di line produksi.
+                  Klik tombol <strong>"Daftarkan Mesin"</strong> untuk menambahkan mesin di line produksi.
                 </p>
                 {isPic && (
                   <button
@@ -559,7 +539,7 @@ export default function UpdateAbnormalityPage() {
 
                       {/* ─── STRICT 2-BULAT STATUS INDICATOR ───────────────── */}
                       {/* Inside card: ONLY 2 simple circles as requested, no extra descriptions */}
-                      <div className="py-2.5 my-auto flex flex-col items-center justify-center gap-3 bg-gray-50/80 rounded-xl border border-gray-150">
+                      <div className="py-3 my-auto flex flex-col items-center justify-center gap-3 bg-gray-50/80 rounded-xl border border-gray-150">
                         {/* Bulat Atas: Jig Condition */}
                         <div
                           className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${topCircleClass}`}
@@ -571,16 +551,6 @@ export default function UpdateAbnormalityPage() {
                           className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${btmCircleClass}`}
                           title={`Bulat Bawah: Jadwal TPM (${machine.tpmSchedule})`}
                         />
-                      </div>
-
-                      {/* Minimal bottom footer */}
-                      <div className="mt-2.5 pt-1.5 border-t border-gray-100 flex items-center justify-between text-[9px] text-gray-400">
-                        <span className="truncate">
-                          {machine.designNoReg || 'Jig Standar'}
-                        </span>
-                        <span className="material-symbols-outlined text-[13px] opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">
-                          info
-                        </span>
                       </div>
                     </div>
                   );
@@ -940,12 +910,20 @@ export default function UpdateAbnormalityPage() {
               </label>
             </div>
 
-            {/* Form submit button */}
-            <div className="pt-2 mt-auto">
+            {/* Form submit & cancel button */}
+            <div className="pt-2 mt-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="w-1/3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">arrow_back</span>
+                <span>Batal</span>
+              </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-2 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <span className="material-symbols-outlined animate-spin text-sm">sync</span>
@@ -1099,16 +1077,21 @@ export default function UpdateAbnormalityPage() {
       {selectedMachineDetail && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+            {/* Modal Header: Name | Code, Lokasi Mesin */}
+            <div className="px-4 py-3 bg-slate-900 text-white flex items-start justify-between">
               <div>
-                <span className="text-[9px] text-blue-400 font-mono font-bold">
-                  {selectedMachineDetail.code}
-                </span>
-                <h3 className="text-xs font-bold">{selectedMachineDetail.name}</h3>
+                <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>{selectedMachineDetail.name}</span>
+                  <span className="text-slate-500 font-normal">|</span>
+                  <span className="font-mono text-blue-400 font-semibold">{selectedMachineDetail.code}</span>
+                </h3>
+                <p className="text-[10px] text-slate-300 font-medium mt-0.5">
+                  {selectedMachineDetail.location || `Line ${selectedMachineDetail.lineName}`}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedMachineDetail(null)}
-                className="text-gray-400 hover:text-white cursor-pointer"
+                className="text-gray-400 hover:text-white cursor-pointer ml-2 p-0.5"
               >
                 ✕
               </button>
@@ -1167,18 +1150,21 @@ export default function UpdateAbnormalityPage() {
                 </div>
               </div>
 
-              <div className="space-y-1 text-[11px] text-gray-600">
-                <p>
-                  <strong>Jig Terkait:</strong>{' '}
+              {/* Jig Info Box inside Popup */}
+              <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
+                <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider block mb-0.5">
+                  Jig Terkait
+                </span>
+                <p className="text-xs font-bold text-gray-800">
                   {selectedMachineDetail.designNoReg
-                    ? `${selectedMachineDetail.designNoReg} (${selectedMachineDetail.designName || ''})`
+                    ? `${selectedMachineDetail.designNoReg} ${
+                        selectedMachineDetail.designName ? `— ${selectedMachineDetail.designName}` : ''
+                      }`
                     : 'Mengikuti status line'}
                 </p>
-                {selectedMachineDetail.location && (
-                  <p>
-                    <strong>Lokasi:</strong> {selectedMachineDetail.location}
-                  </p>
-                )}
+              </div>
+
+              <div className="space-y-1 text-[11px] text-gray-600">
                 {selectedMachineDetail.description && (
                   <p>
                     <strong>Keterangan:</strong> {selectedMachineDetail.description}
@@ -1187,18 +1173,29 @@ export default function UpdateAbnormalityPage() {
               </div>
 
               {/* Actions inside modal */}
-              {isPic && (
-                <div className="pt-2 border-t border-gray-150 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDeleteMachine(selectedMachineDetail.id, selectedMachineDetail.name)
-                    }
-                    className="text-rose-600 hover:text-rose-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-xs">delete</span>
-                    Hapus Mesin
-                  </button>
+              <div className="pt-3 border-t border-gray-150 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenReportFromMachine(selectedMachineDetail)}
+                  className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[15px]">report_problem</span>
+                  <span>Buat Laporan Abnormality</span>
+                </button>
+
+                <div className="flex items-center justify-between pt-1">
+                  {isPic ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteMachine(selectedMachineDetail.id, selectedMachineDetail.name)
+                      }
+                      className="text-rose-600 hover:text-rose-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xs">delete</span>
+                      Hapus Mesin
+                    </button>
+                  ) : <div />}
                   <button
                     type="button"
                     onClick={() => setSelectedMachineDetail(null)}
@@ -1207,7 +1204,7 @@ export default function UpdateAbnormalityPage() {
                     Tutup
                   </button>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>

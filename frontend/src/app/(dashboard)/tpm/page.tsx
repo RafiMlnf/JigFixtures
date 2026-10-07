@@ -448,9 +448,8 @@ export default function TPMPage() {
       {/* Toast Alert */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-[99] px-4 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-          }`}
+          className={`fixed top-4 right-4 z-[99] px-4 py-2 rounded-lg text-xs font-bold shadow-lg transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+            }`}
         >
           {toast.msg}
         </div>
@@ -465,92 +464,6 @@ export default function TPMPage() {
             TPM
           </h2>
 
-          {/* 4 Compact & Simple Mini Cards in Topbar (Solid colors, rounded-lg, matching height) */}
-          <div className="flex items-center gap-1.5">
-            {/* Safe */}
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'schedules') setActiveTab('schedules');
-                setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE');
-              }}
-              title="Filter Aman (Safe)"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
-                statusFilter === 'SAFE'
-                  ? 'bg-green-600 text-white ring-2 ring-green-400'
-                  : 'bg-green-500 hover:bg-green-600 text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[13px] leading-none">check_circle</span>
-              <span>Aman</span>
-              <span className="px-1.5 py-0.2 rounded bg-black/20 text-white text-[9px] font-black">
-                {summary?.safeCount ?? 0}
-              </span>
-            </button>
-
-            {/* Warning */}
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'schedules') setActiveTab('schedules');
-                setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING');
-              }}
-              title="Filter Warning (Mendekati Limit)"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
-                statusFilter === 'WARNING'
-                  ? 'bg-yellow-500 text-yellow-950 ring-2 ring-yellow-300'
-                  : 'bg-yellow-400 hover:bg-yellow-500 text-yellow-950'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[13px] leading-none">warning</span>
-              <span>Warning</span>
-              <span className="px-1.5 py-0.2 rounded bg-black/15 text-yellow-950 text-[9px] font-black">
-                {summary?.warningCount ?? 0}
-              </span>
-            </button>
-
-            {/* Overdue */}
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab !== 'schedules') setActiveTab('schedules');
-                setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE');
-              }}
-              title="Filter Overdue (Lewat Batas)"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs relative overflow-hidden ${
-                statusFilter === 'OVERDUE'
-                  ? 'bg-red-700 text-white ring-2 ring-red-400'
-                  : 'bg-red-500 hover:bg-red-600 text-white'
-              }`}
-            >
-              {(summary?.overdueCount ?? 0) > 0 && (
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-              )}
-              <span className="material-symbols-outlined text-[13px] leading-none">error</span>
-              <span>Overdue</span>
-              <span className="px-1.5 py-0.2 rounded bg-black/25 text-white text-[9px] font-black">
-                {summary?.overdueCount ?? 0}
-              </span>
-            </button>
-
-            {/* Inspeksi */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('checklists')}
-              title="Lihat Inspeksi Hari Ini"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-xs ${
-                activeTab === 'checklists'
-                  ? 'bg-blue-700 text-white ring-2 ring-blue-400'
-                  : 'bg-[#0063ff] hover:bg-[#0052d4] text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[13px] leading-none">checklist_rtl</span>
-              <span>Inspeksi</span>
-              <span className="px-1.5 py-0.2 rounded bg-black/20 text-white text-[9px] font-black">
-                {summary?.checklistTodayCount ?? 0}
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* Right Header Controls */}
@@ -558,23 +471,6 @@ export default function TPMPage() {
           {/* Quick Action Button for PIC */}
           {isPic && (
             <div className="flex items-center gap-1.5">
-              {activeTab === 'schedules' && (
-                <button
-                  onClick={() => {
-                    setChecklistForm((prev) => ({
-                      ...prev,
-                      designId: designOptions[0]?.id || '',
-                      cellPartId: '',
-                      notes: '',
-                    }));
-                    setShowChecklistModal(true);
-                  }}
-                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <span className="material-symbols-outlined text-xs">fact_check</span>
-                  Isi Checklist
-                </button>
-              )}
 
               {activeTab === 'checklists' && (
                 <button
@@ -587,7 +483,7 @@ export default function TPMPage() {
                     }));
                     setShowChecklistModal(true);
                   }}
-                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
                 >
                   <span className="material-symbols-outlined text-xs">add_task</span>
                   Form Checklist
@@ -606,7 +502,7 @@ export default function TPMPage() {
                     }));
                     setShowLogModal(true);
                   }}
-                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
                 >
                   <span className="material-symbols-outlined text-xs">handyman</span>
                   Catat Servis
@@ -628,34 +524,48 @@ export default function TPMPage() {
         </div>
       </header>
 
-      {/* Button Switch Tabs (Dipindahkan ke lokasi 4 card sebelumnya) */}
-      <div className="flex gap-2.5 mb-3 shrink-0">
+      {/* Info: desain yang belum di-approve belum masuk TPM */}
+      {(summary?.pendingApprovalCount ?? 0) > 0 && (
+        <div className="flex items-center gap-2 mb-2.5 shrink-0 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-[10px] text-amber-800">
+          <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_top</span>
+          <span className="flex-1">
+            <span className="font-semibold">{summary?.pendingApprovalCount} desain</span> belum di-approve dan belum
+            masuk TPM. Jadwal TPM baru bisa diatur setelah approval selesai.
+          </span>
+          <a
+            href="/approval-center"
+            className="shrink-0 font-medium text-amber-900 underline underline-offset-2 hover:text-amber-700"
+          >
+            Buka Approval Center
+          </a>
+        </div>
+      )}
+
+      {/* Button Switch Tabs */}
+      <div className="flex gap-2.5 mb-2.5 shrink-0">
         <button
           onClick={() => setActiveTab('schedules')}
-          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
-            activeTab === 'schedules'
-              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
-              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
-          }`}
+          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'schedules'
+            ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+            }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                activeTab === 'schedules' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
-              }`}
+              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'schedules' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+                }`}
             >
-              <span className="material-symbols-outlined text-base">calendar_month</span>
+              <span className="material-symbols-outlined text-sm">calendar_month</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-bold leading-none ${activeTab === 'schedules' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'schedules' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Jadwal Preventif &amp; Lifetime
               </h3>
             </div>
           </div>
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              activeTab === 'schedules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
+            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'schedules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
           >
             {filteredSchedules.length}
           </span>
@@ -663,30 +573,27 @@ export default function TPMPage() {
 
         <button
           onClick={() => setActiveTab('checklists')}
-          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
-            activeTab === 'checklists'
-              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
-              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
-          }`}
+          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'checklists'
+            ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+            }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                activeTab === 'checklists' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
-              }`}
+              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'checklists' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+                }`}
             >
-              <span className="material-symbols-outlined text-base">fact_check</span>
+              <span className="material-symbols-outlined text-sm">fact_check</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-bold leading-none ${activeTab === 'checklists' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'checklists' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Daily Checklist Inspeksi
               </h3>
             </div>
           </div>
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              activeTab === 'checklists' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
+            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'checklists' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
           >
             {filteredChecklists.length}
           </span>
@@ -694,30 +601,27 @@ export default function TPMPage() {
 
         <button
           onClick={() => setActiveTab('logs')}
-          className={`flex-1 rounded-xl px-4 py-2 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${
-            activeTab === 'logs'
-              ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
-              : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
-          }`}
+          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'logs'
+            ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+            }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                activeTab === 'logs' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
-              }`}
+              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'logs' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+                }`}
             >
-              <span className="material-symbols-outlined text-base">history_toggle_off</span>
+              <span className="material-symbols-outlined text-sm">history_toggle_off</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-bold leading-none ${activeTab === 'logs' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'logs' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Riwayat Servis &amp; Maintenance
               </h3>
             </div>
           </div>
           <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              activeTab === 'logs' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
-            }`}
+            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'logs' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
           >
             {filteredLogs.length}
           </span>
@@ -735,7 +639,7 @@ export default function TPMPage() {
             <div className="flex items-center justify-between gap-3 mb-2 shrink-0">
               <div className="flex items-center gap-2">
                 {/* Status dropdown pill */}
-                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                <div className="relative h-[22px] flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 cursor-pointer hover:bg-gray-50">
                   <span>Status: {statusFilter}</span>
                   <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
@@ -751,23 +655,45 @@ export default function TPMPage() {
                   </select>
                 </div>
 
-                {/* Type dropdown pill */}
-                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
-                  <span>Tipe: {typeFilter}</span>
-                  <span className="material-symbols-outlined text-[12px]">expand_more</span>
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value as any)}
-                    className="absolute inset-0 opacity-0 cursor-pointer text-xs"
+                {/* Type switch button */}
+                <div className="inline-flex items-center h-[22px] bg-gray-100 p-[2px] rounded-full border border-gray-200 text-[9px] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setTypeFilter('ALL')}
+                    className={`h-full flex items-center px-2.5 rounded-full transition-all cursor-pointer leading-none ${
+                      typeFilter === 'ALL'
+                        ? 'bg-[#0063ff] text-white font-semibold shadow-xs'
+                        : 'text-gray-500 hover:text-gray-700 font-medium'
+                    }`}
                   >
-                    <option value="ALL">Semua Tipe</option>
-                    <option value="DESIGN">Jig / Fixture Induk</option>
-                    <option value="CELL_PART">Cell Part</option>
-                  </select>
+                    Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTypeFilter('DESIGN')}
+                    className={`h-full flex items-center px-2.5 rounded-full transition-all cursor-pointer leading-none ${
+                      typeFilter === 'DESIGN'
+                        ? 'bg-[#0063ff] text-white font-semibold shadow-xs'
+                        : 'text-gray-500 hover:text-gray-700 font-medium'
+                    }`}
+                  >
+                    Jig Induk
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTypeFilter('CELL_PART')}
+                    className={`h-full flex items-center px-2.5 rounded-full transition-all cursor-pointer leading-none ${
+                      typeFilter === 'CELL_PART'
+                        ? 'bg-[#0063ff] text-white font-semibold shadow-xs'
+                        : 'text-gray-500 hover:text-gray-700 font-medium'
+                    }`}
+                  >
+                    Cell Part
+                  </button>
                 </div>
 
                 {/* Line dropdown pill */}
-                <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 py-0.5 cursor-pointer hover:bg-gray-50">
+                <div className="relative h-[22px] flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2 cursor-pointer hover:bg-gray-50">
                   <span>Line: {lineFilter}</span>
                   <span className="material-symbols-outlined text-[12px]">expand_more</span>
                   <select
@@ -809,16 +735,15 @@ export default function TPMPage() {
 
             {/* Table Container */}
             <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full text-left border-collapse text-[10px]">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
-                    <th className="px-3 py-2">No. Reg / Part</th>
-                    <th className="px-2 py-2">Item Name / Assy</th>
-                    <th className="px-2 py-2">Line &amp; OP</th>
-                    <th className="px-2 text-center py-2">Lifetime (2-Way)</th>
-                    <th className="px-2 text-center py-2">Jadwal Servis</th>
-                    <th className="px-2 text-center py-2">Status</th>
-                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[9px] uppercase tracking-wider whitespace-nowrap select-none h-7">
+                    <th className="w-[140px] px-2 py-1">No. Reg / Part</th>
+                    <th className="w-[170px] max-w-[200px] px-2 py-1">Item Name</th>
+                    <th className="px-2 py-1">Line &amp; OP</th>
+                    <th className="w-[130px] px-2 py-1 text-center">Lifetime</th>
+                    <th className="w-[105px] px-2 py-1 text-center">Jadwal Servis</th>
+                    {isPic && <th className="w-[130px] px-2 py-1 text-center">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody className="text-gray-700">
@@ -830,76 +755,93 @@ export default function TPMPage() {
                     const curUsage = item.currentUsage || 0;
                     const usagePct = Math.min(100, Math.round((curUsage / maxUsage) * 100));
 
+                    // Status border strip indicator
+                    const statusBorderClass = isOverdue
+                      ? 'border-l-[3.5px] border-l-rose-500'
+                      : isWarning
+                        ? 'border-l-[3.5px] border-l-amber-400'
+                        : 'border-l-[3.5px] border-l-emerald-500';
+
                     return (
                       <tr
                         key={`${item.isCellPart ? 'cp' : 'd'}-${item.id}`}
-                        className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                          isOverdue ? 'bg-red-50/50 hover:bg-red-100/50' : ''
+                        className={`border-b border-gray-200 hover:bg-blue-50/40 transition-colors h-7 ${
+                          isOverdue ? 'bg-rose-50/20' : ''
                         }`}
                       >
-                        {/* No Reg */}
-                        <td className="px-3 font-normal font-mono py-2">
-                          <div className="flex items-center gap-1.5">
+                        {/* No Reg / Part with status left-border */}
+                        <td className={`px-2 py-0.5 font-mono ${statusBorderClass} truncate`}>
+                          <div className="flex items-center gap-1 truncate">
                             <span
-                              className={`text-[8px] font-bold px-1 py-0.2 rounded-full uppercase ${
+                              className={`text-[7px] font-medium px-1 py-0.2 rounded shrink-0 uppercase ${
                                 item.isCellPart
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
                               }`}
                             >
                               {item.isCellPart ? 'PART' : item.type || 'JIG'}
                             </span>
-                            <span className="font-bold text-gray-800">
+                            <span
+                              className="font-semibold text-gray-800 text-[9.5px] truncate"
+                              title={item.isCellPart ? `${item.partNumber} (Induk: ${item.parentNoReg || '-'})` : item.noReg}
+                            >
                               {item.isCellPart ? item.partNumber : item.noReg}
                             </span>
                           </div>
-                          {item.isCellPart && item.parentNoReg && (
-                            <div className="text-[9px] text-gray-400 font-sans mt-0.5">
-                              Induk: {item.parentNoReg}
-                            </div>
-                          )}
                         </td>
 
-                        {/* Name */}
-                        <td className="px-2 py-2">
-                          <div className="font-bold text-gray-800">{item.name}</div>
-                          {!item.isCellPart && item.cellPartsCount > 0 && (
-                            <span className="text-[8.5px] text-blue-600 bg-blue-50 px-1 py-0.2 rounded font-medium inline-block mt-0.5">
-                              {item.cellPartsCount} Cell Part terdaftar
+                        {/* Item Name */}
+                        <td className="px-2 py-0.5 truncate max-w-[200px]" title={item.name}>
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="font-medium text-gray-800 text-[9.5px] truncate">
+                              {item.name}
                             </span>
-                          )}
+                            {!item.isCellPart && item.cellPartsCount > 0 && (
+                              <span
+                                className="text-[7.5px] text-blue-600 font-normal shrink-0"
+                                title={`${item.cellPartsCount} Cell Part terdaftar`}
+                              >
+                                ({item.cellPartsCount} CP)
+                              </span>
+                            )}
+                          </div>
                         </td>
 
-                        {/* Line & Process */}
-                        <td className="px-2 py-2">
-                          <div className="font-medium text-gray-800">{item.lineName || '—'}</div>
-                          <div className="text-[9px] text-gray-400">{item.processName || '—'}</div>
+                        {/* Line & OP (Single compact line) */}
+                        <td
+                          className="px-2 py-0.5 text-gray-600 text-[9px] truncate"
+                          title={`${item.lineName || '—'}${item.processName ? ` · ${item.processName}` : ''}`}
+                        >
+                          <span className="truncate block">
+                            {item.lineName || '—'}
+                            {item.processName ? ` · ${item.processName}` : ''}
+                          </span>
                         </td>
 
-                        {/* 2-Way Lifetime Column */}
-                        <td className="px-2 py-2 text-center">
-                          <div className="inline-flex flex-col items-center gap-1 min-w-[130px]">
+                        {/* Lifetime (Compact & Informative) */}
+                        <td className="px-2 py-0.5 text-center">
+                          <div className="inline-flex flex-col items-center justify-center">
                             <span
-                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                              className={`text-[8.5px] font-mono px-1.5 py-0.2 rounded leading-none ${
                                 isOverdue
-                                  ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                                  ? 'bg-rose-50 text-rose-700 font-semibold'
                                   : isWarning
-                                  ? 'bg-amber-100 text-amber-700 border border-amber-300'
-                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                    ? 'bg-amber-50 text-amber-700 font-medium'
+                                    : 'bg-emerald-50 text-emerald-700 font-medium'
                               }`}
+                              title={`Lifetime Status: ${item.lifetimeStatus}`}
                             >
                               {item.lifetimeType === 'DAYS'
-                                ? `${days}d rem (${item.lifetimeDays}d)`
+                                ? `${days}d rem`
                                 : item.lifetimeType === 'USAGE'
-                                ? `${curUsage}/${maxUsage}x`
-                                : `${curUsage}/${maxUsage}x · ${days}d`}
+                                  ? `${curUsage}/${maxUsage}x`
+                                  : `${curUsage}/${maxUsage}x · ${days}d`}
                             </span>
-
-                            {/* Mini progress meter */}
-                            <div className="w-24 bg-gray-200 rounded-full h-1 overflow-hidden">
+                            {/* Micro progress meter */}
+                            <div className="w-16 bg-gray-200 rounded-full h-[2px] mt-0.5 overflow-hidden">
                               <div
                                 className={`h-full ${
-                                  isOverdue ? 'bg-red-500' : isWarning ? 'bg-yellow-500' : 'bg-green-500'
+                                  isOverdue ? 'bg-rose-500' : isWarning ? 'bg-amber-400' : 'bg-emerald-500'
                                 }`}
                                 style={{ width: `${usagePct}%` }}
                               />
@@ -907,54 +849,47 @@ export default function TPMPage() {
                           </div>
                         </td>
 
-                        {/* Scheduled Date */}
-                        <td className="px-2 py-2 text-center text-[10px]">
+                        {/* Scheduled Date (Clean date only) */}
+                        <td className="px-2 py-0.5 text-center text-[9px] whitespace-nowrap">
                           {item.tpmScheduleDeadline ? (
-                            <div>
-                              <span className="font-semibold text-gray-800">
-                                {new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                })}
-                              </span>
-                              {item.tpmScheduleStart && (
-                                <div className="text-[8.5px] text-gray-400">
-                                  Start:{' '}
-                                  {new Date(item.tpmScheduleStart).toLocaleDateString('id-ID', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                            <span
+                              className={`font-medium ${
+                                isOverdue
+                                  ? 'text-rose-600 font-semibold'
+                                  : isWarning
+                                    ? 'text-amber-600'
+                                    : 'text-gray-700'
+                              }`}
+                              title={`Deadline: ${new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', {
+                                day: '2-digit',
+                                month: 'long',
+                                year: 'numeric',
+                              })}${
+                                item.tpmScheduleStart
+                                  ? ` (Start: ${new Date(item.tpmScheduleStart).toLocaleDateString('id-ID')})`
+                                  : ''
+                              }`}
+                            >
+                              {new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </span>
                           ) : (
                             <span className="text-gray-400 italic text-[9px]">Belum diatur</span>
                           )}
                         </td>
 
-                        {/* Status Column with solid color badge like Inventory */}
-                        <td
-                          className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider ${
-                            isOverdue
-                              ? 'bg-red-500 text-white'
-                              : isWarning
-                              ? 'bg-yellow-400 text-yellow-950'
-                              : 'bg-green-500 text-white'
-                          }`}
-                        >
-                          {isOverdue ? 'Overdue' : isWarning ? 'Warning' : 'Aman'}
-                        </td>
-
                         {/* Actions */}
                         {isPic && (
-                          <td className="px-2 py-2 text-center">
+                          <td className="px-2 py-0.5 text-center">
                             <div className="flex items-center justify-center gap-1">
                               {/* Quick Usage Counter */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenUsageModal(item)}
-                                className="text-[8px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200 cursor-pointer"
+                                className="text-[8px] font-medium text-blue-600 hover:text-blue-800 bg-blue-50/70 hover:bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200/60 cursor-pointer"
                                 title="Catat Pemakaian Siklus"
                               >
                                 + Catat
@@ -967,7 +902,7 @@ export default function TPMPage() {
                                   setRenewTarget(item);
                                   setShowRenewModal(true);
                                 }}
-                                className="text-[8px] font-bold text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 cursor-pointer"
+                                className="text-[8px] font-medium text-amber-700 hover:text-amber-800 bg-amber-50/70 hover:bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200/60 cursor-pointer"
                                 title="Renew Lifetime"
                               >
                                 Renew
@@ -977,30 +912,20 @@ export default function TPMPage() {
                               <button
                                 type="button"
                                 onClick={() => openScheduleModal(item)}
-                                className="text-gray-400 hover:text-indigo-600 p-0.5 hover:bg-indigo-50 rounded cursor-pointer"
+                                className="text-gray-400 hover:text-indigo-600 p-0.5 hover:bg-indigo-50 rounded cursor-pointer leading-none"
                                 title="Atur Jadwal & Limit TPM"
                               >
-                                <span className="material-symbols-outlined text-[15px]">edit_calendar</span>
-                              </button>
-
-                              {/* Isi Checklist */}
-                              <button
-                                type="button"
-                                onClick={() => openChecklistForTarget(item)}
-                                className="text-gray-400 hover:text-emerald-600 p-0.5 hover:bg-emerald-50 rounded cursor-pointer"
-                                title="Isi Checklist Inspeksi"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">fact_check</span>
+                                <span className="material-symbols-outlined text-[14px]">edit_calendar</span>
                               </button>
 
                               {/* Catat Servis */}
                               <button
                                 type="button"
                                 onClick={() => openLogForTarget(item)}
-                                className="text-gray-400 hover:text-purple-600 p-0.5 hover:bg-purple-50 rounded cursor-pointer"
+                                className="text-gray-400 hover:text-purple-600 p-0.5 hover:bg-purple-50 rounded cursor-pointer leading-none"
                                 title="Catat Servis / Maintenance"
                               >
-                                <span className="material-symbols-outlined text-[15px]">handyman</span>
+                                <span className="material-symbols-outlined text-[14px]">handyman</span>
                               </button>
                             </div>
                           </td>
@@ -1011,7 +936,7 @@ export default function TPMPage() {
 
                   {filteredSchedules.length === 0 && (
                     <tr>
-                      <td colSpan={isPic ? 7 : 6} className="text-center py-12 text-gray-400 text-xs">
+                      <td colSpan={isPic ? 6 : 5} className="text-center py-12 text-gray-400 text-xs">
                         Tidak ada data jadwal TPM yang sesuai filter pencarian.
                       </td>
                     </tr>
@@ -1090,150 +1015,139 @@ export default function TPMPage() {
             <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
-                    <th className="px-3 py-2">Tanggal / Waktu</th>
-                    <th className="px-2 py-2">Shift &amp; Inspector</th>
-                    <th className="px-2 py-2">Target Jig / Part</th>
-                    <th className="px-2 text-center py-2">Parameter (6 Poin)</th>
-                    <th className="px-2 text-center py-2">Hasil</th>
-                    <th className="px-2 py-2">Catatan Temuan</th>
-                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  <tr className="bg-gray-100/75 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200 text-[9px] uppercase tracking-wider h-7">
+                    <th className="px-2 py-1 whitespace-nowrap">Waktu</th>
+                    <th className="px-2 py-1">Inspector &amp; Shift</th>
+                    <th className="px-2 py-1">Target Jig / Part</th>
+                    <th className="px-2 text-center py-1">Parameter (6 Poin)</th>
+                    <th className="px-2 text-center py-1">Hasil</th>
+                    <th className="px-2 py-1">Temuan</th>
+                    {isPic && <th className="px-2 text-center py-1 w-12">Aksi</th>}
                   </tr>
                 </thead>
-                <tbody className="text-gray-700">
+                <tbody className="text-gray-700 divide-y divide-gray-100 text-[10px]">
                   {filteredChecklists.map((check) => {
                     const isNg = check.overallResult === 'NG';
                     return (
                       <tr
                         key={check.id}
-                        className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                          isNg ? 'bg-red-50/40 hover:bg-red-100/40' : ''
+                        className={`border-b border-gray-100 hover:bg-blue-50/40 transition-colors h-7 ${
+                          isNg ? 'bg-rose-50/30' : ''
                         }`}
                       >
-                        <td className="px-3 py-2 font-mono text-[10px] text-gray-700">
-                          <div>
-                            {new Date(check.checkDate).toLocaleDateString('id-ID', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                          </div>
-                          <div className="text-[8.5px] text-gray-400">
+                        {/* Waktu (Single line compact) */}
+                        <td className="px-2 py-0.5 font-mono text-[9px] text-gray-600 whitespace-nowrap">
+                          {new Date(check.checkDate).toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}{' '}
+                          <span className="text-gray-400 text-[8.5px]">
                             {new Date(check.checkDate).toLocaleTimeString('id-ID', {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}
-                          </div>
-                        </td>
-
-                        <td className="px-2 py-2">
-                          <span className="text-[8.5px] font-bold bg-gray-100 text-gray-700 px-1.5 py-0.2 rounded border border-gray-200">
-                            {check.shift}
                           </span>
-                          <div className="font-bold text-gray-800 text-[11px] mt-0.5">{check.inspectorName}</div>
                         </td>
 
-                        <td className="px-2 py-2">
-                          <div className="font-mono font-bold text-gray-900">{check.design?.noReg}</div>
-                          <div className="text-[10px] text-gray-500">{check.design?.assyPartName}</div>
-                          {check.cellPart && (
-                            <div className="text-[9px] text-amber-700 font-medium">
-                              Part: {check.cellPart.name} ({check.cellPart.partNumber})
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-2 py-2 text-center">
-                          <div className="inline-grid grid-cols-6 gap-0.5 text-[8.5px] font-mono">
-                            <span
-                              title="Kebersihan"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.cleaningStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Cln
+                        {/* Inspector & Shift */}
+                        <td className="px-2 py-0.5 truncate">
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="font-medium text-gray-800 text-[9.5px] truncate">
+                              {check.inspectorName}
                             </span>
-                            <span
-                              title="Locator Pin"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.locatorPinStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Pin
-                            </span>
-                            <span
-                              title="Clamping / Klem"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.clampingStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Clp
-                            </span>
-                            <span
-                              title="Sensor / Pokayoke"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.sensorStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Sen
-                            </span>
-                            <span
-                              title="Baut & Baseplate"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.boltsStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Blt
-                            </span>
-                            <span
-                              title="Pelumasan"
-                              className={`px-1 py-0.2 rounded font-bold ${
-                                check.lubricationStatus === 'OK'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-700 border border-rose-300'
-                              }`}
-                            >
-                              Lub
+                            <span className="text-[7.5px] text-gray-500 bg-gray-100 px-1 py-0.2 rounded border border-gray-200/60 shrink-0">
+                              {check.shift}
                             </span>
                           </div>
                         </td>
 
-                        <td
-                          className={`px-2 py-2 text-center font-bold text-[9px] uppercase tracking-wider ${
-                            isNg ? 'bg-red-500 text-white' : 'bg-green-500 text-white'
-                          }`}
-                        >
-                          {isNg ? 'NG' : 'OK'}
-                        </td>
-
-                        <td className="px-2 py-2 text-gray-600 text-[10px]">
-                          <div>{check.notes || '—'}</div>
-                          {check.linkToAbnormality && check.abnormalityId && (
-                            <span className="inline-flex items-center gap-0.5 text-[8.5px] text-red-600 font-bold mt-0.5">
-                              <span className="material-symbols-outlined text-[10px]">link</span>
-                              Link Abnormality
+                        {/* Target Jig / Part */}
+                        <td className="px-2 py-0.5 truncate" title={`${check.design?.noReg} - ${check.design?.assyPartName || ''}`}>
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="font-semibold text-gray-800 text-[9.5px] font-mono shrink-0">
+                              {check.design?.noReg}
                             </span>
-                          )}
+                            {check.cellPart ? (
+                              <span
+                                className="text-[7.5px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 truncate"
+                                title={`Part: ${check.cellPart.name} (${check.cellPart.partNumber})`}
+                              >
+                                {check.cellPart.name}
+                              </span>
+                            ) : check.design?.assyPartName ? (
+                              <span className="text-[8.5px] text-gray-400 truncate">
+                                · {check.design.assyPartName}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
 
+                        {/* Parameter (6 Poin) - Compact micro pills */}
+                        <td className="px-2 py-0.5 text-center">
+                          <div className="inline-flex items-center gap-0.5 text-[7.5px] font-mono">
+                            {[
+                              { label: 'Cln', ok: check.cleaningStatus === 'OK', name: 'Kebersihan' },
+                              { label: 'Pin', ok: check.locatorPinStatus === 'OK', name: 'Locator Pin' },
+                              { label: 'Clp', ok: check.clampingStatus === 'OK', name: 'Clamping' },
+                              { label: 'Sen', ok: check.sensorStatus === 'OK', name: 'Sensor/Pokayoke' },
+                              { label: 'Blt', ok: check.boltsStatus === 'OK', name: 'Baut/Baseplate' },
+                              { label: 'Lub', ok: check.lubricationStatus === 'OK', name: 'Pelumasan' },
+                            ].map((p, idx) => (
+                              <span
+                                key={idx}
+                                title={`${p.name}: ${p.ok ? 'OK' : 'NG'}`}
+                                className={`px-1 py-0.2 rounded font-medium ${
+                                  p.ok
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                    : 'bg-rose-500 text-white font-semibold'
+                                }`}
+                              >
+                                {p.label}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* Overall Result */}
+                        <td className="px-2 py-0.5 text-center">
+                          <span
+                            className={`inline-block px-1.5 py-0.2 text-[8px] font-semibold rounded ${
+                              isNg
+                                ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                            }`}
+                          >
+                            {isNg ? 'NG' : 'OK'}
+                          </span>
+                        </td>
+
+                        {/* Catatan Temuan */}
+                        <td className="px-2 py-0.5 text-gray-600 text-[9px] truncate max-w-[200px]" title={check.notes || ''}>
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="truncate">{check.notes || '—'}</span>
+                            {check.linkToAbnormality && check.abnormalityId && (
+                              <span
+                                className="inline-flex items-center text-[7.5px] text-rose-600 bg-rose-50 border border-rose-200 px-1 py-0.2 rounded shrink-0 font-medium"
+                                title="Terhubung ke Abnormality"
+                              >
+                                <span className="material-symbols-outlined text-[9px] mr-0.5">link</span>
+                                Abnormality
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Action */}
                         {isPic && (
-                          <td className="px-2 py-2 text-center">
+                          <td className="px-2 py-0.5 text-center">
                             <button
+                              type="button"
                               onClick={() => handleDeleteChecklist(check.id)}
                               title="Hapus checklist"
-                              className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer"
+                              className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer leading-none"
                             >
-                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                              <span className="material-symbols-outlined text-[14px]">delete</span>
                             </button>
                           </td>
                         )}
@@ -1307,21 +1221,22 @@ export default function TPMPage() {
             <div className="flex-1 overflow-y-auto no-scrollbar rounded-lg border border-gray-200">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200">
-                    <th className="px-3 py-2">Tanggal</th>
-                    <th className="px-2 py-2">Kategori</th>
-                    <th className="px-2 py-2">Target Jig / Part</th>
-                    <th className="px-2 py-2">Aktivitas &amp; Deskripsi</th>
-                    <th className="px-2 py-2">Part Diganti</th>
-                    <th className="px-2 py-2">Teknisi &amp; Durasi</th>
-                    <th className="px-2 text-center py-2">Status</th>
-                    {isPic && <th className="px-2 text-center py-2">Action</th>}
+                  <tr className="bg-gray-100/75 text-gray-500 font-semibold sticky top-0 z-10 border-b border-gray-200 text-[9px] uppercase tracking-wider h-7">
+                    <th className="px-2 py-1 whitespace-nowrap">Tanggal</th>
+                    <th className="px-2 py-1">Kategori</th>
+                    <th className="px-2 py-1">Target Jig / Part</th>
+                    <th className="px-2 py-1">Aktivitas &amp; Deskripsi</th>
+                    <th className="px-2 py-1">Part Diganti</th>
+                    <th className="px-2 py-1">Teknisi &amp; Durasi</th>
+                    <th className="px-2 text-center py-1">Status</th>
+                    {isPic && <th className="px-2 text-center py-1 w-12">Aksi</th>}
                   </tr>
                 </thead>
-                <tbody className="text-gray-700">
+                <tbody className="text-gray-700 divide-y divide-gray-100 text-[10px]">
                   {filteredLogs.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="px-3 py-2 font-mono text-[10px] text-gray-700 whitespace-nowrap">
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/40 transition-colors h-7">
+                      {/* Tanggal */}
+                      <td className="px-2 py-0.5 font-mono text-[9px] text-gray-600 whitespace-nowrap">
                         {new Date(item.performedAt).toLocaleDateString('id-ID', {
                           day: '2-digit',
                           month: 'short',
@@ -1329,75 +1244,103 @@ export default function TPMPage() {
                         })}
                       </td>
 
-                      <td className="px-2 py-2">
-                        <span
-                          className={`inline-block px-1.5 py-0.2 rounded text-[8.5px] font-bold ${
-                            item.actionType === 'PREVENTIVE'
-                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                              : item.actionType === 'CORRECTIVE'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : item.actionType === 'RENEWAL'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-purple-50 text-purple-700 border border-purple-200'
-                          }`}
-                        >
-                          {item.actionType}
-                        </span>
-                        {item.resetLifetime && (
-                          <div className="text-[8px] text-emerald-600 font-bold mt-0.5 flex items-center gap-0.5">
-                            <span className="material-symbols-outlined text-[10px]">restart_alt</span>
-                            Reset Lifetime
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-2 py-2">
-                        <div className="font-mono font-bold text-gray-900">{item.design?.noReg}</div>
-                        <div className="text-[10px] text-gray-500">{item.design?.assyPartName}</div>
-                        {item.cellPart && (
-                          <div className="text-[9px] text-amber-700 font-medium">
-                            Part: {item.cellPart.name} ({item.cellPart.partNumber})
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-2 py-2 text-gray-700">
-                        <div className="font-bold text-gray-800 text-[11px]">{item.title}</div>
-                        <div className="text-[10px] text-gray-500 mt-0.5">{item.description}</div>
-                      </td>
-
-                      <td className="px-2 py-2 text-[10px] text-gray-600">{item.partsReplaced || '—'}</td>
-
-                      <td className="px-2 py-2">
-                        <div className="font-semibold text-gray-800 text-[11px]">{item.performedBy}</div>
-                        <div className="text-[9px] text-gray-400">
-                          {item.durationMinutes}m
-                          {item.cost && item.cost > 0
-                            ? ` · Rp ${Number(item.cost).toLocaleString('id-ID')}`
-                            : ''}
+                      {/* Kategori */}
+                      <td className="px-2 py-0.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`inline-block px-1.5 py-0.2 rounded text-[7.5px] font-medium ${
+                              item.actionType === 'PREVENTIVE'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : item.actionType === 'CORRECTIVE'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : item.actionType === 'RENEWAL'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-purple-50 text-purple-700 border border-purple-200'
+                            }`}
+                          >
+                            {item.actionType}
+                          </span>
+                          {item.resetLifetime && (
+                            <span
+                              className="inline-flex items-center text-[7.5px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded font-normal"
+                              title="Reset Lifetime"
+                            >
+                              <span className="material-symbols-outlined text-[9px] mr-0.5">restart_alt</span>
+                              Reset
+                            </span>
+                          )}
                         </div>
                       </td>
 
-                      <td className="px-2 py-2 text-center">
+                      {/* Target Jig / Part */}
+                      <td className="px-2 py-0.5 truncate" title={`${item.design?.noReg} - ${item.design?.assyPartName || ''}`}>
+                        <div className="flex items-center gap-1 truncate">
+                          <span className="font-semibold text-gray-800 text-[9.5px] font-mono shrink-0">
+                            {item.design?.noReg}
+                          </span>
+                          {item.cellPart ? (
+                            <span
+                              className="text-[7.5px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 truncate"
+                              title={`Part: ${item.cellPart.name} (${item.cellPart.partNumber})`}
+                            >
+                              {item.cellPart.name}
+                            </span>
+                          ) : item.design?.assyPartName ? (
+                            <span className="text-[8.5px] text-gray-400 truncate">
+                              · {item.design.assyPartName}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+
+                      {/* Aktivitas & Deskripsi */}
+                      <td className="px-2 py-0.5 truncate max-w-[220px]" title={item.description ? `${item.title}: ${item.description}` : item.title}>
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="font-medium text-gray-800 text-[9.5px] shrink-0">{item.title}</span>
+                          {item.description && (
+                            <span className="text-[8.5px] text-gray-400 truncate">· {item.description}</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Part Diganti */}
+                      <td className="px-2 py-0.5 text-[9px] text-gray-600 truncate max-w-[120px]" title={item.partsReplaced || ''}>
+                        {item.partsReplaced || '—'}
+                      </td>
+
+                      {/* Teknisi & Durasi */}
+                      <td className="px-2 py-0.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1 text-[9px]">
+                          <span className="font-medium text-gray-700">{item.performedBy}</span>
+                          <span className="text-gray-400 text-[8px]">
+                            ({item.durationMinutes}m{item.cost && item.cost > 0 ? ` · Rp ${Number(item.cost).toLocaleString('id-ID')}` : ''})
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-2 py-0.5 text-center">
                         <span
-                          className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded-full ${
+                          className={`text-[7.5px] font-medium px-1.5 py-0.2 rounded ${
                             item.status === 'COMPLETED'
-                              ? 'bg-green-100 text-green-700 border border-green-200'
-                              : 'bg-amber-100 text-amber-700 border border-amber-200'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}
                         >
                           {item.status}
                         </span>
                       </td>
 
+                      {/* Action */}
                       {isPic && (
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-2 py-0.5 text-center">
                           <button
+                            type="button"
                             onClick={() => handleDeleteLog(item.id)}
                             title="Hapus log servis"
-                            className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer"
+                            className="text-gray-400 hover:text-red-600 p-0.5 hover:bg-red-50 rounded cursor-pointer leading-none"
                           >
-                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
                           </button>
                         </td>
                       )}
@@ -1622,18 +1565,16 @@ export default function TPMPage() {
                 <button
                   type="button"
                   onClick={() => setUsageMode('ADD')}
-                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                    usageMode === 'ADD' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
-                  }`}
+                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${usageMode === 'ADD' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
+                    }`}
                 >
                   + Tambah Siklus
                 </button>
                 <button
                   type="button"
                   onClick={() => setUsageMode('SET')}
-                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                    usageMode === 'SET' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
-                  }`}
+                  className={`py-1.5 rounded-lg font-bold transition-all cursor-pointer ${usageMode === 'SET' ? 'bg-white text-blue-700 shadow-xs' : 'text-gray-600 hover:text-gray-800'
+                    }`}
                 >
                   Set Counter Total
                 </button>
@@ -1649,11 +1590,10 @@ export default function TPMPage() {
                         key={preset}
                         type="button"
                         onClick={() => setUsageAmountInput(preset)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                          usageAmountInput === preset
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${usageAmountInput === preset
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                          }`}
                       >
                         +{preset}
                       </button>
@@ -1958,9 +1898,6 @@ export default function TPMPage() {
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-gray-900">Catat Aktivitas Maintenance</h3>
-                  <p className="text-[9px] text-gray-500">
-                    Log riwayat servis preventif, perbaikan kerusakan, atau renewal
-                  </p>
                 </div>
               </div>
               <button

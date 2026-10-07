@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 
 import { StorageService } from '../upload/storage.service';
 
+
 @Injectable()
 export class DesignService {
   constructor(
@@ -198,12 +199,15 @@ export class DesignService {
       designDateNew: d.designDateNew,
       revStatus: d.revStatus,
       ...this.calculateLifetime({
-        installDate: d.designDateNew || (d as any).createdAt,
+        installDate: d.designDateNew || d.createdAt,
         lifetimeDays: d.lifetimeDays,
-        lifetimeType: (d as any).lifetimeType,
-        maxUsage: (d as any).maxUsage,
-        currentUsage: (d as any).currentUsage,
+        lifetimeType: d.lifetimeType,
+        maxUsage: d.maxUsage,
+        currentUsage: d.currentUsage,
       }),
+      tpmScheduleStart: (d as any).tpmScheduleStart ? (d as any).tpmScheduleStart.toISOString() : null,
+      tpmScheduleDeadline: (d as any).tpmScheduleDeadline ? (d as any).tpmScheduleDeadline.toISOString() : null,
+      tpmLifetimeSetAt: (d as any).tpmLifetimeSetAt ? (d as any).tpmLifetimeSetAt.toISOString() : null,
       lineProduct: d.line.lineName,
       process: d.process.name,
       vendor: d.vendor ? { id: d.vendor.id, name: d.vendor.name } : null,
@@ -266,6 +270,9 @@ export class DesignService {
           pdfPageIndex: cp.pdfPageIndex,
           material: cp.material,
           qty: cp.qty || '1',
+          tpmScheduleStart: cp.tpmScheduleStart ? cp.tpmScheduleStart.toISOString() : null,
+          tpmScheduleDeadline: cp.tpmScheduleDeadline ? cp.tpmScheduleDeadline.toISOString() : null,
+          tpmLifetimeSetAt: cp.tpmLifetimeSetAt ? cp.tpmLifetimeSetAt.toISOString() : null,
         };
       }) || [],
     }));
@@ -352,6 +359,7 @@ export class DesignService {
         lifecycleStatus: dto.lifecycleStatus || 'ACTIVE',
         vendorId: dto.vendorId || undefined,
         designDateNew: dto.designDateNew ? new Date(dto.designDateNew) : new Date(),
+        // Jadwal TPM baru bisa di-set setelah desain di-approve (lewat halaman TPM)
       },
     });
 

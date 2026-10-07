@@ -466,9 +466,16 @@ export interface ParseDrawingResponse {
 export async function parseDrawingPdf(file: File): Promise<ParseDrawingResponse> {
   const formData = new FormData();
   formData.append('file', file);
+
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}/api/upload/parse-drawing`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${getToken()}` },
+    headers,
     body: formData,
   });
   if (!res.ok) {

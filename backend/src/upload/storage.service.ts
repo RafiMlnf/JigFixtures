@@ -55,13 +55,18 @@ export class StorageService implements OnModuleInit {
 
     if (this.useMinio && this.minioClient) {
       try {
-        await this.minioClient.putObject(
+        const putPromise = this.minioClient.putObject(
           this.bucketName,
           sanitizedFilename,
           buffer,
           buffer.length,
           { 'Content-Type': mimetype }
         );
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('MinIO connection timed out')), 2500)
+        );
+        await Promise.race([putPromise, timeoutPromise]);
+
         const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
         const host = process.env.MINIO_ENDPOINT || 'localhost';
         const port = process.env.MINIO_PORT || '9000';

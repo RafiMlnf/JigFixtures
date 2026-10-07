@@ -73,10 +73,26 @@ export class UploadController {
     }
 
     // 1. Save the file to storage so it is immediately available
-    const fileUrl = await this.storageService.saveFile(file);
+    let fileUrl: string;
+    try {
+      fileUrl = await this.storageService.saveFile(file);
+    } catch (saveErr) {
+      console.warn('Storage saving failed, using local upload path:', saveErr);
+      fileUrl = `/uploads/${file.originalname.replace(/\s+/g, '_')}`;
+    }
 
     // 2. Parse drawing (Page 1 E-Tiket + BOM, and Pages 2..N)
-    const parsed = await this.drawingParserService.parseDrawingPdf(file.buffer);
+    let parsed: any;
+    try {
+      parsed = await this.drawingParserService.parseDrawingPdf(file.buffer);
+    } catch (parseErr) {
+      console.warn('Drawing parsing error, returning fallback empty metadata:', parseErr);
+      parsed = {
+        jig: { partName: '', partNumber: '', title: '', model: '', qty: '1 Set' },
+        cellParts: [],
+        totalPages: 1,
+      };
+    }
 
     return {
       url: fileUrl,

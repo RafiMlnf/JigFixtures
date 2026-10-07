@@ -435,45 +435,6 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        {/* Quick KPI & Action Buttons */}
-        <div className="flex items-center gap-2">
-          {/* TPM Quick Status Pill */}
-          <Link
-            href="/tpm"
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            title="Buka Modul TPM & Jadwal Preventive"
-          >
-            <span className="material-symbols-outlined text-sm text-[#0063ff]">calendar_month</span>
-            <span>Jadwal TPM</span>
-            {tpmStats.overdue > 0 ? (
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-rose-600 text-white animate-pulse">
-                {tpmStats.overdue} Overdue
-              </span>
-            ) : tpmStats.nearDeadline > 0 ? (
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500 text-white">
-                {tpmStats.nearDeadline} Mendekati
-              </span>
-            ) : (
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-600 text-white">
-                {tpmStats.total} Item
-              </span>
-            )}
-          </Link>
-
-          {/* Quick Refresh Button */}
-          <button
-            type="button"
-            onClick={loadAllDashboardData}
-            disabled={isLoading}
-            className="h-8 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-            title="Perbarui Data Dashboard"
-          >
-            <span className={`material-symbols-outlined text-sm ${isLoading ? 'animate-spin text-blue-600' : ''}`}>
-              refresh
-            </span>
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-        </div>
       </header>
 
       {/* Main Content Area (Scrollable) */}
@@ -503,24 +464,26 @@ export default function DashboardPage() {
 
             {/* Content Container */}
             <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
-              {/* Compact Metric Strip */}
-              <div className="grid grid-cols-3 gap-1 shrink-0">
-                <div className="flex items-center justify-between bg-rose-50/80 border border-rose-200/70 px-1.5 py-1 rounded-md">
-                  <span className="text-[8px] font-bold text-rose-700">Overdue</span>
-                  <span className="text-[10px] font-black text-rose-800">{tpmStats.overdue}</span>
+              {/* Flat Metric Strip with Bottom Divider */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-rose-600">Overdue:</span>
+                  <span className="font-black text-rose-700">{tpmStats.overdue}</span>
                 </div>
-                <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200/70 px-1.5 py-1 rounded-md">
-                  <span className="text-[8px] font-bold text-amber-700">&le;7 Hari</span>
-                  <span className="text-[10px] font-black text-amber-800">{tpmStats.nearDeadline}</span>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-amber-600">&le;7 Hari:</span>
+                  <span className="font-black text-amber-700">{tpmStats.nearDeadline}</span>
                 </div>
-                <div className="flex items-center justify-between bg-emerald-50/80 border border-emerald-200/70 px-1.5 py-1 rounded-md">
-                  <span className="text-[8px] font-bold text-emerald-700">Aman</span>
-                  <span className="text-[10px] font-black text-emerald-800">{tpmStats.safe}</span>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-emerald-600">Aman:</span>
+                  <span className="font-black text-emerald-700">{tpmStats.safe}</span>
                 </div>
               </div>
 
-              {/* Quick Filter Tabs */}
-              <div className="flex items-center gap-1 shrink-0 overflow-x-auto pb-0.5">
+              {/* Flat Quick Filter Tabs with Bottom Divider */}
+              <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1.5 border-b border-slate-200/80 px-1">
                 {[
                   { key: 'ALL', label: 'Semua' },
                   { key: 'OVERDUE', label: `Overdue (${tpmStats.overdue})` },
@@ -531,10 +494,10 @@ export default function DashboardPage() {
                     key={tab.key}
                     type="button"
                     onClick={() => setTpmFilter(tab.key as any)}
-                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold shrink-0 transition-colors cursor-pointer ${
+                    className={`text-[9px] font-bold pb-0.5 shrink-0 transition-colors cursor-pointer ${
                       tpmFilter === tab.key
-                        ? 'bg-[#0063ff] text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'text-[#0063ff] border-b-2 border-[#0063ff]'
+                        : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
                     {tab.label}
@@ -543,8 +506,8 @@ export default function DashboardPage() {
               </div>
 
               {/* Quick Search */}
-              <div className="relative w-full shrink-0">
-                <span className="material-symbols-outlined text-[13px] text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
+              <div className="relative flex items-center w-full shrink-0">
+                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
                   search
                 </span>
                 <input
@@ -552,7 +515,7 @@ export default function DashboardPage() {
                   placeholder="Cari jadwal / reg / part..."
                   value={tpmSearch}
                   onChange={(e) => setTpmSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 py-0.5 bg-slate-50 border border-slate-200 rounded-md text-[10px] focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
+                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
                 />
               </div>
 
@@ -725,8 +688,8 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Quick Filter Tabs */}
-              <div className="flex items-center gap-1 shrink-0 overflow-x-auto pb-0.5">
+              {/* Flat Quick Filter Tabs with Bottom Divider */}
+              <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1.5 border-b border-slate-200/80 px-1">
                 {[
                   { key: 'WAITING', label: `Menunggu (${taskStats.waiting})` },
                   { key: 'DESIGN_REV', label: 'Design' },
@@ -737,10 +700,10 @@ export default function DashboardPage() {
                     key={tab.key}
                     type="button"
                     onClick={() => setTaskFilter(tab.key as any)}
-                    className={`px-1.5 py-0.5 rounded text-[8px] font-bold shrink-0 transition-colors cursor-pointer ${
+                    className={`text-[9px] font-bold pb-0.5 shrink-0 transition-colors cursor-pointer ${
                       taskFilter === tab.key
-                        ? 'bg-[#0063ff] text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'text-[#0063ff] border-b-2 border-[#0063ff]'
+                        : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
                     {tab.label}
@@ -749,8 +712,8 @@ export default function DashboardPage() {
               </div>
 
               {/* Quick Search */}
-              <div className="relative w-full shrink-0">
-                <span className="material-symbols-outlined text-[13px] text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
+              <div className="relative flex items-center w-full shrink-0">
+                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
                   search
                 </span>
                 <input
@@ -758,7 +721,7 @@ export default function DashboardPage() {
                   placeholder="Cari task / reg / pemohon..."
                   value={taskSearch}
                   onChange={(e) => setTaskSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 py-0.5 bg-slate-50 border border-slate-200 rounded-md text-[10px] focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
+                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
                 />
               </div>
 
@@ -912,27 +875,22 @@ export default function DashboardPage() {
 
             {/* Content Container */}
             <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
-              {/* Compact Metric Strip */}
-              <div className="grid grid-cols-2 gap-1 shrink-0">
-                <div className="flex items-center justify-between bg-rose-50/80 border border-rose-200/70 px-2 py-1 rounded-md">
-                  <div className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                    <span className="text-[8px] font-bold text-rose-700">Overdue</span>
-                  </div>
-                  <span className="text-[10px] font-black text-rose-800">{cpStats.overdue}</span>
+              {/* Flat Metric Strip with Bottom Divider */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-rose-600">Overdue:</span>
+                  <span className="font-black text-rose-700">{cpStats.overdue}</span>
                 </div>
-                <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200/70 px-2 py-1 rounded-md">
-                  <div className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    <span className="text-[8px] font-bold text-amber-700">&le;5 Mgg</span>
-                  </div>
-                  <span className="text-[10px] font-black text-amber-800">{cpStats.warning}</span>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-amber-600">&le;5 Mgg:</span>
+                  <span className="font-black text-amber-700">{cpStats.warning}</span>
                 </div>
               </div>
 
               {/* Quick Search */}
-              <div className="relative w-full shrink-0">
-                <span className="material-symbols-outlined text-[13px] text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
+              <div className="relative flex items-center w-full shrink-0">
+                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
                   search
                 </span>
                 <input
@@ -940,7 +898,7 @@ export default function DashboardPage() {
                   placeholder="Cari part / parent..."
                   value={cellPartSearch}
                   onChange={(e) => setCellPartSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 py-0.5 bg-slate-50 border border-slate-200 rounded-md text-[10px] focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
+                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
                 />
               </div>
 
@@ -1046,25 +1004,27 @@ export default function DashboardPage() {
 
             {/* Content Container */}
             <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
-              {/* Compact Metric Strip */}
-              <div className="grid grid-cols-3 gap-1 shrink-0">
-                <div className="flex items-center justify-between bg-rose-50/70 border border-rose-200/70 px-1.5 py-0.5 rounded-md">
-                  <span className="text-[8px] font-bold text-rose-700">Overdue</span>
-                  <span className="text-[10px] font-black text-rose-800">{lifetimeStats.overdue}</span>
+              {/* Flat Metric Strip with Bottom Divider */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-rose-600">Overdue:</span>
+                  <span className="font-black text-rose-700">{lifetimeStats.overdue}</span>
                 </div>
-                <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200/70 px-1.5 py-0.5 rounded-md">
-                  <span className="text-[8px] font-bold text-amber-700">&le;30d</span>
-                  <span className="text-[10px] font-black text-amber-800">{lifetimeStats.warning}</span>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-amber-600">&le;30d:</span>
+                  <span className="font-black text-amber-700">{lifetimeStats.warning}</span>
                 </div>
-                <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200/70 px-1.5 py-0.5 rounded-md">
-                  <span className="text-[8px] font-bold text-emerald-700">Aman</span>
-                  <span className="text-[10px] font-black text-emerald-800">{lifetimeStats.safe}</span>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-emerald-600">Aman:</span>
+                  <span className="font-black text-emerald-700">{lifetimeStats.safe}</span>
                 </div>
               </div>
 
               {/* Quick Search Input */}
-              <div className="relative w-full shrink-0">
-                <span className="material-symbols-outlined text-[13px] text-slate-400 absolute left-2 top-1/2 -translate-y-1/2">
+              <div className="relative flex items-center w-full shrink-0">
+                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
                   search
                 </span>
                 <input
@@ -1072,7 +1032,7 @@ export default function DashboardPage() {
                   placeholder="Cari reg / part..."
                   value={lifetimeSearch}
                   onChange={(e) => setLifetimeSearch(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-[10px] rounded-md pl-6 pr-2 py-0.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  className="w-full bg-slate-50 border border-slate-200 text-[10px] rounded-md pl-6 pr-2 h-6 leading-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 />
               </div>
 

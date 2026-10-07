@@ -18,6 +18,7 @@ export interface TpmSummary {
   totalItems: number;
   totalDesigns: number;
   totalCellParts: number;
+  pendingApprovalCount?: number;
   safeCount: number;
   warningCount: number;
   overdueCount: number;

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateTpmChecklistDto } from './dto/create-tpm-checklist.dto';
 import { CreateTpmLogDto } from './dto/create-tpm-log.dto';
@@ -86,11 +86,35 @@ export class TpmService {
     };
   }
 
-  /** Get Overall TPM KPI summary */
-  async getSummary() {
-    const designs = await this.prisma.design.findMany({
+  /** A design is TPM-eligible only when its latest document has been APPROVED */
+  private isDesignApproved(documents?: { approvalStatus: string }[] | null): boolean {
+    if (!documents || documents.length === 0) return false;
+    return documents[documents.length - 1].approvalStatus === 'APPROVED';
+  }
+
+  /** Throw if the design has not been approved yet (blocks TPM actions) */
+  private async assertDesignApproved(designId: string) {
+    const design = await this.prisma.design.findUnique({
+      where: { id: designId },
       select: {
         id: true,
+        documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!design) throw new NotFoundException(`Design ${designId} not found`);
+    if (!this.isDesignApproved(design.documents)) {
+      throw new BadRequestException(
+        'Jig/Fixture belum di-approve. Selesaikan approval desain terlebih dahulu sebelum menggunakan TPM.',
+      );
+    }
+  }
+
+  /** Get Overall TPM KPI summary */
+  async getSummary() {
+    const allDesigns = await this.prisma.design.findMany({
+      select: {
+        id: true,
+        documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
         lifetimeDays: true,
         lifetimeType: true,
         maxUsage: true,
@@ -103,9 +127,14 @@ export class TpmService {
       },
     });
 
-    const cellParts = await this.prisma.cellPart.findMany({
+    const allCellParts = await this.prisma.cellPart.findMany({
       select: {
         id: true,
+        design: {
+          select: {
+            documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
+          },
+        },
         lifetimeDays: true,
         lifetimeType: true,
         maxUsage: true,
@@ -123,6 +152,11 @@ export class TpmService {
     let warningCount = 0;
     let overdueCount = 0;
     let unscheduledCount = 0;
+
+    // Hanya desain yang sudah di-approve yang masuk ke TPM
+    const designs = allDesigns.filter((d) => this.isDesignApproved(d.documents));
+    const cellParts = allCellParts.filter((cp) => this.isDesignApproved(cp.design?.documents));
+    const pendingApprovalCount = allDesigns.length - designs.length;
 
     const allItems = [
       ...designs.map((d) => this.enrichLifetime(d, false)),
@@ -172,6 +206,7 @@ export class TpmService {
       totalItems,
       totalDesigns: designs.length,
       totalCellParts: cellParts.length,
+      pendingApprovalCount,
       safeCount,
       warningCount,
       overdueCount,
@@ -192,7 +227,7 @@ export class TpmService {
     status?: string;
     type?: 'ALL' | 'DESIGN' | 'CELL_PART';
   }) {
-    const designs = await this.prisma.design.findMany({
+    const allDesigns = await this.prisma.design.findMany({
       where: {
         ...(query?.lineId ? { lineId: query.lineId } : {}),
         ...(query?.processId ? { processId: query.processId } : {}),
@@ -201,9 +236,13 @@ export class TpmService {
         line: { select: { id: true, lineName: true, lineCode: true } },
         process: { select: { id: true, name: true, code: true } },
         cellParts: true,
+        documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
       },
       orderBy: { noReg: 'asc' },
     });
+
+    // Hanya desain yang sudah di-approve yang masuk ke TPM
+    const designs = allDesigns.filter((d) => this.isDesignApproved(d.documents));
 
     const enrichedDesigns = designs.map((d) => {
       const enriched = this.enrichLifetime(d, false);
@@ -334,6 +373,7 @@ export class TpmService {
     if (isCellPart) {
       const cp = await this.prisma.cellPart.findUnique({ where: { id } });
       if (!cp) throw new NotFoundException(`CellPart ${id} not found`);
+      await this.assertDesignApproved(cp.designId);
       const updated = await this.prisma.cellPart.update({
         where: { id },
         data: dataToUpdate,
@@ -342,6 +382,7 @@ export class TpmService {
     } else {
       const design = await this.prisma.design.findUnique({ where: { id } });
       if (!design) throw new NotFoundException(`Design ${id} not found`);
+      await this.assertDesignApproved(id);
       const updated = await this.prisma.design.update({
         where: { id },
         data: dataToUpdate,
@@ -403,6 +444,8 @@ export class TpmService {
 
   /** Create Checklist inspection report */
   async createChecklist(dto: CreateTpmChecklistDto, userId?: string) {
+    await this.assertDesignApproved(dto.designId);
+
     const checkDate = dto.checkDate ? new Date(dto.checkDate) : new Date();
 
     let createdAbnormalityId: string | null = null;
@@ -537,6 +580,8 @@ export class TpmService {
 
   /** Create Maintenance Log entry */
   async createLog(dto: CreateTpmLogDto) {
+    await this.assertDesignApproved(dto.designId);
+
     const performedAt = dto.performedAt ? new Date(dto.performedAt) : new Date();
 
     const log = await this.prisma.tpmMaintenanceLog.create({

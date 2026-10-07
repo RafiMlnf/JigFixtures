@@ -44,26 +44,72 @@ export class DrawingParserService {
    * Parse an engineering drawing PDF buffer to extract Jig metadata and CellPart list.
    */
   async parseDrawingPdf(buffer: Buffer): Promise<ParsedDrawingResult> {
-    const uint8Array = new Uint8Array(buffer);
-    const parser = new PDFParse(uint8Array);
+    let fullPdfData: any = null;
+    let totalPages = 1;
 
-    let fullPdfData: any;
     try {
-      fullPdfData = await parser.getText();
-    } catch (err) {
-      this.logger.error('Error parsing PDF text:', err);
-      throw err;
+      // In pdf-parse v2, options must be an object with { data: buffer }
+      const parser = new PDFParse({ data: buffer });
+      try {
+        fullPdfData = await parser.getText();
+      } finally {
+        try {
+          await parser.destroy();
+        } catch {}
+      }
+    } catch (err: any) {
+      this.logger.warn(`pdf-parse getText error: ${err?.message || err}. Attempting fallback...`);
     }
 
-    const totalPages = fullPdfData.total || (fullPdfData.pages ? fullPdfData.pages.length : 1);
+    // Fallback: If pdf-parse failed, use pdf-lib to safely get the total page count
+    if (!fullPdfData) {
+      try {
+        const { PDFDocument } = await import('pdf-lib');
+        const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+        totalPages = pdfDoc.getPageCount();
+      } catch (e: any) {
+        this.logger.warn(`pdf-lib fallback count failed: ${e?.message || e}`);
+      }
+
+      return {
+        jig: {
+          partName: '',
+          partNumber: '',
+          title: '',
+          model: '',
+          qty: '1 Set',
+        },
+        cellParts: [],
+        totalPages,
+      };
+    }
+
+    totalPages = fullPdfData.total || (fullPdfData.pages ? fullPdfData.pages.length : 1);
     const pageTexts: string[] = (fullPdfData.pages || []).map((p: any) => p.text || '');
     const page1Text = pageTexts[0] || fullPdfData.text || '';
 
     // 1. Extract Jig Info from Page 1 E-Tiket
-    const jig = this.extractJigInfo(page1Text);
+    let jig: ParsedJigInfo;
+    try {
+      jig = this.extractJigInfo(page1Text);
+    } catch (e) {
+      this.logger.warn('Failed to extract jig info from page 1:', e);
+      jig = {
+        partName: '',
+        partNumber: '',
+        title: '',
+        model: '',
+        qty: '1 Set',
+      };
+    }
 
     // 2. Extract CellParts directly from each subsequent sheet / etiket (Pages 2..N)
-    const cellParts = this.extractCellPartsFromSheets(pageTexts);
+    let cellParts: ParsedCellPart[] = [];
+    try {
+      cellParts = this.extractCellPartsFromSheets(pageTexts);
+    } catch (e) {
+      this.logger.warn('Failed to extract cell parts from sheets:', e);
+    }
 
     return {
       jig,

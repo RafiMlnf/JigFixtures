@@ -166,42 +166,69 @@ export class AbnormalityService {
       },
     });
 
-    // Function to calculate Jig Condition (Green = SAFE, Yellow = WARNING, Red = OVERDUE)
-    const calcJigStatus = (design: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
-      if (!design) return 'SAFE';
-      const baseDate = design.designDateNew || design.createdAt || new Date();
-      const lifetimeDays = design.lifetimeDays ?? 180;
+    // Helper to evaluate item lifetime status consistent with TPM Service
+    const getLifetimeStatus = (item: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
+      const baseDate = item.lastRenewalDate || item.designDateNew || item.installDate || item.createdAt || new Date();
+      const lifetimeDays = item.lifetimeDays ?? 180;
       const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
       const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
 
-      const maxUsage = design.maxUsage ?? 500;
-      const currentUsage = design.currentUsage ?? 0;
+      let dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+      if (daysRemaining <= 0) {
+        dayStatus = 'OVERDUE';
+      } else if (daysRemaining <= 35) {
+        dayStatus = 'WARNING';
+      } else {
+        dayStatus = 'SAFE';
+      }
+
+      const maxUsage = item.maxUsage ?? 500;
+      const currentUsage = item.currentUsage ?? 0;
       const usageRemaining = Math.max(0, maxUsage - currentUsage);
       const usagePercent = maxUsage > 0 ? (currentUsage / maxUsage) * 100 : 0;
 
-      let isOverdue = daysRemaining <= 0 || currentUsage >= maxUsage;
-      let isWarning = (!isOverdue) && (daysRemaining <= 35 || usagePercent >= 85 || usageRemaining <= 50);
+      let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+      if (currentUsage >= maxUsage) {
+        usageStatus = 'OVERDUE';
+      } else if (usagePercent >= 85 || usageRemaining <= 50) {
+        usageStatus = 'WARNING';
+      } else {
+        usageStatus = 'SAFE';
+      }
 
-      // Check cellParts as well
+      const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = item.lifetimeType || 'DUAL';
+      if (lifetimeType === 'DAYS') {
+        return dayStatus;
+      }
+      if (lifetimeType === 'USAGE') {
+        return usageStatus;
+      }
+      // DUAL
+      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
+        return 'OVERDUE';
+      }
+      if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+        return 'WARNING';
+      }
+      return 'SAFE';
+    };
+
+    // Function to calculate Jig Condition (Green = SAFE, Yellow = WARNING, Red = OVERDUE)
+    const calcJigStatus = (design: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
+      if (!design) return 'SAFE';
+      const mainStatus = getLifetimeStatus(design);
+      if (mainStatus === 'OVERDUE') return 'OVERDUE';
+
+      let hasWarning = mainStatus === 'WARNING';
       if (design.cellParts && design.cellParts.length > 0) {
         for (const cp of design.cellParts) {
-          const cpBase = cp.lastRenewalDate || cp.installDate || cp.createdAt || new Date();
-          const cpDaysRemaining = Math.ceil((new Date(new Date(cpBase).getTime() + (cp.lifetimeDays ?? 180) * 86400000).getTime() - Date.now()) / 86400000);
-          const cpMaxUsage = cp.maxUsage ?? 500;
-          const cpCurUsage = cp.currentUsage ?? 0;
-          const cpUsagePercent = cpMaxUsage > 0 ? (cpCurUsage / cpMaxUsage) * 100 : 0;
-
-          if (cpDaysRemaining <= 0 || cpCurUsage >= cpMaxUsage) {
-            isOverdue = true;
-          } else if (cpDaysRemaining <= 35 || cpUsagePercent >= 85 || (cpMaxUsage - cpCurUsage) <= 50) {
-            isWarning = true;
-          }
+          const cpStatus = getLifetimeStatus(cp);
+          if (cpStatus === 'OVERDUE') return 'OVERDUE';
+          if (cpStatus === 'WARNING') hasWarning = true;
         }
       }
 
-      if (isOverdue) return 'OVERDUE';
-      if (isWarning) return 'WARNING';
-      return 'SAFE';
+      return hasWarning ? 'WARNING' : 'SAFE';
     };
 
     // Function to calculate TPM Schedule Status (Green, Yellow, Red)
@@ -227,7 +254,7 @@ export class AbnormalityService {
 
     const dashboardCards = machinesRaw.map((m) => {
       // Find associated design or line designs
-      let matchedDesign = null;
+      let matchedDesign: any = null;
       if (m.design_id) {
         matchedDesign = designs.find((d) => d.id === m.design_id);
       }

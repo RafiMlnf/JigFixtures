@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { fetchMasterList, getFileUrl, createCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, downloadDesignPdfPage, downloadDesignPdfFull } from '@/lib/api/phase3';
+import { updateTpmSchedule } from '@/lib/api/tpm';
 import { canEdit } from '@/lib/rbac';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
@@ -73,6 +74,9 @@ interface CellPartInfo {
   minimumStock: number;
   actualStock: number;
   pdfPageIndex: number | null;
+  tpmScheduleStart?: string | null;
+  tpmScheduleDeadline?: string | null;
+  tpmLifetimeSetAt?: string | null;
 }
 
 interface MasterItem {
@@ -101,6 +105,9 @@ interface MasterItem {
   triggerReason?: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE';
   daysRemaining?: number;
   dueDate?: string;
+  tpmScheduleStart?: string | null;
+  tpmScheduleDeadline?: string | null;
+  tpmLifetimeSetAt?: string | null;
   lineProduct: string;
   process: string;
   vendor: { id: string; name: string } | null;
@@ -182,6 +189,64 @@ function DesignDetailPageContent({ params }: PageProps) {
   const [renewResetDays, setRenewResetDays] = useState(true);
   const [renewResetUsage, setRenewResetUsage] = useState(true);
   const [modalSubmitting, setModalSubmitting] = useState(false);
+
+  // Set Schedule TPM Modal State
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [selectedScheduleTarget, setSelectedScheduleTarget] = useState<{
+    id: string;
+    isCellPart: boolean;
+    noReg: string;
+    name: string;
+    tpmScheduleStart: string;
+    tpmScheduleDeadline: string;
+    lifetimeDays: number;
+    lifetimeType: 'DUAL' | 'USAGE' | 'DAYS';
+    maxUsage: number;
+    currentUsage: number;
+  } | null>(null);
+
+  const handleOpenScheduleModal = (target: 'design' | 'cell-part', targetItem: any) => {
+    const isApproved = item?.documents?.[item.documents.length - 1]?.approvalStatus === 'APPROVED';
+    if (!isApproved) {
+      alert('Jadwal TPM baru bisa diatur setelah desain di-approve.');
+      return;
+    }
+    const isCp = target === 'cell-part';
+    setSelectedScheduleTarget({
+      id: targetItem.id,
+      isCellPart: isCp,
+      noReg: isCp ? targetItem.partNumber : targetItem.noReg,
+      name: isCp ? targetItem.name : targetItem.assyPartName,
+      tpmScheduleStart: targetItem.tpmScheduleStart ? targetItem.tpmScheduleStart.split('T')[0] : '',
+      tpmScheduleDeadline: targetItem.tpmScheduleDeadline ? targetItem.tpmScheduleDeadline.split('T')[0] : '',
+      lifetimeDays: targetItem.lifetimeDays || 180,
+      lifetimeType: targetItem.lifetimeType || 'DUAL',
+      maxUsage: targetItem.maxUsage || 500,
+      currentUsage: targetItem.currentUsage || 0,
+    });
+    setShowScheduleModal(true);
+  };
+
+  const handleSaveTpmSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedScheduleTarget) return;
+    setModalSubmitting(true);
+    try {
+      await updateTpmSchedule(selectedScheduleTarget.id, {
+        isCellPart: selectedScheduleTarget.isCellPart,
+        tpmScheduleStart: selectedScheduleTarget.tpmScheduleStart || undefined,
+        tpmScheduleDeadline: selectedScheduleTarget.tpmScheduleDeadline || undefined,
+      });
+      alert(`Kalender TPM untuk "${selectedScheduleTarget.name}" berhasil disimpan!`);
+      setShowScheduleModal(false);
+      setSelectedScheduleTarget(null);
+      await loadItem();
+    } catch (err: any) {
+      alert(`Gagal menyimpan kalender TPM: ${err.message || 'Error server'}`);
+    } finally {
+      setModalSubmitting(false);
+    }
+  };
 
   const loadItem = async () => {
     setLoading(true);
@@ -371,6 +436,8 @@ function DesignDetailPageContent({ params }: PageProps) {
     || reversedDocs.find((d) => d.loc2D)
     || reversedDocs[0];
   const isDrawingApproved = activeDoc?.approvalStatus === 'APPROVED';
+  // Eligibilitas TPM mengikuti dokumen terbaru (sama dengan backend & daftar desain)
+  const isTpmEligible = item.documents[item.documents.length - 1]?.approvalStatus === 'APPROVED';
 
   const lifecycleBadge: Record<string, { color: string; label: string }> = {
     ACTIVE: { color: '#16a34a', label: 'Active' },
@@ -918,10 +985,10 @@ function DesignDetailPageContent({ params }: PageProps) {
                       </div>
                     </div>
 
-                    {/* Lifetime & Pemakaian (2-Way) */}
+                    {/* Schedule TPM & Target Servis */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest">Lifetime &amp; Pemakaian (2-Way)</p>
+                        <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest">Schedule TPM &amp; Target Servis</p>
                         <span
                           className={`text-[7.5px] font-bold px-1.5 py-0.2 rounded-full border ${
                             item.lifetimeStatus === 'OVERDUE'
@@ -931,16 +998,25 @@ function DesignDetailPageContent({ params }: PageProps) {
                               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}
                         >
-                          {item.lifetimeStatus === 'OVERDUE' ? 'AUS / OVERDUE' : item.lifetimeStatus === 'WARNING' ? 'MENDEKATI AUS' : 'SAFE (AMAN)'}
+                          {item.lifetimeStatus === 'OVERDUE' ? 'TPM OVERDUE' : item.lifetimeStatus === 'WARNING' ? 'PERINGATAN TPM' : 'TPM AMAN'}
                         </span>
                       </div>
                       <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-2xs space-y-2">
                         <div className="flex justify-between items-center text-[9px]">
-                          <span className="text-gray-450">Mode Lifetime</span>
+                          <span className="text-gray-450">Mode Servis</span>
                           <span className="font-bold text-gray-800">
                             {item.lifetimeType === 'DAYS' ? 'By Hari' : item.lifetimeType === 'USAGE' ? 'By Pemakaian' : '2-Way (Hari & Pemakaian)'}
                           </span>
                         </div>
+
+                        {item.tpmScheduleDeadline && (
+                          <div className="flex justify-between items-center text-[9px] border-t border-gray-50 pt-1.5">
+                            <span className="text-gray-450">Deadline TPM</span>
+                            <span className="font-bold text-indigo-700">
+                              {new Date(item.tpmScheduleDeadline).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Usage Counter Bar */}
                         <div className="border-t border-gray-50 pt-1.5">
@@ -966,7 +1042,7 @@ function DesignDetailPageContent({ params }: PageProps) {
 
                         {/* Calendar Days */}
                         <div className="flex justify-between items-center text-[9px] border-t border-gray-50 pt-1.5">
-                          <span className="text-gray-450">Sisa Hari Kalender</span>
+                          <span className="text-gray-450">Sisa Hari</span>
                           <span className="font-bold text-gray-800">
                             {item.daysRemaining ?? 0} hari{' '}
                             <span className="text-[8px] font-normal text-gray-400">
@@ -980,19 +1056,21 @@ function DesignDetailPageContent({ params }: PageProps) {
                           <div className="flex gap-1.5 pt-2 border-t border-gray-100">
                             <button
                               type="button"
-                              onClick={() => handleOpenUsageModal('design', item.id, item.noReg, item.assyPartName, item.currentUsage ?? 0, item.maxUsage ?? 500)}
-                              className="flex-1 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[8px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                              onClick={() => handleOpenScheduleModal('design', item)}
+                              disabled={!isTpmEligible}
+                              title={isTpmEligible ? 'Atur Kalender Jadwal TPM' : 'Jadwal TPM baru bisa diatur setelah desain di-approve'}
+                              className="flex-1 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[8px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed disabled:hover:bg-gray-100"
                             >
-                              <span className="material-symbols-outlined text-[11px]">speed</span>
-                              + Catat Pemakaian
+                              <span className="material-symbols-outlined text-[11px]">calendar_month</span>
+                              Set Kalender TPM
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleOpenRenewModal('design', item.id, item.noReg, item.assyPartName)}
-                              className="py-1 px-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[8px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                              onClick={() => handleOpenUsageModal('design', item.id, item.noReg, item.assyPartName, item.currentUsage ?? 0, item.maxUsage ?? 500)}
+                              className="py-1 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[8px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer"
                             >
-                              <span className="material-symbols-outlined text-[11px]">autorenew</span>
-                              Renew
+                              <span className="material-symbols-outlined text-[11px]">speed</span>
+                              + Catat
                             </button>
                           </div>
                         )}
@@ -1085,7 +1163,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-[8px] font-bold uppercase text-gray-400 tracking-widest">Child Cell Parts</p>
-                        <p className="text-[9px] text-gray-500">Komponen turunan &amp; lifetime control</p>
+                        <p className="text-[9px] text-gray-500">Komponen turunan &amp; schedule TPM</p>
                       </div>
                       <button
                         type="button"
@@ -1249,20 +1327,21 @@ function DesignDetailPageContent({ params }: PageProps) {
                                 <>
                                   <button
                                     type="button"
+                                    onClick={() => handleOpenScheduleModal('cell-part', cp)}
+                                    disabled={!isTpmEligible}
+                                    className="px-1.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[8px] font-bold transition-colors cursor-pointer disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed disabled:hover:bg-gray-100"
+                                    title={isTpmEligible ? 'Atur Schedule TPM part ini' : 'Jadwal TPM baru bisa diatur setelah desain di-approve'}
+                                  >
+                                    Jadwal TPM
+                                  </button>
+
+                                  <button
+                                    type="button"
                                     onClick={() => handleOpenUsageModal('cell-part', cp.id, cp.partNumber, cp.name, cp.currentUsage ?? 0, cp.maxUsage ?? 500)}
                                     className="px-1.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[8px] font-bold transition-colors cursor-pointer"
                                     title="Catat Pemakaian CellPart (+X)"
                                   >
                                     + Catat
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenRenewModal('cell-part', cp.id, cp.partNumber, cp.name)}
-                                    className="px-1.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[8px] font-bold transition-colors cursor-pointer"
-                                    title="Renew lifetime part ini"
-                                  >
-                                    Renew
                                   </button>
 
                                   <button
@@ -1575,96 +1654,12 @@ function DesignDetailPageContent({ params }: PageProps) {
                   <p className="text-[8px] text-gray-400 mt-0.5">Halaman 1 = Parent, Hal 2+ = Child</p>
                 </div>
 
-                {/* Lifetime System Configuration */}
-                <div className="col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-[9px] font-bold text-gray-700 uppercase flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[13px] text-blue-600">published_with_changes</span>
-                      Konfigurasi Lifetime
-                    </label>
-                  </div>
-
-                  {/* Mode Selector */}
-                  <div className="grid grid-cols-3 gap-1.5 mb-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setCpLifetimeType('DUAL')}
-                      className={`py-1.5 px-2 rounded-lg text-[9px] font-bold flex flex-col items-center justify-center gap-0.5 border transition-all cursor-pointer ${
-                        cpLifetimeType === 'DUAL'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-100'
-                      }`}
-                    >
-                      <span>2-Way</span>
-                      <span className="text-[7.5px] opacity-80 font-normal">Hari &amp; Pemakaian</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCpLifetimeType('USAGE')}
-                      className={`py-1.5 px-2 rounded-lg text-[9px] font-bold flex flex-col items-center justify-center gap-0.5 border transition-all cursor-pointer ${
-                        cpLifetimeType === 'USAGE'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-100'
-                      }`}
-                    >
-                      <span>By Pemakaian</span>
-                      <span className="text-[7.5px] opacity-80 font-normal">Siklus / Counter</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCpLifetimeType('DAYS')}
-                      className={`py-1.5 px-2 rounded-lg text-[9px] font-bold flex flex-col items-center justify-center gap-0.5 border transition-all cursor-pointer ${
-                        cpLifetimeType === 'DAYS'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-100'
-                      }`}
-                    >
-                      <span>By Hari</span>
-                      <span className="text-[7.5px] opacity-80 font-normal">Kalender</span>
-                    </button>
-                  </div>
-
-                  {/* Dynamic Inputs based on Mode */}
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {(cpLifetimeType === 'DUAL' || cpLifetimeType === 'USAGE') && (
-                      <div className={cpLifetimeType === 'USAGE' ? 'col-span-2' : ''}>
-                        <label className="block text-[8.5px] font-bold text-gray-600 uppercase mb-0.5">
-                          Batas Aus Pemakaian (Siklus) *
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            min="1"
-                            required
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none text-gray-800 font-bold focus:ring-1 focus:ring-blue-500 bg-white"
-                            value={cpMaxUsage}
-                            onChange={(e) => setCpMaxUsage(parseInt(e.target.value) || 500)}
-                            placeholder="500"
-                          />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400">kali</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {(cpLifetimeType === 'DUAL' || cpLifetimeType === 'DAYS') && (
-                      <div className={cpLifetimeType === 'DAYS' ? 'col-span-2' : ''}>
-                        <label className="block text-[8.5px] font-bold text-gray-600 uppercase mb-0.5">
-                          Lifetime Hari (Kalender) *
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            min="1"
-                            required
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none text-gray-800 font-bold focus:ring-1 focus:ring-blue-500 bg-white"
-                            value={cpLifetimeDays}
-                            onChange={(e) => setCpLifetimeDays(parseInt(e.target.value) || 180)}
-                            placeholder="180"
-                          />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-gray-400">hari</span>
-                        </div>
-                      </div>
-                    )}
+                {/* TPM Notice: Jadwal dan target diset via Modul TPM */}
+                <div className="col-span-2 bg-blue-50/50 border border-blue-250 rounded-xl p-3 flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-blue-600 text-lg shrink-0 mt-0.5">event_upcoming</span>
+                  <div className="text-[9.5px] leading-relaxed text-blue-900">
+                    <span className="font-bold block text-blue-950 text-[10px]">Kontrol Servis &amp; TPM Terintegrasi</span>
+                    Target preventive maintenance (jadwal hari &amp; batas counter pemakaian) dapat diatur secara fleksibel melalui fitur <strong>Set Schedule TPM</strong> setelah part berhasil didaftarkan.
                   </div>
                 </div>
 
@@ -2083,6 +2078,97 @@ function DesignDetailPageContent({ params }: PageProps) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SET KALENDER TPM MODAL */}
+      {showScheduleModal && selectedScheduleTarget && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-lg">calendar_month</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs text-gray-800">Set Kalender TPM</h3>
+                  <p className="text-[9px] text-gray-500">
+                    {selectedScheduleTarget.isCellPart ? 'CellPart:' : 'Jig & Fixture:'} {selectedScheduleTarget.noReg} — {selectedScheduleTarget.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowScheduleModal(false);
+                  setSelectedScheduleTarget(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTpmSchedule} className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Mulai Jadwal TPM
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedScheduleTarget.tpmScheduleStart}
+                    onChange={(e) =>
+                      setSelectedScheduleTarget((prev) => prev ? ({ ...prev, tpmScheduleStart: e.target.value }) : null)
+                    }
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                    Target Deadline Servis TPM
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedScheduleTarget.tpmScheduleDeadline}
+                    onChange={(e) =>
+                      setSelectedScheduleTarget((prev) => prev ? ({ ...prev, tpmScheduleDeadline: e.target.value }) : null)
+                    }
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
+                  />
+                </div>
+              </div>
+
+              {/* Informative notice */}
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/80 flex items-start gap-2">
+                <span className="material-symbols-outlined text-blue-600 text-base shrink-0 mt-0.5">info</span>
+                <p className="text-[9px] text-blue-900 leading-relaxed">
+                  Jadwal TPM ditentukan murni berdasarkan <strong>kalender due date</strong>. Pengaturan batas siklus pemakaian serta target hari lifetime dikelola secara terpusat pada <strong>Tabel TPM</strong>.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowScheduleModal(false);
+                    setSelectedScheduleTarget(null);
+                  }}
+                  className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting}
+                  className="px-3.5 py-1.5 bg-[#0063ff] text-white hover:bg-[#0052d4] rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {modalSubmitting ? 'Menyimpan...' : 'Simpan Kalender TPM'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
