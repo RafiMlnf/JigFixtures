@@ -109,6 +109,22 @@ export class DesignController {
     res.end(buffer);
   }
 
+  /** Merge multiple drawing PDFs into a single combined PDF file */
+  @Post('pdf-merge')
+  async downloadPdfMerge(
+    @Body() body: { targets: Array<{ designId: string; pageNumber?: number }> },
+    @Res() res: any,
+  ) {
+    const { buffer, filename } = await this.designService.getMergedPdf(body.targets || []);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
   /** Delete a design item and all its related records */
   @Delete(':id')
   deleteDesign(@Param('id') id: string) {

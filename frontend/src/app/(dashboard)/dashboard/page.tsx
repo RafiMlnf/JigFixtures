@@ -49,10 +49,13 @@ export default function DashboardPage() {
   const [cellPartSearch, setCellPartSearch] = useState('');
   const [processingCpId, setProcessingCpId] = useState<string | null>(null);
 
-  // Lifetime & Stok states (Card 4)
+  // Lifetime states (Card 3)
   const [lifetimeFilter, setLifetimeFilter] = useState<'ALL' | 'WARNING_OVERDUE' | 'SAFE'>('ALL');
   const [lifetimeSearch, setLifetimeSearch] = useState('');
   const [selectedLine, setSelectedLine] = useState('All');
+
+  // Stok Reminder states (Card 4)
+  const [stockSearch, setStockSearch] = useState('');
 
   const loadCellPartReminders = async () => {
     try {
@@ -381,6 +384,100 @@ export default function DashboardPage() {
     return { overdue, warning, total: cellPartReminders.length };
   }, [cellPartReminders]);
 
+  // Combined Stock Items for Stok Reminder (Card 4: Jig & Part Stock)
+  const stockItems = useMemo(() => {
+    const list: Array<{
+      id: string;
+      itemType: 'JIG' | 'PART';
+      noReg: string;
+      name: string;
+      lineProduct?: string;
+      actualStock: number;
+      minimumStock: number;
+      stockStatus: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'SAFE';
+      ratioPercent: number;
+    }> = [];
+
+    // 1. Jig Fixture Stock
+    displayItems.forEach((item) => {
+      const actual = item.actualStock ?? 0;
+      const min = item.minimumStock ?? 1;
+      let stockStatus: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'SAFE' = 'SAFE';
+      if (actual === 0) stockStatus = 'OUT_OF_STOCK';
+      else if (actual < min) stockStatus = 'LOW_STOCK';
+
+      const ratioPercent = min > 0 ? Math.round((actual / min) * 100) : 100;
+      list.push({
+        id: `jig-${item.id}`,
+        itemType: 'JIG',
+        noReg: item.noReg,
+        name: item.assyPartName,
+        lineProduct: item.lineProduct,
+        actualStock: actual,
+        minimumStock: min,
+        stockStatus,
+        ratioPercent,
+      });
+    });
+
+    // 2. CellPart Stock (from masterList)
+    masterList.forEach((m) => {
+      if (Array.isArray(m.cellParts)) {
+        m.cellParts.forEach((cp: any) => {
+          const actual = cp.actualStock ?? 0;
+          const min = cp.minimumStock ?? 0;
+          if (min > 0 || actual > 0) {
+            let stockStatus: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'SAFE' = 'SAFE';
+            if (actual === 0) stockStatus = 'OUT_OF_STOCK';
+            else if (actual < min) stockStatus = 'LOW_STOCK';
+
+            const ratioPercent = min > 0 ? Math.round((actual / min) * 100) : 100;
+            list.push({
+              id: `cp-${cp.id}`,
+              itemType: 'PART',
+              noReg: m.noReg || cp.parentNoReg || '-',
+              name: `${cp.partNumber || ''} ${cp.name || ''}`.trim(),
+              lineProduct: m.lineProduct || m.line?.lineName,
+              actualStock: actual,
+              minimumStock: min,
+              stockStatus,
+              ratioPercent,
+            });
+          }
+        });
+      }
+    });
+
+    // Sort: OUT_OF_STOCK (0) first, then LOW_STOCK (< min), then SAFE
+    return list.sort((a, b) => {
+      const priority = { OUT_OF_STOCK: 0, LOW_STOCK: 1, SAFE: 2 };
+      if (priority[a.stockStatus] !== priority[b.stockStatus]) {
+        return priority[a.stockStatus] - priority[b.stockStatus];
+      }
+      return a.ratioPercent - b.ratioPercent;
+    });
+  }, [displayItems, masterList]);
+
+  // Stock Summary Statistics
+  const stockStats = useMemo(() => {
+    const outOfStock = stockItems.filter((s) => s.stockStatus === 'OUT_OF_STOCK').length;
+    const lowStock = stockItems.filter((s) => s.stockStatus === 'LOW_STOCK').length;
+    const safe = stockItems.filter((s) => s.stockStatus === 'SAFE').length;
+    return { outOfStock, lowStock, safe, total: stockItems.length };
+  }, [stockItems]);
+
+  // Filtered Stock Items for Search
+  const filteredStockItems = useMemo(() => {
+    if (!stockSearch.trim()) return stockItems;
+    const q = stockSearch.toLowerCase().trim();
+    return stockItems.filter(
+      (s) =>
+        s.noReg.toLowerCase().includes(q) ||
+        s.name.toLowerCase().includes(q) ||
+        (s.lineProduct && s.lineProduct.toLowerCase().includes(q))
+    );
+  }, [stockItems, stockSearch]);
+
   const filteredCpReminders = useMemo(() => {
     if (!cellPartSearch.trim()) return cellPartReminders;
     const q = cellPartSearch.toLowerCase().trim();
@@ -485,8 +582,8 @@ export default function DashboardPage() {
         {/* Main 4 Cards Layout:
             1. Jadwal & Deadline TPM
             2. Daftar Task & Approval
-            3. Reminder CellPart (≤5 Mgg)
-            4. Monitoring Lifetime & Stok
+            3. Monitoring Lifetime Jig (Lifetime Sendiri)
+            4. Stok Reminder (Monitoring Stok Kritis & Minim)
         */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5 h-full min-h-0 items-stretch">
 
@@ -931,167 +1028,16 @@ export default function DashboardPage() {
 
 
           {/* ========================================================================= */}
-          {/* CARD 3: Reminder Lifetime CellPart (≤5 Mgg & Overdue)                     */}
+          {/* CARD 3: Monitoring Lifetime Jig (Lifetime Sendiri, Masa Pakai & Siklus)    */}
           {/* ========================================================================= */}
           <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
-            {/* Header Card CellPart (Expand Search on Hover / Focus, Hides Title) */}
-            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
-              {/* Title (Hidden when hovered/focused or when search query is active) */}
-              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
-                cellPartSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
-              }`}>
-                Childpart Reminder
-              </h2>
-
-              {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
-              <div className={`flex items-center transition-all duration-200 ${
-                cellPartSearch 
-                  ? 'w-full' 
-                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
-              }`}>
-                <div className="relative flex items-center w-full">
-                  <span
-                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
-                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
-                  >
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Cari CellPart..."
-                    value={cellPartSearch}
-                    onChange={(e) => setCellPartSearch(e.target.value)}
-                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
-                      cellPartSearch
-                        ? 'opacity-100 cursor-text'
-                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
-                    }`}
-                  />
-                  {cellPartSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setCellPartSearch('')}
-                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
-                      title="Hapus pencarian"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Content Container */}
-            <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
-              {/* Flat Metric Strip with Bottom Divider */}
-              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold text-rose-600">Overdue:</span>
-                  <span className="font-black text-rose-700">{cpStats.overdue}</span>
-                </div>
-                <div className="h-3 w-px bg-slate-200"></div>
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold text-amber-600">&le;5 Mgg:</span>
-                  <span className="font-black text-amber-700">{cpStats.warning}</span>
-                </div>
-              </div>
-
-              {/* List */}
-              <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
-                {isLoading ? (
-                  <div className="h-28 flex flex-col items-center justify-center text-slate-400">
-                    <span className="material-symbols-outlined animate-spin text-lg text-blue-500 mb-1">sync</span>
-                    <p className="text-[10px]">Memuat...</p>
-                  </div>
-                ) : filteredCpReminders.length === 0 ? (
-                  <div className="h-28 flex flex-col items-center justify-center p-3 text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
-                    <span className="material-symbols-outlined text-2xl text-emerald-500">verified</span>
-                    <p className="text-[9px] mt-1 text-slate-500 font-medium">Semua CellPart aman</p>
-                  </div>
-                ) : (
-                  filteredCpReminders.map((cp) => {
-                    const isOverdue = cp.lifetimeStatus === 'OVERDUE';
-                    const isProcessing = processingCpId === cp.id;
-
-                    return (
-                      <div
-                        key={cp.id}
-                        className={`border rounded-lg p-1.5 flex flex-col gap-1 transition-all shadow-3xs ${
-                          isOverdue
-                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70'
-                            : 'bg-amber-50/30 border-amber-200 hover:bg-amber-50/60'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[8px] font-bold text-blue-650 font-mono block truncate">
-                              Jig: {cp.parentNoReg || '-'}
-                            </span>
-                            <h4 className="text-[10px] font-bold text-slate-800 truncate leading-tight">
-                              {cp.partNumber} &middot; {cp.name}
-                            </h4>
-                          </div>
-                          <span
-                            className={`text-[7px] font-bold px-1.5 py-0.2 rounded-full shrink-0 uppercase ${
-                              isOverdue ? 'bg-rose-100 text-rose-700 border border-rose-300' : 'bg-amber-100 text-amber-700 border border-amber-300'
-                            }`}
-                          >
-                            {isOverdue ? 'Overdue' : `${cp.daysRemaining}d`}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5 border-t border-slate-200/60">
-                          <div className="flex items-center gap-0.5">
-                            <span className="material-symbols-outlined text-[11px] text-slate-400">event</span>
-                            <span>Due: {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}</span>
-                          </div>
-
-                          <button
-                            type="button"
-                            disabled={isProcessing}
-                            onClick={() => handleRenewCellPartItem(cp.id, cp.name)}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[8px] font-bold shadow-3xs transition-colors cursor-pointer disabled:opacity-50"
-                            title="Renew lifetime part ini"
-                          >
-                            {isProcessing ? (
-                              <span className="material-symbols-outlined text-[9px] animate-spin">sync</span>
-                            ) : (
-                              <span className="material-symbols-outlined text-[9px]">autorenew</span>
-                            )}
-                            Renew
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Footer CellPart */}
-              <div className="mt-auto pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
-                <Link
-                  href="/inventory"
-                  className="text-[#0063ff] hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
-                >
-                  Kontrol Inventory
-                  <span className="material-symbols-outlined text-[11px]">arrow_forward</span>
-                </Link>
-              </div>
-            </div>
-          </div>
-
-
-          {/* ========================================================================= */}
-          {/* CARD 4: Monitoring Lifetime & Stok Jig (Stock vs Minimum & Due Date)      */}
-          {/* ========================================================================= */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
-            {/* Header Card Stok (Expand Search on Hover / Focus, Hides Title) */}
+            {/* Header Card Lifetime (Expand Search on Hover / Focus, Hides Title) */}
             <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
               {/* Title (Hidden when hovered/focused or when search query is active) */}
               <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
                 lifetimeSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
               }`}>
-                Lifetime & Stok Jig
+                Lifetime Jig
               </h2>
 
               {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
@@ -1109,7 +1055,7 @@ export default function DashboardPage() {
                   </span>
                   <input
                     type="text"
-                    placeholder="Cari stok / part..."
+                    placeholder="Cari Jig / No Reg..."
                     value={lifetimeSearch}
                     onChange={(e) => setLifetimeSearch(e.target.value)}
                     className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
@@ -1153,47 +1099,45 @@ export default function DashboardPage() {
               </div>
 
               {/* Items List (Compact Rows) */}
-              <div className="flex-1 overflow-y-auto space-y-1 pr-0.5">
+              <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
                 {filteredLifetime.length === 0 ? (
                   <div className="h-28 flex flex-col items-center justify-center text-slate-400 bg-slate-50/60 rounded-lg border border-dashed border-slate-200">
                     <span className="material-symbols-outlined text-2xl text-emerald-500">check_circle</span>
-                    <p className="text-[9px] mt-1 text-slate-500 font-medium">Tidak ada data stok</p>
+                    <p className="text-[9px] mt-1 text-slate-500 font-medium">Semua lifetime Jig aman</p>
                   </div>
                 ) : (
                   filteredLifetime.map((item) => {
                     const isOverdue = item.status === 'OVERDUE';
                     const isWarning = item.status === 'WARNING';
-                    const isLowStock = item.actualStock < item.minimumStock;
-                    const isZeroStock = item.actualStock === 0;
 
                     return (
                       <div
                         key={item.id}
-                        className={`p-1.5 rounded-md border transition-colors flex flex-col gap-0.5 ${
+                        className={`p-1.5 rounded-lg border transition-colors flex flex-col gap-1 shadow-3xs ${
                           isOverdue
-                            ? 'bg-rose-50/40 border-rose-200'
+                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70'
                             : isWarning
-                            ? 'bg-amber-50/40 border-amber-200'
+                            ? 'bg-amber-50/40 border-amber-200 hover:bg-amber-50/70'
                             : 'bg-white border-slate-200/80 hover:bg-slate-50/60'
                         }`}
                       >
-                        {/* Baris 1: Reg, Part Name, Status hr */}
+                        {/* Baris 1: Reg, Part Name, Status Badge */}
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1 min-w-0 flex-1">
-                            <span className="font-mono text-[8px] font-bold text-slate-800 shrink-0">
+                            <span className="font-mono text-[8px] font-bold text-blue-650 shrink-0">
                               {item.noReg}
                             </span>
-                            <span className="text-[10px] font-semibold text-slate-700 truncate" title={item.assyPartName}>
+                            <span className="text-[10px] font-bold text-slate-800 truncate leading-tight" title={item.assyPartName}>
                               {item.assyPartName}
                             </span>
                           </div>
                           <span
-                            className={`px-1 py-0.2 rounded text-[8px] font-bold shrink-0 font-mono ${
+                            className={`px-1.5 py-0.2 rounded-full text-[7px] font-bold shrink-0 font-mono uppercase ${
                               isOverdue
-                                ? 'bg-rose-100 text-rose-800'
+                                ? 'bg-rose-100 text-rose-700 border border-rose-300'
                                 : isWarning
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-100 text-slate-600'
+                                ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
                             }`}
                           >
                             {isOverdue
@@ -1206,24 +1150,24 @@ export default function DashboardPage() {
                           </span>
                         </div>
 
-                        {/* Baris 2: Stok, Due Date, dan Persentase */}
-                        <div className="flex items-center justify-between text-[9px] text-slate-500">
+                        {/* Baris 2: Jatuh Tempo / Siklus Pemakaian & Visual Persentase */}
+                        <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5 border-t border-slate-200/60">
                           <div className="flex items-center gap-1">
-                            <span>Stok:</span>
-                            <span className={`font-bold ${isZeroStock ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-700'}`}>
-                              {item.actualStock}/{item.minimumStock}
+                            <span className="material-symbols-outlined text-[11px] text-slate-400">schedule</span>
+                            <span className="text-[8px] font-mono text-slate-600 truncate" title={item.lifetimeType === 'USAGE' ? 'Batas Siklus Pakai' : `Jatuh tempo: ${item.dueDate}`}>
+                              {item.lifetimeType === 'USAGE' ? `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x siklus` : `Due: ${item.dueDate}`}
                             </span>
-                            {isZeroStock && (
-                              <span className="px-1 py-0.2 rounded text-[7px] font-black bg-rose-100 text-rose-700 leading-none">
-                                0
-                              </span>
-                            )}
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[8px] text-slate-400 font-mono" title={item.lifetimeType === 'USAGE' ? 'Batas Pakai' : `Jatuh tempo: ${item.dueDate}`}>
-                              {item.lifetimeType === 'USAGE' ? `${item.maxUsage}x max` : item.dueDate}
-                            </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="w-12 bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  isOverdue ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${Math.min(item.lifetimePercent, 100)}%` }}
+                              />
+                            </div>
                             <span className={`font-bold font-mono text-[9px] ${
                               isOverdue ? 'text-rose-600' : isWarning ? 'text-amber-600' : 'text-slate-600'
                             }`}>
@@ -1237,16 +1181,204 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Footer Stok */}
+              {/* Footer Lifetime */}
               <div className="mt-auto pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
                 <span className="font-semibold text-slate-600">
-                  {lifetimeStats.overdue + lifetimeStats.warning} perlu perhatian
+                  {lifetimeStats.overdue + lifetimeStats.warning} jig perlu perhatian
+                </span>
+                <Link
+                  href="/jig-management"
+                  className="text-[#0063ff] hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                >
+                  Detail Lifetime
+                  <span className="material-symbols-outlined text-[11px]">arrow_forward</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+
+
+          {/* ========================================================================= */}
+          {/* CARD 4: Stok Reminder (Monitoring Stok Kritis, Habis & Menipis)           */}
+          {/* ========================================================================= */}
+          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
+            {/* Header Card Stok Reminder (Expand Search on Hover / Focus, Hides Title) */}
+            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
+              {/* Title (Hidden when hovered/focused or when search query is active) */}
+              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
+                stockSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
+              }`}>
+                Stok Reminder
+              </h2>
+
+              {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
+              <div className={`flex items-center transition-all duration-200 ${
+                stockSearch 
+                  ? 'w-full' 
+                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+              }`}>
+                <div className="relative flex items-center w-full">
+                  <span
+                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
+                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari stok / part..."
+                    value={stockSearch}
+                    onChange={(e) => setStockSearch(e.target.value)}
+                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
+                      stockSearch
+                        ? 'opacity-100 cursor-text'
+                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
+                    }`}
+                  />
+                  {stockSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setStockSearch('')}
+                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Content Container */}
+            <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
+              {/* Flat Metric Strip with Bottom Divider */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-rose-600">Habis:</span>
+                  <span className="font-black text-rose-700">{stockStats.outOfStock}</span>
+                </div>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-amber-600">Menipis:</span>
+                  <span className="font-black text-amber-700">{stockStats.lowStock}</span>
+                </div>
+                <div className="h-3 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-emerald-600">Aman:</span>
+                  <span className="font-black text-emerald-700">{stockStats.safe}</span>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+                {isLoading ? (
+                  <div className="h-28 flex flex-col items-center justify-center text-slate-400">
+                    <span className="material-symbols-outlined animate-spin text-lg text-blue-500 mb-1">sync</span>
+                    <p className="text-[10px]">Memuat stok...</p>
+                  </div>
+                ) : filteredStockItems.length === 0 ? (
+                  <div className="h-28 flex flex-col items-center justify-center p-3 text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                    <span className="material-symbols-outlined text-2xl text-emerald-500">inventory_2</span>
+                    <p className="text-[9px] mt-1 text-slate-500 font-medium">Semua stok aman</p>
+                  </div>
+                ) : (
+                  filteredStockItems.map((item) => {
+                    const isOutOfStock = item.stockStatus === 'OUT_OF_STOCK';
+                    const isLowStock = item.stockStatus === 'LOW_STOCK';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`border rounded-lg p-1.5 flex flex-col gap-1 transition-all shadow-3xs ${
+                          isOutOfStock
+                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70'
+                            : isLowStock
+                            ? 'bg-amber-50/30 border-amber-200 hover:bg-amber-50/60'
+                            : 'bg-white border-slate-200/80 hover:bg-slate-50/60'
+                        }`}
+                      >
+                        {/* Baris 1: Type badge, Reg, Name, Status Badge */}
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1">
+                              <span
+                                className={`text-[7px] font-bold px-1 py-0.2 rounded font-mono uppercase ${
+                                  item.itemType === 'JIG'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-purple-100 text-purple-700'
+                                }`}
+                              >
+                                {item.itemType}
+                              </span>
+                              <span className="text-[8px] font-bold text-slate-800 font-mono truncate">
+                                {item.noReg}
+                              </span>
+                            </div>
+                            <h4 className="text-[10px] font-bold text-slate-800 truncate leading-tight mt-0.5" title={item.name}>
+                              {item.name}
+                            </h4>
+                          </div>
+
+                          <span
+                            className={`text-[7px] font-bold px-1.5 py-0.2 rounded-full shrink-0 uppercase font-mono ${
+                              isOutOfStock
+                                ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                                : isLowStock
+                                ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}
+                          >
+                            {isOutOfStock ? 'Habis (0)' : isLowStock ? 'Menipis' : 'Aman'}
+                          </span>
+                        </div>
+
+                        {/* Baris 2: Stok info & ratio bar */}
+                        <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5 border-t border-slate-200/60">
+                          <div className="flex items-center gap-1">
+                            <span>Stok:</span>
+                            <span
+                              className={`font-bold font-mono ${
+                                isOutOfStock ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-700'
+                              }`}
+                            >
+                              {item.actualStock} / {item.minimumStock}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="w-12 bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  isOutOfStock ? 'bg-rose-500' : isLowStock ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`}
+                                style={{ width: `${Math.min(item.ratioPercent, 100)}%` }}
+                              />
+                            </div>
+                            <span
+                              className={`font-bold font-mono text-[9px] ${
+                                isOutOfStock ? 'text-rose-600' : isLowStock ? 'text-amber-600' : 'text-slate-600'
+                              }`}
+                            >
+                              {item.ratioPercent}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer Stok Reminder */}
+              <div className="mt-auto pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
+                <span className="font-semibold text-slate-600">
+                  {stockStats.outOfStock + stockStats.lowStock} item perlu restock
                 </span>
                 <Link
                   href="/inventory"
-                  className="text-rose-600 hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                  className="text-[#0063ff] hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                 >
-                  Inventori
+                  Kontrol Stok
                   <span className="material-symbols-outlined text-[11px]">arrow_forward</span>
                 </Link>
               </div>

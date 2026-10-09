@@ -1,6 +1,7 @@
 import Cookies from 'js-cookie';
+import { getApiHost } from './config';
 
-const BASE = 'http://localhost:3002';
+const BASE = getApiHost();
 
 function getToken(): string {
   return Cookies.get('auth_token') || '';

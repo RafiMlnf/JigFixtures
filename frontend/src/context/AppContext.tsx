@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchInventoryItems, updateInventoryStock } from '@/lib/api/inventory';
 import { fetchApprovals, submitDecision } from '@/lib/api/approval';
+import { getApiBaseUrl } from '@/lib/api/config';
 import Cookies from 'js-cookie';
 
 export interface JigFixtureItem {
@@ -104,7 +105,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const savedToken = Cookies.get('auth_token');
     if (savedToken) {
       try {
-        const res = await fetch('http://localhost:3002/api/users/me', {
+        const res = await fetch(`${getApiBaseUrl()}/users/me`, {
           headers: { 'Authorization': `Bearer ${savedToken}` }
         });
         if (res.ok) {
@@ -157,7 +158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:3002/api/auth/login', {
+      const res = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

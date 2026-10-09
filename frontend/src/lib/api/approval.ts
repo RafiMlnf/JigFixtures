@@ -1,7 +1,8 @@
 import { ApprovalItem } from '@/context/AppContext';
 import Cookies from 'js-cookie';
+import { getApiBaseUrl } from './config';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/api';
+const API_BASE_URL = getApiBaseUrl();
 
 // Helper to construct headers with JWT token
 function getAuthHeaders() {

@@ -4,6 +4,7 @@ import { UpdateDesignDto } from './dto/update-design.dto';
 import { DrawingStamperService } from '../upload/drawing-stamper.service';
 import { join, extname, basename } from 'path';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { PDFDocument } from 'pdf-lib';
 
 import { StorageService } from '../upload/storage.service';
 
@@ -612,6 +613,53 @@ export class DesignService {
     return {
       buffer: stampedBuffer,
       filename: `${design.noReg}_Drawing_Resmi.pdf`,
+    };
+  }
+
+  /**
+   * Merge multiple drawings or drawing pages into a single combined PDF.
+   * Every included page retains its official legal stamp.
+   */
+  async getMergedPdf(targets: Array<{ designId: string; pageNumber?: number }>) {
+    if (!targets || targets.length === 0) {
+      throw new NotFoundException('Tidak ada file atau dokumen yang dipilih untuk digabungkan.');
+    }
+
+    const mergedDoc = await PDFDocument.create();
+    let totalPagesMerged = 0;
+
+    for (const target of targets) {
+      try {
+        let pdfBuf: Buffer;
+        if (target.pageNumber && target.pageNumber > 0) {
+          const res = await this.getSinglePagePdf(target.designId, target.pageNumber);
+          pdfBuf = res.buffer;
+        } else {
+          const res = await this.getFullPdf(target.designId);
+          pdfBuf = res.buffer;
+        }
+
+        const srcDoc = await PDFDocument.load(pdfBuf);
+        const copiedPages = await mergedDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+        for (const page of copiedPages) {
+          mergedDoc.addPage(page);
+          totalPagesMerged++;
+        }
+      } catch (err: any) {
+        // Log error and continue with remaining documents if any, or if first failure rethrow if no pages
+        console.error(`Gagal menggabungkan PDF untuk designId ${target.designId}:`, err?.message || err);
+      }
+    }
+
+    if (totalPagesMerged === 0) {
+      throw new NotFoundException('Tidak ada dokumen PDF drawing yang berhasil digabungkan.');
+    }
+
+    const mergedBytes = await mergedDoc.save();
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    return {
+      buffer: Buffer.from(mergedBytes),
+      filename: `Drawing_Gabungan_Resmi_${timestamp}.pdf`,
     };
   }
 

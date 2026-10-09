@@ -7,8 +7,9 @@ export class HttpError extends Error {
     this.status = status;
   }
 }
+import { getApiHost } from './config';
 
-const BASE = 'http://localhost:3002';
+const BASE = getApiHost();
 
 function getToken(): string {
   return Cookies.get('auth_token') || '';
@@ -272,7 +273,7 @@ export function getFileUrl(path: string | null | undefined): string | null {
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
   const clean = path.startsWith('/') ? path : `/${path}`;
   const finalPath = clean.startsWith('/uploads/') ? clean : `/uploads${clean}`;
-  return `http://localhost:3002${finalPath}`;
+  return `${getApiHost()}${finalPath}`;
 }
 
 /** Delete a design item and all related records */
@@ -739,6 +740,42 @@ export async function fetchDesignPdfBlob(designId: string): Promise<{ blob: Blob
 
   const blob = await res.blob();
   return { blob, filename };
+}
+
+/** Download multiple designs / pages merged into a single PDF file */
+export async function downloadMergedDesignPdf(
+  targets: Array<{ designId: string; pageNumber?: number }>,
+  customFilename?: string,
+) {
+  const res = await fetch(`${BASE}/api/design/pdf-merge`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ targets }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal menggabungkan dokumen PDF Resmi', res.status);
+  }
+
+  const disposition = res.headers.get('content-disposition');
+  let filename = customFilename || `Drawing_Gabungan_Resmi.pdf`;
+  if (!customFilename && disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    if (match?.[1]) filename = decodeURIComponent(match[1]);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }
 
 

@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, downloadDesignPdfFull, fetchDesignPdfBlob } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, downloadDesignPdfFull, downloadMergedDesignPdf, fetchDesignPdfBlob } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 
 interface DocumentInfo {
@@ -814,7 +814,7 @@ export function DesignPageContent() {
     setShowSelectDropdown(false);
   };
 
-  // ─── Direct Batch Download PDF (No ZIP / No Excel) ──────────────────────────
+  // ─── Direct Batch Download PDF (Merged into 1 file) ──────────────────────────
   const handleBatchDownloadPdfDirect = async () => {
     // Collect all items to download
     const selectedItemsList = items.filter((item) => selectedIds.has(item.id));
@@ -843,51 +843,36 @@ export function DesignPageContent() {
     }
 
     setIsDownloadingPdf(true);
-    setPdfDownloadProgress({ current: 0, total: totalDownloadCount });
+    setPdfDownloadProgress({ current: 1, total: totalDownloadCount });
 
-    let successCount = 0;
     try {
-      // 1. Download Master Jig PDFs
+      // Build targets for backend merging: full designs and/or specific CellPart pages
+      const targets: Array<{ designId: string; pageNumber?: number }> = [];
+
       for (const item of itemsWithApprovedPdf) {
-        setPdfDownloadProgress({ current: successCount + 1, total: totalDownloadCount });
-        try {
-          const safeNoReg = item.noReg.replace(/[/\\?%*:|"<>]/g, '_');
-          await downloadDesignPdfFull(item.id, `${safeNoReg}_Drawing_Resmi.pdf`);
-          successCount++;
-          // Delay to prevent browser throttling downloads
-          await new Promise((r) => setTimeout(r, 600));
-        } catch (err) {
-          console.error(`Gagal mengunduh PDF untuk ${item.noReg}`, err);
-        }
+        targets.push({ designId: item.id });
       }
 
-      // 2. Download Selected CellPart PDFs (single page)
       for (const { item, cp } of selectedCpList) {
-        setPdfDownloadProgress({ current: successCount + 1, total: totalDownloadCount });
-        try {
-          const pageIndex = cp.pdfPageIndex || 1;
-          const safeNoReg = item.noReg.replace(/[/\\?%*:|"<>]/g, '_');
-          const safeCpPart = (cp.partNumber || 'CP').replace(/[/\\?%*:|"<>]/g, '_');
-          await downloadDesignPdfPage(
-            item.id,
-            pageIndex,
-            `${safeNoReg}_CP_${safeCpPart}_Hal_${pageIndex}.pdf`
-          );
-          successCount++;
-          // Delay to prevent browser throttling downloads
-          await new Promise((r) => setTimeout(r, 600));
-        } catch (err) {
-          console.error(`Gagal mengunduh PDF CellPart ${cp.partNumber}`, err);
-        }
+        targets.push({ designId: item.id, pageNumber: cp.pdfPageIndex || 1 });
       }
+
+      // Generate a clean filename for the merged PDF
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const mergedFilename =
+        itemsWithApprovedPdf.length === 1 && selectedCpList.length === 0
+          ? `${itemsWithApprovedPdf[0].noReg.replace(/[/\\?%*:|"<>]/g, '_')}_Drawing_Resmi.pdf`
+          : `Drawing_Gabungan_${totalDownloadCount}_Item_${timestamp}.pdf`;
+
+      await downloadMergedDesignPdf(targets, mergedFilename);
 
       setToast({
         type: 'success',
-        msg: `Berhasil mengunduh ${successCount} file PDF Drawing secara langsung!`,
+        msg: `Berhasil mengunduh dokumen gabungan PDF (${totalDownloadCount} item menjadi 1 file PDF)!`,
       });
     } catch (err: any) {
       console.error('Error saat unduh file PDF:', err);
-      alert('Terjadi kesalahan saat mengunduh berkas PDF.');
+      alert(err?.message || 'Terjadi kesalahan saat menggabungkan berkas PDF.');
     } finally {
       setIsDownloadingPdf(false);
       setPdfDownloadProgress(null);
@@ -1636,7 +1621,7 @@ export function DesignPageContent() {
                 {selectedCpIds.size > 0 && <span>{selectedCpIds.size} CellPart</span>} Terpilih
               </div>
               <div className="text-[9px] text-slate-400">
-                Unduh langsung berkas PDF drawing resmi
+                Gabungkan & unduh jadi 1 berkas PDF drawing resmi
               </div>
             </div>
           </div>
@@ -1653,7 +1638,7 @@ export function DesignPageContent() {
               </button>
             )}
 
-            {/* Direct PDF Download Button (NO ZIP, NO EXCEL) */}
+            {/* Direct Merged PDF Download Button */}
             <button
               type="button"
               disabled={isDownloadingPdf}
@@ -1664,13 +1649,13 @@ export function DesignPageContent() {
                 <>
                   <span className="material-symbols-outlined animate-spin text-sm">sync</span>
                   <span>
-                    Mengunduh PDF ({pdfDownloadProgress?.current}/{pdfDownloadProgress?.total})...
+                    Menggabungkan PDF ({pdfDownloadProgress?.total} Dokumen)...
                   </span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                  <span>Unduh Dokumen PDF ({selectedIds.size + selectedCpIds.size})</span>
+                  <span>Unduh 1 PDF Gabungan ({selectedIds.size + selectedCpIds.size})</span>
                 </>
               )}
             </button>
