@@ -97,13 +97,23 @@ export async function updateInventoryStock(
   id: string,
   minStock: number,
   actualStock: number,
-  lifecycleStatus?: string
+  lifecycleStatus?: string,
+  lifetimeDays?: number,
+  lifetimeType?: string,
+  maxUsage?: number,
+  currentUsage?: number,
 ): Promise<JigFixtureItem> {
   try {
+    const payload: any = { minimumStock: minStock, actualStock, lifecycleStatus };
+    if (lifetimeDays !== undefined) payload.lifetimeDays = lifetimeDays;
+    if (lifetimeType !== undefined) payload.lifetimeType = lifetimeType;
+    if (maxUsage !== undefined) payload.maxUsage = maxUsage;
+    if (currentUsage !== undefined) payload.currentUsage = currentUsage;
+
     const res = await fetch(`${API_BASE_URL}/inventory/${id}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ minimumStock: minStock, actualStock, lifecycleStatus }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) throw new Error('Failed to update item on server');

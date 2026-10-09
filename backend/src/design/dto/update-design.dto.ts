@@ -7,7 +7,6 @@ export class UpdateDesignDto {
   
   vendorId?: string;
   poNumber?: string;
-  cost?: number;
   leadTime?: number;
 
   lifetimeDays?: number;

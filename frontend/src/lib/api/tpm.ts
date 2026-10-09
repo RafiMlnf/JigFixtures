@@ -102,7 +102,6 @@ export interface TpmMaintenanceLogItem {
   durationMinutes: number;
   partsReplaced?: string | null;
   status: 'COMPLETED' | 'IN_PROGRESS' | 'SCHEDULED';
-  cost: number;
   resetLifetime: boolean;
   createdAt: string;
   design?: {
@@ -147,7 +146,6 @@ export interface CreateTpmLogPayload {
   durationMinutes?: number;
   partsReplaced?: string;
   status?: 'COMPLETED' | 'IN_PROGRESS' | 'SCHEDULED';
-  cost?: number;
   resetLifetime?: boolean;
 }
 

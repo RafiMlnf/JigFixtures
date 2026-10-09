@@ -131,6 +131,7 @@ model Design {
   cellParts         CellPart[]
   tpmChecklists     TpmChecklist[]
   tpmLogs           TpmMaintenanceLog[]
+  replacementLogs   PartReplacementLog[]
 
   @@map("design")
 }
@@ -165,7 +166,6 @@ model RevisionHistory {
   vendorId       String?  @map("vendor_id")
   vendor         Vendor?  @relation(fields: [vendorId], references: [id])
   poNumber       String?  @map("po_number")
-  cost           Float?   @default(0)
   leadTime       Int?     @map("lead_time")
   approvedByName String?  @map("approved_by_name")
   path3D         String?  @map("3d_path")
@@ -268,6 +268,9 @@ model Approval {
   finalStatus    ApprovalStatus @default(WAITING) @map("final_status")
   finalComment   String?        @map("final_comment")
 
+  annotatedDocPath String?      @map("annotated_doc_path")
+  markupData       String?      @map("markup_data")
+
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -334,6 +337,7 @@ model CellPart {
 
   tpmChecklists   TpmChecklist[]
   tpmLogs         TpmMaintenanceLog[]
+  replacementLogs PartReplacementLog[]
 
   @@map("cell_part")
 }
@@ -386,12 +390,32 @@ model TpmMaintenanceLog {
   durationMinutes   Int?         @default(60) @map("duration_minutes")
   partsReplaced     String?      @map("parts_replaced")
   status            String       @default("COMPLETED") // COMPLETED, IN_PROGRESS, SCHEDULED
-  cost              Float?       @default(0)
   resetLifetime     Boolean      @default(false) @map("reset_lifetime")
 
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
   @@map("tpm_maintenance_log")
+}
+
+model PartReplacementLog {
+  id              String    @id @default(cuid())
+  designId        String    @map("design_id")
+  design          Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
+  cellPartId      String?   @map("cell_part_id")
+  cellPart        CellPart? @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+
+  partNumber      String    @map("part_number")
+  partName        String    @map("part_name")
+  replacedAt      DateTime  @default(now()) @map("replaced_at")
+  replacedBy      String    @map("replaced_by")
+  reason          String
+  notes           String?
+  usageAtReplace  Int?      @map("usage_at_replace")
+  daysUsed        Int?      @map("days_used")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("part_replacement_log")
 }
 

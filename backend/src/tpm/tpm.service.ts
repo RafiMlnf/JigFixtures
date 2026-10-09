@@ -596,7 +596,6 @@ export class TpmService {
         durationMinutes: dto.durationMinutes ?? 60,
         partsReplaced: dto.partsReplaced || null,
         status: dto.status || 'COMPLETED',
-        cost: dto.cost ?? 0,
         resetLifetime: dto.resetLifetime || false,
       },
       include: {

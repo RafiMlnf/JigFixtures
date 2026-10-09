@@ -1,0 +1,1262 @@
+[
+  {
+    "code": "BR/01",
+    "name": "Mesin BR/01",
+    "lineName": "Lower Ball Joint",
+    "location": "Machining B - Lower Ball Joint",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 3
+  },
+  {
+    "code": "BR/02",
+    "name": "Mesin BR/02",
+    "lineName": "Lower Ball Joint",
+    "location": "Machining B - Lower Ball Joint",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 3
+  },
+  {
+    "code": "BR/03",
+    "name": "Mesin BR/03",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 13
+  },
+  {
+    "code": "BR/05",
+    "name": "Mesin BR/05",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 10
+  },
+  {
+    "code": "BR/06",
+    "name": "Mesin BR/06",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 13
+  },
+  {
+    "code": "BR/07",
+    "name": "Mesin BR/07",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 55,
+    "col": 23
+  },
+  {
+    "code": "BR/09",
+    "name": "Mesin BR/09",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 24
+  },
+  {
+    "code": "BR/19",
+    "name": "Mesin BR/19",
+    "lineName": "Manual Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 57,
+    "col": 16
+  },
+  {
+    "code": "BR/21",
+    "name": "Mesin BR/21",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 13
+  },
+  {
+    "code": "BR/22",
+    "name": "Mesin BR/22",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 10
+  },
+  {
+    "code": "BS/02",
+    "name": "Mesin BS/02",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 13
+  },
+  {
+    "code": "BS/06",
+    "name": "Mesin BS/06",
+    "lineName": "Cone Race",
+    "location": "Machining B - Cone Race",
+    "status": "ACTIVE",
+    "row": 38,
+    "col": 3
+  },
+  {
+    "code": "BS/07",
+    "name": "Mesin BS/07",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 15
+  },
+  {
+    "code": "BS/11",
+    "name": "Mesin BS/11",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 27,
+    "col": 18
+  },
+  {
+    "code": "BS/16",
+    "name": "Mesin BS/16",
+    "lineName": "Turning Hub Clutch",
+    "location": "Machining B - Turning",
+    "status": "ACTIVE",
+    "row": 27,
+    "col": 4
+  },
+  {
+    "code": "BS/17",
+    "name": "Mesin BS/17",
+    "lineName": "Rotor 1 & 2",
+    "location": "Machining B - Rotor",
+    "status": "ACTIVE",
+    "row": 27,
+    "col": 5
+  },
+  {
+    "code": "CN/01",
+    "name": "Mesin CN/01",
+    "lineName": "Cone Race",
+    "location": "Machining B - Cone Race",
+    "status": "ACTIVE",
+    "row": 38,
+    "col": 3
+  },
+  {
+    "code": "CN/03",
+    "name": "Mesin CN/03",
+    "lineName": "Cone Race",
+    "location": "Machining B - Cone Race",
+    "status": "ACTIVE",
+    "row": 38,
+    "col": 3
+  },
+  {
+    "code": "CN/05",
+    "name": "Mesin CN/05",
+    "lineName": "Ball Race",
+    "location": "Machining B - Ball Race",
+    "status": "ACTIVE",
+    "row": 49,
+    "col": 3
+  },
+  {
+    "code": "CN/06",
+    "name": "Mesin CN/06",
+    "lineName": "Ball Race",
+    "location": "Machining B - Ball Race",
+    "status": "ACTIVE",
+    "row": 49,
+    "col": 3
+  },
+  {
+    "code": "CN/08",
+    "name": "Mesin CN/08",
+    "lineName": "Cone Race",
+    "location": "Machining B - Cone Race",
+    "status": "ACTIVE",
+    "row": 45,
+    "col": 5
+  },
+  {
+    "code": "CN/10",
+    "name": "Mesin CN/10",
+    "lineName": "Turning Hub Clutch",
+    "location": "Machining B - Turning",
+    "status": "ACTIVE",
+    "row": 17,
+    "col": 4
+  },
+  {
+    "code": "CN/14",
+    "name": "Mesin CN/14",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 18
+  },
+  {
+    "code": "CN/17",
+    "name": "Mesin CN/17",
+    "lineName": "Rotor 1 & 2",
+    "location": "Machining B - Rotor",
+    "status": "ACTIVE",
+    "row": 17,
+    "col": 5
+  },
+  {
+    "code": "CN/18",
+    "name": "Mesin CN/18",
+    "lineName": "Rotor 1 & 2",
+    "location": "Machining B - Rotor",
+    "status": "ACTIVE",
+    "row": 12,
+    "col": 5
+  },
+  {
+    "code": "CN/20",
+    "name": "Mesin CN/20",
+    "lineName": "Cone Race",
+    "location": "Machining B - Cone Race",
+    "status": "ACTIVE",
+    "row": 40,
+    "col": 5
+  },
+  {
+    "code": "CN/21",
+    "name": "Mesin CN/21",
+    "lineName": "Ball Race",
+    "location": "Machining B - Ball Race",
+    "status": "ACTIVE",
+    "row": 49,
+    "col": 3
+  },
+  {
+    "code": "CR/02",
+    "name": "Mesin CR/02",
+    "lineName": "Conrod After Market",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 24
+  },
+  {
+    "code": "CR/03",
+    "name": "Mesin CR/03",
+    "lineName": "Conrod After Market",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 24
+  },
+  {
+    "code": "CR/05",
+    "name": "Mesin CR/05",
+    "lineName": "Conrod After Market",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 4,
+    "col": 25
+  },
+  {
+    "code": "CR/10",
+    "name": "Mesin CR/10",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 24,
+    "col": 24
+  },
+  {
+    "code": "CR/11",
+    "name": "Mesin CR/11",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 26,
+    "col": 25
+  },
+  {
+    "code": "CR/12",
+    "name": "Mesin CR/12",
+    "lineName": "Conrod Finish",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 11,
+    "col": 24
+  },
+  {
+    "code": "CR/13",
+    "name": "Mesin CR/13",
+    "lineName": "Conrod After Market",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 7,
+    "col": 24
+  },
+  {
+    "code": "CR/14",
+    "name": "Mesin CR/14",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 19,
+    "col": 25
+  },
+  {
+    "code": "CR/16",
+    "name": "Mesin CR/16",
+    "lineName": "Conrod Finish",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 14,
+    "col": 23
+  },
+  {
+    "code": "CR/17",
+    "name": "Mesin CR/17",
+    "lineName": "Conrod Finish",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 12,
+    "col": 25
+  },
+  {
+    "code": "CR/18",
+    "name": "Mesin CR/18",
+    "lineName": "Conrod Finish",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 14,
+    "col": 24
+  },
+  {
+    "code": "DS/23",
+    "name": "Mesin DS/23",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 22
+  },
+  {
+    "code": "FL/14",
+    "name": "Mesin FL/14",
+    "lineName": "Rotor 1 & 2",
+    "location": "Machining B - Rotor",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 5
+  },
+  {
+    "code": "HF/01",
+    "name": "Mesin HF/01",
+    "lineName": "Pin Piston",
+    "location": "Machining B - Pin Piston",
+    "status": "ACTIVE",
+    "row": 18,
+    "col": 19
+  },
+  {
+    "code": "HF/04",
+    "name": "Mesin HF/04",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 24,
+    "col": 22
+  },
+  {
+    "code": "HF/06",
+    "name": "Mesin HF/06",
+    "lineName": "Hub Front D80N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 18,
+    "col": 17
+  },
+  {
+    "code": "HF/09",
+    "name": "Mesin HF/09",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 9
+  },
+  {
+    "code": "HF/10",
+    "name": "Mesin HF/10",
+    "lineName": "Hub Front D80N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 18,
+    "col": 15
+  },
+  {
+    "code": "HF/11",
+    "name": "Mesin HF/11",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 16
+  },
+  {
+    "code": "HF/12",
+    "name": "Mesin HF/12",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 11
+  },
+  {
+    "code": "HF/15",
+    "name": "Mesin HF/15",
+    "lineName": "Pin Piston",
+    "location": "Machining B - Pin Piston",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 20
+  },
+  {
+    "code": "HF/16",
+    "name": "Mesin HF/16",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 12,
+    "col": 9
+  },
+  {
+    "code": "HF/17",
+    "name": "Mesin HF/17",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 17
+  },
+  {
+    "code": "HF/19",
+    "name": "Mesin HF/19",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 11
+  },
+  {
+    "code": "HF/20",
+    "name": "Mesin HF/20",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 16,
+    "col": 11
+  },
+  {
+    "code": "HF/21",
+    "name": "Mesin HF/21",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 12,
+    "col": 12
+  },
+  {
+    "code": "HF/22",
+    "name": "Mesin HF/22",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 10
+  },
+  {
+    "code": "HF/23",
+    "name": "Mesin HF/23",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 12,
+    "col": 11
+  },
+  {
+    "code": "HF/24",
+    "name": "Mesin HF/24",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 17
+  },
+  {
+    "code": "HF/25",
+    "name": "Mesin HF/25",
+    "lineName": "HF 2CF/2MD",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 13
+  },
+  {
+    "code": "HF/26",
+    "name": "Mesin HF/26",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 14
+  },
+  {
+    "code": "HF/27",
+    "name": "Mesin HF/27",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 7,
+    "col": 14
+  },
+  {
+    "code": "KS/79",
+    "name": "Mesin KS/79",
+    "lineName": "Hub Front D80N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 14,
+    "col": 17
+  },
+  {
+    "code": "KS/84",
+    "name": "Mesin KS/84",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "KS/87",
+    "name": "Mesin KS/87",
+    "lineName": "Rotor 1 & 2",
+    "location": "Machining B - Rotor",
+    "status": "ACTIVE",
+    "row": 6,
+    "col": 5
+  },
+  {
+    "code": "KS/89",
+    "name": "Mesin KS/89",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "LB/01",
+    "name": "Mesin LB/01",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 10
+  },
+  {
+    "code": "LB/06",
+    "name": "Mesin LB/06",
+    "lineName": "HF 2CF/2MD",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 4,
+    "col": 11
+  },
+  {
+    "code": "LB/07",
+    "name": "Mesin LB/07",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 13
+  },
+  {
+    "code": "LB/08",
+    "name": "Mesin LB/08",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 10
+  },
+  {
+    "code": "PC/01",
+    "name": "Mesin PC/01",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 19,
+    "col": 23
+  },
+  {
+    "code": "PC/02",
+    "name": "Mesin PC/02",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 18,
+    "col": 23
+  },
+  {
+    "code": "PC/03",
+    "name": "Mesin PC/03",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 18,
+    "col": 22
+  },
+  {
+    "code": "RD/02",
+    "name": "Mesin RD/02",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 13
+  },
+  {
+    "code": "RD/09",
+    "name": "Mesin RD/09",
+    "lineName": "HF 2CF/2MD",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 4,
+    "col": 10
+  },
+  {
+    "code": "RD/11",
+    "name": "Mesin RD/11",
+    "lineName": "Lower Ball Joint",
+    "location": "Machining B - Lower Ball Joint",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 3
+  },
+  {
+    "code": "RD/12",
+    "name": "Mesin RD/12",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 13
+  },
+  {
+    "code": "RD/13",
+    "name": "Mesin RD/13",
+    "lineName": "Pin Piston",
+    "location": "Machining B - Pin Piston",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 20
+  },
+  {
+    "code": "RD/14",
+    "name": "Mesin RD/14",
+    "lineName": "Pin Piston",
+    "location": "Machining B - Pin Piston",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 19
+  },
+  {
+    "code": "RD/15",
+    "name": "Mesin RD/15",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 18
+  },
+  {
+    "code": "RD/16",
+    "name": "Mesin RD/16",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 7
+  },
+  {
+    "code": "RD/17",
+    "name": "Mesin RD/17",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 3,
+    "col": 7
+  },
+  {
+    "code": "RD/18",
+    "name": "Mesin RD/18",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 7
+  },
+  {
+    "code": "RD/19",
+    "name": "Mesin RD/19",
+    "lineName": "Lower Ball Joint",
+    "location": "Machining B - Lower Ball Joint",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 3
+  },
+  {
+    "code": "RD/20",
+    "name": "Mesin RD/20",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 7
+  },
+  {
+    "code": "RD/21",
+    "name": "Mesin RD/21",
+    "lineName": "Pin Piston",
+    "location": "Machining B - Pin Piston",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 19
+  },
+  {
+    "code": "ROBOT-ST/40",
+    "name": "Mesin ROBOT-ST/40",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 10
+  },
+  {
+    "code": "ROBOT-ST/41",
+    "name": "Mesin ROBOT-ST/41",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 45,
+    "col": 24
+  },
+  {
+    "code": "ROBOT-ST/42",
+    "name": "Mesin ROBOT-ST/42",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 24
+  },
+  {
+    "code": "ROBOT-ST/44",
+    "name": "Mesin ROBOT-ST/44",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 23
+  },
+  {
+    "code": "ROBOT-ST/45",
+    "name": "Mesin ROBOT-ST/45",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 45,
+    "col": 23
+  },
+  {
+    "code": "ROBOT-ST/50",
+    "name": "Mesin ROBOT-ST/50",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 13
+  },
+  {
+    "code": "SA/01",
+    "name": "Mesin SA/01",
+    "lineName": "Arm Cushion",
+    "location": "Machining B - Arm Cushion",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 19
+  },
+  {
+    "code": "SA/02",
+    "name": "Mesin SA/02",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 16
+  },
+  {
+    "code": "SA/03",
+    "name": "Mesin SA/03",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 17
+  },
+  {
+    "code": "SA/04",
+    "name": "Mesin SA/04",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 10
+  },
+  {
+    "code": "SA/05",
+    "name": "Mesin SA/05",
+    "lineName": "Arm Cushion",
+    "location": "Machining B - Arm Cushion",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 19
+  },
+  {
+    "code": "SA/06",
+    "name": "Mesin SA/06",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 27,
+    "col": 17
+  },
+  {
+    "code": "SA/07",
+    "name": "Mesin SA/07",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 27,
+    "col": 16
+  },
+  {
+    "code": "SA/08",
+    "name": "Mesin SA/08",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 15
+  },
+  {
+    "code": "SA/09",
+    "name": "Mesin SA/09",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 10
+  },
+  {
+    "code": "SA/10",
+    "name": "Mesin SA/10",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 11
+  },
+  {
+    "code": "SA/11",
+    "name": "Mesin SA/11",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 12
+  },
+  {
+    "code": "SA/12",
+    "name": "Mesin SA/12",
+    "lineName": "Hub Front D14N",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 9
+  },
+  {
+    "code": "SA/13",
+    "name": "Mesin SA/13",
+    "lineName": "Spindle Axle A",
+    "location": "Machining B - Spindle Axle",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 15
+  },
+  {
+    "code": "SA/14",
+    "name": "Mesin SA/14",
+    "lineName": "Hub Front D34T",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 8,
+    "col": 16
+  },
+  {
+    "code": "SA/15",
+    "name": "Mesin SA/15",
+    "lineName": "Hub Front",
+    "location": "Machining B - Hub Front",
+    "status": "ACTIVE",
+    "row": 28,
+    "col": 12
+  },
+  {
+    "code": "SH/04",
+    "name": "Mesin SH/04",
+    "lineName": "Broaching",
+    "location": "Machining B - Broaching",
+    "status": "ACTIVE",
+    "row": 6,
+    "col": 4
+  },
+  {
+    "code": "SH/07",
+    "name": "Mesin SH/07",
+    "lineName": "Turning Hub Clutch",
+    "location": "Machining B - Turning",
+    "status": "ACTIVE",
+    "row": 23,
+    "col": 4
+  },
+  {
+    "code": "ST/01",
+    "name": "Mesin ST/01",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 25
+  },
+  {
+    "code": "ST/02",
+    "name": "Mesin ST/02",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 45,
+    "col": 25
+  },
+  {
+    "code": "ST/04",
+    "name": "Mesin ST/04",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 63,
+    "col": 24
+  },
+  {
+    "code": "ST/05",
+    "name": "Mesin ST/05",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 55,
+    "col": 24
+  },
+  {
+    "code": "ST/06",
+    "name": "Mesin ST/06",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 49,
+    "col": 24
+  },
+  {
+    "code": "ST/09",
+    "name": "Mesin ST/09",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 44,
+    "col": 22
+  },
+  {
+    "code": "ST/10",
+    "name": "Mesin ST/10",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 22
+  },
+  {
+    "code": "ST/11",
+    "name": "Mesin ST/11",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/12",
+    "name": "Mesin ST/12",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 48,
+    "col": 23
+  },
+  {
+    "code": "ST/13",
+    "name": "Mesin ST/13",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 63,
+    "col": 23
+  },
+  {
+    "code": "ST/14",
+    "name": "Mesin ST/14",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 49,
+    "col": 23
+  },
+  {
+    "code": "ST/19",
+    "name": "Mesin ST/19",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 10
+  },
+  {
+    "code": "ST/22",
+    "name": "Mesin ST/22",
+    "lineName": "Manual Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 57,
+    "col": 16
+  },
+  {
+    "code": "ST/28",
+    "name": "Mesin ST/28",
+    "lineName": "Manual Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 57,
+    "col": 16
+  },
+  {
+    "code": "ST/29",
+    "name": "Mesin ST/29",
+    "lineName": "Manual Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 57,
+    "col": 16
+  },
+  {
+    "code": "ST/33",
+    "name": "Mesin ST/33",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 40,
+    "col": 23
+  },
+  {
+    "code": "ST/34",
+    "name": "Mesin ST/34",
+    "lineName": "Manual Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 57,
+    "col": 16
+  },
+  {
+    "code": "ST/35",
+    "name": "Mesin ST/35",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 55,
+    "col": 24
+  },
+  {
+    "code": "ST/38",
+    "name": "Mesin ST/38",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 10
+  },
+  {
+    "code": "ST/39",
+    "name": "Mesin ST/39",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 10
+  },
+  {
+    "code": "ST/43",
+    "name": "Mesin ST/43",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 40,
+    "col": 24
+  },
+  {
+    "code": "ST/46",
+    "name": "Mesin ST/46",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/48",
+    "name": "Mesin ST/48",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/49",
+    "name": "Mesin ST/49",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/51",
+    "name": "Mesin ST/51",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 13
+  },
+  {
+    "code": "ST/52",
+    "name": "Mesin ST/52",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 13
+  },
+  {
+    "code": "ST/53",
+    "name": "Mesin ST/53",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/54",
+    "name": "Mesin ST/54",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "ST/56",
+    "name": "Mesin ST/56",
+    "lineName": "Auto Assy Steering Stem",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 16
+  },
+  {
+    "code": "UB 5",
+    "name": "Mesin UB 5",
+    "lineName": "Steering Stem - Mach Shaft",
+    "location": "Line Assy Stem",
+    "status": "ACTIVE",
+    "row": 39,
+    "col": 13
+  },
+  {
+    "code": "UB 6",
+    "name": "Mesin UB 6",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 13
+  },
+  {
+    "code": "UB 7",
+    "name": "Mesin UB 7",
+    "lineName": "UB 6 & UB 7 (Kayaba)",
+    "location": "Machining B - Kayaba",
+    "status": "ACTIVE",
+    "row": 54,
+    "col": 10
+  },
+  {
+    "code": "UB R1-R4",
+    "name": "Mesin UB R1-R4",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 42,
+    "col": 23
+  },
+  {
+    "code": "UB R2-R3",
+    "name": "Mesin UB R2-R3",
+    "lineName": "Conrod Tempering",
+    "location": "Machining B - Conrod",
+    "status": "ACTIVE",
+    "row": 59,
+    "col": 24
+  }
+]

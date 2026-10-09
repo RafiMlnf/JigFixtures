@@ -129,7 +129,7 @@ export class AbnormalityService {
 
   /** Get all registered machines with enriched Jig condition and TPM schedule status */
   async getMachinesDashboard(lineFilter?: string) {
-    // Ensure table exists safely
+    // Ensure table exists safely and has manual status override columns
     try {
       await this.prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "machine" (
@@ -141,9 +141,23 @@ export class AbnormalityService {
           "location" VARCHAR(255),
           "description" TEXT,
           "status" VARCHAR(50) DEFAULT 'ACTIVE',
+          "manual_jig_status" VARCHAR(20),
+          "manual_tpm_status" VARCHAR(20),
           "created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
           "updated_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+      `);
+      // Add columns if table already existed without them
+      await this.prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='machine' AND column_name='manual_jig_status') THEN
+            ALTER TABLE "machine" ADD COLUMN "manual_jig_status" VARCHAR(20);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='machine' AND column_name='manual_tpm_status') THEN
+            ALTER TABLE "machine" ADD COLUMN "manual_tpm_status" VARCHAR(20);
+          END IF;
+        END $$;
       `);
     } catch (_) {}
 
@@ -232,6 +246,7 @@ export class AbnormalityService {
     };
 
     // Function to calculate TPM Schedule Status (Green, Yellow, Red)
+    // Aturan: Hijau = sesuai, Kuning = memasuki H-2 minggu (14 hari) sebelum due date, Merah = lewat due date / NG
     const calcTpmStatus = (design: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
       if (!design) return 'SAFE';
       // Check last checklist result
@@ -240,16 +255,25 @@ export class AbnormalityService {
         return 'OVERDUE'; // Red status if last check failed
       }
 
-      // Check deadline
-      if (design.tpmScheduleDeadline) {
-        const deadline = new Date(design.tpmScheduleDeadline).getTime();
+      // Check deadline / due date
+      const deadlineDate = design.tpmScheduleDeadline
+        ? new Date(design.tpmScheduleDeadline)
+        : (() => {
+            const baseDate = design.lastRenewalDate || design.designDateNew || design.installDate || design.createdAt;
+            if (!baseDate) return null;
+            const lifetimeDays = design.lifetimeDays ?? 180;
+            return new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
+          })();
+
+      if (deadlineDate) {
+        const deadline = deadlineDate.getTime();
         const now = Date.now();
         const diffDays = Math.ceil((deadline - now) / 86400000);
-        if (diffDays < 0) return 'OVERDUE'; // Overdue deadline
-        if (diffDays <= 7) return 'WARNING'; // Approaching deadline within 7 days
+        if (diffDays < 0) return 'OVERDUE'; // Lewat due date schedule TPM
+        if (diffDays <= 14) return 'WARNING'; // Memasuki H-2 minggu (14 hari) sebelum due date
       }
 
-      return 'SAFE';
+      return 'SAFE'; // Hijau = sesuai
     };
 
     const dashboardCards = machinesRaw.map((m) => {
@@ -263,8 +287,17 @@ export class AbnormalityService {
         matchedDesign = designs.find((d) => d.lineId === m.line_id);
       }
 
-      const jigCondition = calcJigStatus(matchedDesign);
-      const tpmSchedule = calcTpmStatus(matchedDesign);
+      const calculatedJig = calcJigStatus(matchedDesign);
+      const calculatedTpm = calcTpmStatus(matchedDesign);
+
+      // Allow manual override if specified (RESET resets back to calculated status)
+      const jigCondition = (m.manual_jig_status && m.manual_jig_status !== 'AUTO') 
+        ? m.manual_jig_status 
+        : calculatedJig;
+
+      const tpmSchedule = (m.manual_tpm_status && m.manual_tpm_status !== 'AUTO') 
+        ? m.manual_tpm_status 
+        : calculatedTpm;
 
       return {
         id: m.id,
@@ -284,6 +317,8 @@ export class AbnormalityService {
         jigCondition, // 'SAFE' | 'WARNING' | 'OVERDUE'
         // Bottom circle: TPM Schedule
         tpmSchedule,  // 'SAFE' | 'WARNING' | 'OVERDUE'
+        manualJigStatus: m.manual_jig_status || null,
+        manualTpmStatus: m.manual_tpm_status || null,
       };
     });
 
@@ -292,6 +327,33 @@ export class AbnormalityService {
     }
 
     return dashboardCards;
+  }
+
+  /** Update manual indicator statuses for a machine */
+  async updateMachineStatus(
+    id: string,
+    dto: {
+      jigCondition?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+      tpmSchedule?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+    },
+  ) {
+    if (dto.jigCondition !== undefined) {
+      const val = dto.jigCondition === 'AUTO' ? null : dto.jigCondition;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "machine" SET "manual_jig_status" = $1, "updated_at" = CURRENT_TIMESTAMP WHERE "id" = $2`,
+        val,
+        id,
+      );
+    }
+    if (dto.tpmSchedule !== undefined) {
+      const val = dto.tpmSchedule === 'AUTO' ? null : dto.tpmSchedule;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "machine" SET "manual_tpm_status" = $1, "updated_at" = CURRENT_TIMESTAMP WHERE "id" = $2`,
+        val,
+        id,
+      );
+    }
+    return { success: true };
   }
 
   /** Register new machine */

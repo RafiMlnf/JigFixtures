@@ -55,14 +55,30 @@ export class ApprovalController {
   @Patch(':id/reject')
   reject(
     @Param('id') id: string,
-    @Body() dto: { comment: string },
+    @Body() dto: { comment: string; markupData?: string },
     @Request() req: any,
   ) {
     return this.approvalService.process(
       id,
-      { action: 'REJECT', comment: dto.comment },
+      { action: 'REJECT', comment: dto.comment, markupData: dto.markupData },
       req.user.id,
       req.user.role,
     );
+  }
+
+  @Roles(UserRole.PE_JIG_FIXTURE)
+  @Patch(':id/resubmit-revision')
+  resubmitRevision(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      docLocation2D: string;
+      docLocation3D?: string;
+      revStatus?: string;
+      revisionNote: string;
+    },
+    @Request() req: any,
+  ) {
+    return this.approvalService.resubmitRevision(id, dto, req.user.id);
   }
 }

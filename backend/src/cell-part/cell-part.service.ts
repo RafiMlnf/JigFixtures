@@ -181,6 +181,150 @@ export class CellPartService {
     return this.prisma.cellPart.delete({ where: { id } });
   }
 
+  /** Record a part replacement with full historical logging */
+  async recordReplacement(
+    id: string,
+    dto: {
+      replacedAt?: string;
+      replacedBy: string;
+      reason: string;
+      notes?: string;
+      resetUsage?: boolean;
+    },
+  ) {
+    const cp = await this.prisma.cellPart.findUnique({
+      where: { id },
+      include: { design: true },
+    });
+    if (!cp) throw new NotFoundException(`CellPart ${id} not found`);
+
+    const replacedAt = dto.replacedAt ? new Date(dto.replacedAt) : new Date();
+    const baseDate = cp.lastRenewalDate || cp.installDate || cp.createdAt;
+    const daysUsed = Math.max(
+      0,
+      Math.ceil((replacedAt.getTime() - new Date(baseDate).getTime()) / 86400000),
+    );
+    const usageAtReplace = cp.currentUsage;
+
+    // 1. Create entry in PartReplacementLog
+    const replacementLog = await this.prisma.partReplacementLog.create({
+      data: {
+        designId: cp.designId,
+        cellPartId: cp.id,
+        partNumber: cp.partNumber,
+        partName: cp.name,
+        replacedAt,
+        replacedBy: dto.replacedBy || 'PIC Jig Fixture',
+        reason: dto.reason || 'Pencegahan / Aus Rutin',
+        notes: dto.notes || null,
+        usageAtReplace,
+        daysUsed,
+      },
+      include: {
+        design: {
+          select: {
+            id: true,
+            noReg: true,
+            assyPartName: true,
+            line: { select: { lineName: true } },
+            process: { select: { name: true } },
+          },
+        },
+        cellPart: { select: { id: true, partNumber: true, name: true } },
+      },
+    });
+
+    // 2. Also log to TpmMaintenanceLog for unified TPM reporting
+    await this.prisma.tpmMaintenanceLog
+      .create({
+        data: {
+          designId: cp.designId,
+          cellPartId: cp.id,
+          actionType: 'RENEWAL',
+          title: `Penggantian Komponen ${cp.partNumber}`,
+          description: `Penggantian part ${cp.name}. Alasan: ${dto.reason || 'Penggantian rutin'}. Catatan: ${dto.notes || '-'}`,
+          performedBy: dto.replacedBy || 'PIC Jig Fixture',
+          performedAt: replacedAt,
+          partsReplaced: cp.partNumber,
+          status: 'COMPLETED',
+          resetLifetime: true,
+        },
+      })
+      .catch(() => {});
+
+    // 3. Update CellPart dates and reset counter
+    const updated = await this.prisma.cellPart.update({
+      where: { id },
+      data: {
+        lastRenewalDate: replacedAt,
+        currentUsage: dto.resetUsage !== false ? 0 : cp.currentUsage,
+        reminderSent: false,
+      },
+    });
+
+    return {
+      cellPart: this.enrichWithLifetime(updated),
+      replacementLog,
+    };
+  }
+
+  /** Get replacement history logs with optional search & filters */
+  async getReplacementHistory(query?: {
+    designId?: string;
+    cellPartId?: string;
+    search?: string;
+  }) {
+    const where: any = {};
+    if (query?.designId) where.designId = query.designId;
+    if (query?.cellPartId) where.cellPartId = query.cellPartId;
+
+    const logs = await this.prisma.partReplacementLog.findMany({
+      where,
+      include: {
+        design: {
+          select: {
+            id: true,
+            noReg: true,
+            assyPartName: true,
+            line: { select: { lineName: true } },
+            process: { select: { name: true } },
+          },
+        },
+        cellPart: {
+          select: {
+            id: true,
+            partNumber: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { replacedAt: 'desc' },
+    });
+
+    if (query?.search) {
+      const q = query.search.toLowerCase();
+      return logs.filter(
+        (l) =>
+          l.partNumber.toLowerCase().includes(q) ||
+          l.partName.toLowerCase().includes(q) ||
+          l.replacedBy.toLowerCase().includes(q) ||
+          l.reason.toLowerCase().includes(q) ||
+          (l.notes && l.notes.toLowerCase().includes(q)) ||
+          l.design.noReg.toLowerCase().includes(q) ||
+          l.design.assyPartName.toLowerCase().includes(q),
+      );
+    }
+
+    return logs;
+  }
+
+  /** Delete a replacement log entry */
+  async deleteReplacementLog(id: string) {
+    const existing = await this.prisma.partReplacementLog.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Replacement log ${id} not found`);
+    return this.prisma.partReplacementLog.delete({ where: { id } });
+  }
+
   /** Enrich a CellPart record with computed 2-way lifetime fields */
   public enrichWithLifetime(part: any) {
     const baseDate = part.lastRenewalDate || part.installDate || new Date();

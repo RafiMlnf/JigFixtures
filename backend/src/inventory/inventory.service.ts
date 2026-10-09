@@ -223,14 +223,20 @@ export class InventoryService {
     });
 
     // 2. Update stock values and status field
+    const dataToUpdate: any = {
+      minimumStock: dto.minimumStock,
+      actualStock: dto.actualStock,
+      inventoryStatus: indicator,
+      lifecycleStatus: dto.lifecycleStatus,
+    };
+    if (dto.lifetimeDays !== undefined) dataToUpdate.lifetimeDays = dto.lifetimeDays;
+    if (dto.lifetimeType !== undefined) dataToUpdate.lifetimeType = dto.lifetimeType;
+    if (dto.maxUsage !== undefined) dataToUpdate.maxUsage = dto.maxUsage;
+    if (dto.currentUsage !== undefined) dataToUpdate.currentUsage = dto.currentUsage;
+
     const updated = await this.prisma.design.update({
       where: { id },
-      data: {
-        minimumStock: dto.minimumStock,
-        actualStock: dto.actualStock,
-        inventoryStatus: indicator,
-        lifecycleStatus: dto.lifecycleStatus,
-      },
+      data: dataToUpdate,
       include: { line: true, process: true, vendor: true },
     });
 

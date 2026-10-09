@@ -133,3 +133,9 @@ body {
   animation: vibrate 1.2s linear infinite;
 }
 
+/* Vertical column border divider for all data tables across pages */
+table th:not(:last-child),
+table td:not(:last-child) {
+  border-right: 1px solid #e2e8f0;
+}
+

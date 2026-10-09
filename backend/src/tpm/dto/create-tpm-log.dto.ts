@@ -9,6 +9,5 @@ export class CreateTpmLogDto {
   durationMinutes?: number;
   partsReplaced?: string;
   status?: 'COMPLETED' | 'IN_PROGRESS' | 'SCHEDULED';
-  cost?: number;
   resetLifetime?: boolean;
 }

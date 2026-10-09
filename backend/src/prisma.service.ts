@@ -46,8 +46,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
           "created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
           "updated_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+
+        ALTER TABLE "approval" ADD COLUMN IF NOT EXISTS "annotated_doc_path" TEXT;
+        ALTER TABLE "approval" ADD COLUMN IF NOT EXISTS "markup_data" TEXT;
       `);
-      console.log('Lifetime, TPM, and Machine columns/tables verified successfully.');
+      console.log('Lifetime, TPM, Machine, and Approval markup columns/tables verified successfully.');
     } catch (err) {
       console.warn('Could not run raw migration for lifetime/TPM/machine:', err);
     }

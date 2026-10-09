@@ -52,6 +52,8 @@ export interface ApprovalItem {
   has3DRender?: boolean;
   sectionStatus?: 'WAITING' | 'APPROVED' | 'REJECTED';
   deptStatus?: 'WAITING' | 'APPROVED' | 'REJECTED';
+  markupData?: string;
+  annotatedDocPath?: string;
 }
 
 export interface AuthUser {
@@ -69,7 +71,16 @@ interface AppContextProps {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  updateItemStock: (id: string, minStock: number, actualStock: number, lifecycleStatus?: string) => Promise<void>;
+  updateItemStock: (
+    id: string,
+    minStock: number,
+    actualStock: number,
+    lifecycleStatus?: string,
+    lifetimeDays?: number,
+    lifetimeType?: string,
+    maxUsage?: number,
+    currentUsage?: number,
+  ) => Promise<void>;
   processApproval: (id: string, action: 'APPROVE' | 'REJECT', comment?: string) => Promise<void>;
   reloadData: () => Promise<void>;
   isLoading: boolean;
@@ -234,18 +245,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setApprovals([]);
   };
 
-  const updateItemStock = async (id: string, minStock: number, actualStock: number, lifecycleStatus?: string) => {
+  const updateItemStock = async (
+    id: string,
+    minStock: number,
+    actualStock: number,
+    lifecycleStatus?: string,
+    lifetimeDays?: number,
+    lifetimeType?: string,
+    maxUsage?: number,
+    currentUsage?: number,
+  ) => {
     // Optimistic UI update
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, minimumStock: minStock, actualStock, lifecycleStatus: lifecycleStatus || item.lifecycleStatus }
+          ? {
+              ...item,
+              minimumStock: minStock,
+              actualStock,
+              lifecycleStatus: (lifecycleStatus || item.lifecycleStatus) as any,
+              ...(lifetimeDays !== undefined ? { lifetimeDays } : {}),
+              ...(lifetimeType !== undefined ? { lifetimeType: lifetimeType as any } : {}),
+              ...(maxUsage !== undefined ? { maxUsage } : {}),
+              ...(currentUsage !== undefined ? { currentUsage } : {}),
+            }
           : item
       )
     );
 
     try {
-      const updated = await updateInventoryStock(id, minStock, actualStock, lifecycleStatus);
+      const updated = await updateInventoryStock(
+        id,
+        minStock,
+        actualStock,
+        lifecycleStatus,
+        lifetimeDays,
+        lifetimeType,
+        maxUsage,
+        currentUsage,
+      );
       setItems((prev) =>
         prev.map((item) => (item.id === id ? updated : item))
       );
@@ -255,13 +293,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const processApproval = async (id: string, action: 'APPROVE' | 'REJECT', comment?: string) => {
-    // Optimistic UI update
+    // Preserve old item for accurate rollback if needed
+    const oldApproval = approvals.find((a) => a.id === id);
+
+    // Optimistic UI update based on user role
+    const currentRole = user?.role;
+    const isSec = currentRole === 'PE_SECTION_HEAD';
+    const isDept = currentRole === 'PE_DEPT_HEAD';
+
     setApprovals((prev) =>
-      prev.map((approval) =>
-        approval.id === id
-          ? { ...approval, status: action === 'APPROVE' ? ('APPROVED' as const) : ('REJECTED' as const) }
-          : approval
-      )
+      prev.map((approval) => {
+        if (approval.id !== id) return approval;
+        if (action === 'REJECT') {
+          return {
+            ...approval,
+            status: 'REJECTED' as const,
+            sectionStatus: isSec ? 'REJECTED' : approval.sectionStatus,
+            deptStatus: isDept ? 'REJECTED' : approval.deptStatus,
+          };
+        }
+        // Action is APPROVE
+        if (isSec) {
+          return {
+            ...approval,
+            sectionStatus: 'APPROVED' as const,
+            // Section head approval moves it to Dept Head review; global status is still WAITING
+            status: 'WAITING' as const,
+          };
+        }
+        if (isDept) {
+          return {
+            ...approval,
+            deptStatus: 'APPROVED' as const,
+            status: 'APPROVED' as const,
+          };
+        }
+        return {
+          ...approval,
+          status: 'APPROVED' as const,
+        };
+      })
     );
 
     try {
@@ -271,13 +342,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
     } catch (e: any) {
       // Revert optimistic update on failure
-      setApprovals((prev) =>
-        prev.map((approval) =>
-          approval.id === id
-            ? { ...approval, status: 'WAITING' as const }
-            : approval
-        )
-      );
+      if (oldApproval) {
+        setApprovals((prev) =>
+          prev.map((approval) => (approval.id === id ? oldApproval : approval))
+        );
+      }
       console.error('[API Error] Failed to sync approval decision with server:', e);
       throw e; // Re-throw so UI caller can show error feedback
     }

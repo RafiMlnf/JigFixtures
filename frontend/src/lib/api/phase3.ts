@@ -58,7 +58,6 @@ export async function submitDesignUpdate(itemId: string, data: {
   revisionNote?: string;
   vendorId?: string;
   poNumber?: string;
-  cost?: number;
   leadTime?: number;
   lifetimeDays?: number;
   lifetimeType?: string;
@@ -148,6 +147,8 @@ export interface MachineDashboardItem {
   designName?: string;
   jigCondition: 'SAFE' | 'WARNING' | 'OVERDUE';
   tpmSchedule: 'SAFE' | 'WARNING' | 'OVERDUE';
+  manualJigStatus?: 'SAFE' | 'WARNING' | 'OVERDUE' | null;
+  manualTpmStatus?: 'SAFE' | 'WARNING' | 'OVERDUE' | null;
 }
 
 /** Fetch machines dashboard list with 2-circle status */
@@ -159,6 +160,29 @@ export async function fetchMachinesDashboard(lineFilter?: string): Promise<Machi
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error('Failed to fetch machines dashboard');
+  return res.json();
+}
+
+/** Update machine manual status (Jig Condition / TPM Schedule) */
+export async function updateMachineStatus(
+  id: string,
+  data: {
+    jigCondition?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+    tpmSchedule?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+  },
+) {
+  const res = await fetch(`${BASE}/api/abnormality/machines/${id}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Gagal mengubah status mesin');
+  }
   return res.json();
 }
 
@@ -419,6 +443,87 @@ export async function deleteCellPart(id: string) {
   return res.json();
 }
 
+export interface PartReplacementRecord {
+  id: string;
+  designId: string;
+  cellPartId?: string | null;
+  partNumber: string;
+  partName: string;
+  replacedAt: string;
+  replacedBy: string;
+  reason: string;
+  notes?: string | null;
+  usageAtReplace?: number | null;
+  daysUsed?: number | null;
+  createdAt: string;
+  design: {
+    id: string;
+    noReg: string;
+    assyPartName: string;
+    line?: { lineName: string };
+    process?: { name: string };
+  };
+  cellPart?: {
+    id: string;
+    partNumber: string;
+    name: string;
+  } | null;
+}
+
+/** Record a part replacement with historical tracking */
+export async function recordCellPartReplacement(
+  id: string,
+  data: {
+    replacedAt?: string;
+    replacedBy: string;
+    reason: string;
+    notes?: string;
+    resetUsage?: boolean;
+  },
+) {
+  const res = await fetch(`${BASE}/api/cell-part/${id}/replace`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal mencatat penggantian komponen', res.status);
+  }
+  return res.json();
+}
+
+/** Fetch part replacement historical log */
+export async function fetchReplacementHistory(query?: {
+  designId?: string;
+  cellPartId?: string;
+  search?: string;
+}): Promise<PartReplacementRecord[]> {
+  const params = new URLSearchParams();
+  if (query?.designId) params.append('designId', query.designId);
+  if (query?.cellPartId) params.append('cellPartId', query.cellPartId);
+  if (query?.search) params.append('search', query.search);
+
+  const res = await fetch(`${BASE}/api/cell-part/replacement-history?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new HttpError('Failed to fetch replacement history', res.status);
+  return res.json();
+}
+
+/** Delete a replacement log entry */
+export async function deleteReplacementLog(id: string) {
+  const res = await fetch(`${BASE}/api/cell-part/replacement-history/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new HttpError('Failed to delete replacement log', res.status);
+  return res.json();
+}
+
 // ==========================================
 // DRAWING PARSER & DIGITAL SIGNATURE API
 // ==========================================
@@ -502,8 +607,8 @@ export async function approveRevision(approvalId: string, data?: { comment?: str
   return res.json();
 }
 
-/** Section Head or Dept Head rejects an item revision */
-export async function rejectRevision(approvalId: string, data: { comment: string }) {
+/** Section Head or Dept Head returns for revision */
+export async function rejectRevision(approvalId: string, data: { comment: string; markupData?: string }) {
   const res = await fetch(`${BASE}/api/approvals/${approvalId}/reject`, {
     method: 'PATCH',
     headers: {
@@ -514,7 +619,47 @@ export async function rejectRevision(approvalId: string, data: { comment: string
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new HttpError(err.message || 'Gagal menolak approval', res.status);
+    throw new HttpError(err.message || 'Gagal mengirim permintaan revisi', res.status);
+  }
+  return res.json();
+}
+
+/** Fetch single approval detail with full relations (design, documents, histories, markup) */
+export async function fetchApprovalDetail(approvalId: string) {
+  const res = await fetch(`${BASE}/api/approvals/${approvalId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal memuat detail approval', res.status);
+  }
+  return res.json();
+}
+
+/** Drawer (PIC) resubmits a revised drawing */
+export async function resubmitRevision(
+  approvalId: string,
+  data: {
+    docLocation2D: string;
+    docLocation3D?: string;
+    revStatus?: string;
+    revisionNote: string;
+  },
+) {
+  const res = await fetch(`${BASE}/api/approvals/${approvalId}/resubmit-revision`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Gagal mengunggah revisian drawing', res.status);
   }
   return res.json();
 }

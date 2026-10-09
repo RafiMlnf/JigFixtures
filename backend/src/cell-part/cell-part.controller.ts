@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CellPartService } from './cell-part.service';
@@ -30,10 +31,42 @@ export class CellPartController {
     return this.cellPartService.getReminders();
   }
 
+  /** Get part replacement historical log */
+  @Get('replacement-history')
+  getReplacementHistory(
+    @Query('designId') designId?: string,
+    @Query('cellPartId') cellPartId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.cellPartService.getReplacementHistory({ designId, cellPartId, search });
+  }
+
+  /** Delete a replacement log entry */
+  @Delete('replacement-history/:id')
+  deleteReplacementLog(@Param('id') id: string) {
+    return this.cellPartService.deleteReplacementLog(id);
+  }
+
   /** Create a new CellPart */
   @Post()
   create(@Body() dto: CreateCellPartDto) {
     return this.cellPartService.create(dto);
+  }
+
+  /** Record a part replacement */
+  @Post(':id/replace')
+  recordReplacement(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      replacedAt?: string;
+      replacedBy: string;
+      reason: string;
+      notes?: string;
+      resetUsage?: boolean;
+    },
+  ) {
+    return this.cellPartService.recordReplacement(id, body);
   }
 
   /** Update an existing CellPart */

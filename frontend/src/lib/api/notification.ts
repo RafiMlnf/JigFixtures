@@ -4,11 +4,12 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002/a
 
 export interface NotificationItem {
   id: string;
-  type: 'INVENTORY_RED' | 'INVENTORY_YELLOW' | 'WAITING_APPROVAL' | 'ABNORMALITY_OPEN';
+  type: 'INVENTORY_RED' | 'INVENTORY_YELLOW' | 'WAITING_APPROVAL' | 'REVISION_REQUESTED' | 'ABNORMALITY_OPEN' | string;
   title: string;
   message: string;
   isRead: boolean;
   itemId?: string;
+  designId?: string;
   userId: string;
   createdAt: string;
 }

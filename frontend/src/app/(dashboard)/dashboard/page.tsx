@@ -41,7 +41,7 @@ export default function DashboardPage() {
   const [tpmSearch, setTpmSearch] = useState('');
 
   // Task & Approvals states (Card 2)
-  const [taskFilter, setTaskFilter] = useState<'ALL' | 'WAITING' | 'DESIGN_REV' | 'INVENTORY_UPDATE'>('WAITING');
+  const [taskFilter, setTaskFilter] = useState<'ALL' | 'WAITING' | 'REVISION' | 'DESIGN_REV' | 'INVENTORY_UPDATE'>('ALL');
   const [taskSearch, setTaskSearch] = useState('');
 
   // CellPart Lifetime Reminders states (Card 3)
@@ -194,12 +194,32 @@ export default function DashboardPage() {
     });
   }, [displayItems]);
 
-  // Filtered approvals / tasks for Task Card
+  // Helper: check if a task is actually pending action for the logged-in user
+  const isTaskPendingForUser = (a: ApprovalItem, role?: string) => {
+    // If status is REJECTED, it means this item was returned for revision ("disuruh revisi")
+    if (a.status === 'REJECTED') {
+      return true;
+    }
+    if (a.status === 'WAITING') {
+      if (role === 'PE_SECTION_HEAD') {
+        return (a.sectionStatus || 'WAITING') === 'WAITING';
+      }
+      if (role === 'PE_DEPT_HEAD') {
+        return a.sectionStatus === 'APPROVED' && (a.deptStatus || 'WAITING') === 'WAITING';
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // Filtered approvals / tasks for Task Card (Hanya menampilkan task yang masih aktif & perlu tindakan user)
   const filteredTasks: ApprovalItem[] = useMemo(() => {
-    let list = approvals;
+    let list = approvals.filter((a) => isTaskPendingForUser(a, user?.role));
 
     if (taskFilter === 'WAITING') {
       list = list.filter((a) => a.status === 'WAITING');
+    } else if (taskFilter === 'REVISION') {
+      list = list.filter((a) => a.status === 'REJECTED');
     } else if (taskFilter === 'DESIGN_REV') {
       list = list.filter((a) => a.type === 'Design Rev');
     } else if (taskFilter === 'INVENTORY_UPDATE') {
@@ -218,7 +238,7 @@ export default function DashboardPage() {
     }
 
     return list;
-  }, [approvals, taskFilter, taskSearch]);
+  }, [approvals, taskFilter, taskSearch, user?.role]);
 
   // Filtered Due Date / Lifetime for Stok Card
   const filteredLifetime = useMemo(() => {
@@ -249,15 +269,16 @@ export default function DashboardPage() {
 
   // Task summary statistics
   const taskStats = useMemo(() => {
-    const total = approvals.length;
-    const waiting = approvals.filter((a) => a.status === 'WAITING').length;
+    const pendingList = approvals.filter((a) => isTaskPendingForUser(a, user?.role));
+    const total = pendingList.length;
+    const waiting = pendingList.filter((a) => a.status === 'WAITING').length;
+    const revision = pendingList.filter((a) => a.status === 'REJECTED').length;
     const approved = approvals.filter((a) => a.status === 'APPROVED').length;
-    const rejected = approvals.filter((a) => a.status === 'REJECTED').length;
-    const designRevWaiting = approvals.filter((a) => a.type === 'Design Rev' && a.status === 'WAITING').length;
-    const invWaiting = approvals.filter((a) => a.type === 'Inventory Update' && a.status === 'WAITING').length;
+    const designRevWaiting = pendingList.filter((a) => a.type === 'Design Rev').length;
+    const invWaiting = pendingList.filter((a) => a.type === 'Inventory Update').length;
 
-    return { total, waiting, approved, rejected, designRevWaiting, invWaiting };
-  }, [approvals]);
+    return { total, waiting, revision, approved, designRevWaiting, invWaiting };
+  }, [approvals, user?.role]);
 
   // TPM summary statistics
   const tpmStats = useMemo(() => {
@@ -405,8 +426,8 @@ export default function DashboardPage() {
     }
     try {
       setProcessingTaskId(taskId);
-      await processApproval(taskId, action, action === 'APPROVE' ? 'Quick approval from dashboard' : 'Declined from dashboard');
-      setActionSuccessMsg(`Task berhasil di-${action === 'APPROVE' ? 'setujui' : 'tolak'}.`);
+      await processApproval(taskId, action, action === 'APPROVE' ? 'Quick approval from dashboard' : 'Memerlukan revisi dari dashboard');
+      setActionSuccessMsg(`Task berhasil ${action === 'APPROVE' ? 'disetujui' : 'dikembalikan untuk revisi'}.`);
       setTimeout(() => setActionSuccessMsg(null), 3000);
     } catch (err: any) {
       const errMsg = err?.message || 'Error server';
@@ -421,66 +442,107 @@ export default function DashboardPage() {
     }
   };
 
+  const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+
+  const handleBulkApprove = async () => {
+    if (!userCanApprove) {
+      alert('Hanya Section Head atau Dept Head yang dapat menyetujui approval.');
+      return;
+    }
+    const waitingTasks = approvals.filter((a) => isTaskPendingForUser(a, user?.role));
+    if (waitingTasks.length === 0) {
+      setShowBulkApproveModal(false);
+      return;
+    }
+
+    setIsBulkApproving(true);
+    try {
+      let successCount = 0;
+      for (const t of waitingTasks) {
+        try {
+          await processApproval(t.id, 'APPROVE', 'Batch approval all tasks from dashboard');
+          successCount++;
+        } catch (e) {
+          console.error(`Failed approving ${t.id}`, e);
+        }
+      }
+      setShowBulkApproveModal(false);
+      setActionSuccessMsg(`Berhasil menyetujui ${successCount} dari ${waitingTasks.length} task.`);
+      setTimeout(() => setActionSuccessMsg(null), 3500);
+      await loadAllDashboardData();
+    } catch (err: any) {
+      alert(`Gagal memproses bulk approval: ${err?.message || 'Error server'}`);
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden">
-      {/* Header controls with border-b divider */}
-      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[#0063ff] text-lg">dashboard</span>
-            Dashboard Overview
-          </h2>
-          <span className="hidden lg:inline-flex text-[11px] text-slate-400 font-medium border-l border-slate-200 pl-2.5">
-            {currentDateStr}
-          </span>
-        </div>
-
-      </header>
-
-      {/* Main Content Area (Scrollable) */}
-      <div className="flex-1 overflow-y-auto pr-1">
+    <div className="flex-1 flex flex-col p-3 bg-white h-full overflow-hidden">
+      {/* Main Content Area (Full height flexible grid across all screen sizes) */}
+      <div className="flex-1 h-full min-h-0 overflow-y-auto xl:overflow-hidden">
         {/* Main 4 Cards Layout:
             1. Jadwal & Deadline TPM
             2. Daftar Task & Approval
             3. Reminder CellPart (≤5 Mgg)
             4. Monitoring Lifetime & Stok
         */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-start pb-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5 h-full min-h-0 items-stretch">
 
           {/* ========================================================================= */}
           {/* CARD 1: Jadwal & Deadline TPM (Preventive Maintenance Schedules & Target)  */}
           {/* ========================================================================= */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-[calc(100vh-140px)] min-h-[500px]">
-            {/* Header Card TPM */}
-            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">calendar_clock</span>
-                Jadwal & Deadline TPM
+          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
+            {/* Header Card TPM (Expand Search on Hover / Focus, Hides Title) */}
+            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
+              {/* Title (Hidden when hovered/focused or when search query is active) */}
+              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
+                tpmSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
+              }`}>
+                TPM
               </h2>
-              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${tpmStats.overdue > 0 ? 'bg-rose-500 text-white' : 'bg-white/20 text-white'}`}>
-                {tpmStats.total}
-              </span>
+
+              {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
+              <div className={`flex items-center transition-all duration-200 ${
+                tpmSearch 
+                  ? 'w-full' 
+                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+              }`}>
+                <div className="relative flex items-center w-full">
+                  <span
+                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
+                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari jadwal TPM..."
+                    value={tpmSearch}
+                    onChange={(e) => setTpmSearch(e.target.value)}
+                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
+                      tpmSearch
+                        ? 'opacity-100 cursor-text'
+                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
+                    }`}
+                  />
+                  {tpmSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTpmSearch('')}
+                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Content Container */}
             <div className="p-2 flex-1 flex flex-col gap-1.5 overflow-hidden">
-              {/* Flat Metric Strip with Bottom Divider */}
-              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 px-1 text-[9px] shrink-0">
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold text-rose-600">Overdue:</span>
-                  <span className="font-black text-rose-700">{tpmStats.overdue}</span>
-                </div>
-                <div className="h-3 w-px bg-slate-200"></div>
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold text-amber-600">&le;7 Hari:</span>
-                  <span className="font-black text-amber-700">{tpmStats.nearDeadline}</span>
-                </div>
-                <div className="h-3 w-px bg-slate-200"></div>
-                <div className="flex items-center gap-1">
-                  <span className="font-semibold text-emerald-600">Aman:</span>
-                  <span className="font-black text-emerald-700">{tpmStats.safe}</span>
-                </div>
-              </div>
 
               {/* Flat Quick Filter Tabs with Bottom Divider */}
               <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1.5 border-b border-slate-200/80 px-1">
@@ -503,20 +565,6 @@ export default function DashboardPage() {
                     {tab.label}
                   </button>
                 ))}
-              </div>
-
-              {/* Quick Search */}
-              <div className="relative flex items-center w-full shrink-0">
-                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Cari jadwal / reg / part..."
-                  value={tpmSearch}
-                  onChange={(e) => setTpmSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
-                />
               </div>
 
               {/* List */}
@@ -543,21 +591,31 @@ export default function DashboardPage() {
                     const isNear = !isOv && ((effectiveDays !== null && effectiveDays <= 7) || item.lifetimeStatus === 'WARNING');
                     const isUnscheduled = !item.tpmScheduleDeadline && !item.tpmLifetimeSetAt;
 
+                    // Format date to DD/MM/YYYY
+                    const formatDDMMYYYY = (d: Date | null) => {
+                      if (!d || isNaN(d.getTime())) return 'Belum Diatur';
+                      const day = String(d.getDate()).padStart(2, '0');
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const year = d.getFullYear();
+                      return `${day}/${month}/${year}`;
+                    };
+
                     return (
-                      <div
+                      <Link
                         key={item.id}
-                        className={`border rounded-lg p-1.5 flex flex-col gap-1 transition-all shadow-3xs ${
+                        href={`/tpm?search=${encodeURIComponent(item.noReg)}`}
+                        className={`border rounded-lg p-1.5 flex flex-col gap-1 transition-all shadow-3xs cursor-pointer group ${
                           isOv
-                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70'
+                            ? 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/70 hover:border-rose-300'
                             : isNear
-                            ? 'bg-amber-50/30 border-amber-200 hover:bg-amber-50/60'
-                            : 'bg-white hover:bg-slate-50/90 border-slate-200'
+                            ? 'bg-amber-50/30 border-amber-200 hover:bg-amber-50/60 hover:border-amber-300'
+                            : 'bg-white hover:bg-slate-50/90 hover:border-blue-300 border-slate-200'
                         }`}
                       >
                         {/* Row 1: Reg, Line, Type Badge */}
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1 min-w-0 flex-1">
-                            <span className="font-mono text-[9px] font-bold text-slate-800 shrink-0">
+                            <span className="font-mono text-[9px] font-bold text-slate-800 group-hover:text-blue-600 transition-colors shrink-0">
                               {item.noReg}
                             </span>
                             <span className="text-[8px] font-medium px-1 py-0.2 rounded bg-slate-100 text-slate-600 truncate">
@@ -577,7 +635,7 @@ export default function DashboardPage() {
 
                         {/* Row 2: Part / Fixture Name */}
                         <div className="min-w-0">
-                          <h4 className="text-[10px] font-bold text-slate-800 truncate leading-tight" title={item.name}>
+                          <h4 className="text-[10px] font-bold text-slate-800 truncate leading-tight group-hover:text-blue-700 transition-colors" title={item.name}>
                             {item.name}
                           </h4>
                           {item.isCellPart && item.parentNoReg && (
@@ -591,12 +649,10 @@ export default function DashboardPage() {
                         <div className="p-1 rounded bg-slate-50/90 border border-slate-100 flex items-center justify-between text-[9px]">
                           <div className="flex flex-col">
                             <span className="text-[7px] text-slate-400 font-semibold uppercase">
-                              {item.tpmScheduleDeadline ? 'Target Deadline' : 'Jatuh Tempo (Due)'}:
+                              {item.tpmScheduleDeadline ? 'Target Deadline' : 'Due'}:
                             </span>
                             <span className="font-bold text-slate-700 font-mono text-[9px]">
-                              {effectiveDueDate
-                                ? effectiveDueDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-                                : 'Belum Diatur'}
+                              {formatDDMMYYYY(effectiveDueDate)}
                             </span>
                           </div>
 
@@ -621,7 +677,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* Row 4: Lifetime Usage & Action Link to TPM */}
+                        {/* Row 4: Lifetime Usage */}
                         <div className="flex items-center justify-between pt-0.5 border-t border-slate-100 text-[9px]">
                           <div className="flex items-center gap-1 text-slate-500 text-[8px] font-mono">
                             <span className="material-symbols-outlined text-[10px] text-slate-400">speed</span>
@@ -631,16 +687,8 @@ export default function DashboardPage() {
                                 : `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x`}
                             </span>
                           </div>
-
-                          <Link
-                            href={`/tpm?search=${encodeURIComponent(item.noReg)}`}
-                            className="text-[8px] font-bold text-[#0063ff] hover:underline flex items-center gap-0.5 cursor-pointer"
-                          >
-                            <span>Buka di TPM</span>
-                            <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
-                          </Link>
                         </div>
-                      </div>
+                      </Link>
                     );
                   })
                 )}
@@ -666,16 +714,64 @@ export default function DashboardPage() {
           {/* ========================================================================= */}
           {/* CARD 2: Daftar Task & Approval (Approval Queue & Fast Action)              */}
           {/* ========================================================================= */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-[calc(100vh-140px)] min-h-[500px]">
-            {/* Header Card Approval */}
-            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">fact_check</span>
-                Daftar Task & Approval
+          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
+            {/* Header Card Approval (Expand Search on Hover / Focus, Hides Title) */}
+            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between gap-1.5 relative overflow-hidden shrink-0 group/header">
+              {/* Title (Hidden when hovered/focused or when taskSearch query is active) */}
+              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
+                taskSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
+              }`}>
+                Task & Approval
               </h2>
-              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-white/20 text-white rounded">
-                {taskStats.waiting}
-              </span>
+
+              <div className={`flex items-center gap-1.5 transition-all duration-200 ${
+                taskSearch
+                  ? 'w-full'
+                  : 'w-auto group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+              }`}>
+                {taskStats.waiting > 0 && userCanApprove && (
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkApproveModal(true)}
+                    className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white transition-colors cursor-pointer shadow-3xs flex items-center gap-0.5 shrink-0"
+                    title="Setujui semua task sekaligus"
+                  >
+                    <span className="material-symbols-outlined text-[10px]">done_all</span>
+                    Approve
+                  </button>
+                )}
+
+                {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
+                <div className="relative flex items-center flex-1 min-w-0">
+                  <span
+                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
+                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari task..."
+                    value={taskSearch}
+                    onChange={(e) => setTaskSearch(e.target.value)}
+                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
+                      taskSearch
+                        ? 'opacity-100 cursor-text'
+                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
+                    }`}
+                  />
+                  {taskSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTaskSearch('')}
+                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Content Container */}
@@ -691,10 +787,11 @@ export default function DashboardPage() {
               {/* Flat Quick Filter Tabs with Bottom Divider */}
               <div className="flex items-center gap-1.5 shrink-0 overflow-x-auto pb-1.5 border-b border-slate-200/80 px-1">
                 {[
+                  { key: 'ALL', label: `Semua (${taskStats.total})` },
                   { key: 'WAITING', label: `Menunggu (${taskStats.waiting})` },
+                  { key: 'REVISION', label: `Revisi (${taskStats.revision})` },
                   { key: 'DESIGN_REV', label: 'Design' },
                   { key: 'INVENTORY_UPDATE', label: 'Inventory' },
-                  { key: 'ALL', label: 'Semua' },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -711,20 +808,6 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {/* Quick Search */}
-              <div className="relative flex items-center w-full shrink-0">
-                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Cari task / reg / pemohon..."
-                  value={taskSearch}
-                  onChange={(e) => setTaskSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
-                />
-              </div>
-
               {/* Task List Content */}
               <div className="flex-1 overflow-hidden flex flex-col">
                 {isLoading ? (
@@ -738,103 +821,92 @@ export default function DashboardPage() {
                     <p className="text-[9px] mt-1 text-slate-500 font-medium">Semua task selesai</p>
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+                    <div className="flex-1 overflow-y-auto space-y-1 pr-0.5">
                     {filteredTasks.map((task) => {
                       const isWaiting = task.status === 'WAITING';
-                      const isDesign = task.type === 'Design Rev';
+                      const isRevision = task.status === 'REJECTED';
                       const isProcessing = processingTaskId === task.id;
 
                       return (
                         <div
                           key={task.id}
-                          className="bg-white hover:bg-slate-50/90 border border-slate-200 rounded-lg p-2 flex flex-col gap-1.5 transition-all shadow-3xs"
+                          className={`bg-white hover:bg-slate-50/90 border rounded-lg p-1.5 flex items-center justify-between gap-2 transition-all shadow-3xs group ${
+                            isRevision ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+                          }`}
                         >
-                          {/* Top: Tag, Reg No, Title, and Status */}
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                              <span
-                                className={`px-1 py-0.2 rounded text-[8px] font-bold shrink-0 ${
-                                  isDesign ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
-                                }`}
-                              >
-                                {task.type}
-                              </span>
-                              <span className="font-mono font-bold text-[10px] text-slate-800 shrink-0">
+                          {/* Info Ringkas: Link ke detail */}
+                          <Link
+                            href={`/approval-center/${task.id}`}
+                            className="min-w-0 flex-1 flex flex-col cursor-pointer"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-[9.5px] text-slate-800 group-hover:text-blue-600 transition-colors shrink-0">
                                 {task.noReg}
                               </span>
-                              <span className="text-[10px] font-semibold text-slate-700 truncate" title={task.itemName}>
-                                {task.itemName}
-                              </span>
+                              {isRevision ? (
+                                <span className="text-[7.5px] font-bold px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                                  Revisi
+                                </span>
+                              ) : (
+                                <span className="text-[7.5px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
+                                  Menunggu
+                                </span>
+                              )}
                             </div>
+                            <span className="text-[9.5px] font-semibold text-slate-700 truncate leading-tight mt-0.5" title={task.itemName}>
+                              {task.itemName}
+                            </span>
+                            <span className="text-[8px] text-slate-400 truncate">
+                              {isRevision && task.note ? (
+                                <span className="text-rose-600 font-medium truncate block">
+                                  Catatan: &ldquo;{task.note}&rdquo;
+                                </span>
+                              ) : (
+                                `Oleh: ${task.author}`
+                              )}
+                            </span>
+                          </Link>
 
-                            {/* Status Badge */}
-                            {task.status !== 'WAITING' && (
-                              <span
-                                className={`px-1.5 py-0.2 rounded-full text-[8px] font-bold border shrink-0 ${
-                                  task.status === 'APPROVED'
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                }`}
+                          {/* Tombol Aksi */}
+                          <div className="shrink-0 flex items-center gap-1">
+                            {isRevision ? (
+                              <Link
+                                href={`/approval-center/${task.id}`}
+                                className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-md text-[9px] transition-colors flex items-center gap-1 shadow-3xs cursor-pointer"
+                                title="Lihat catatan, coretan & upload revisian baru"
                               >
-                                {task.status}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Middle: Submitter & Note */}
-                          <div className="text-[9px] text-slate-500 bg-slate-50/70 p-1.5 rounded border border-slate-100 flex flex-col gap-0.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-600 font-medium flex items-center gap-0.5 truncate">
-                                <span className="material-symbols-outlined text-[11px] text-slate-400">person</span>
-                                Oleh: <b className="text-slate-700 ml-0.5">{task.author}</b>
-                              </span>
-                              <span className="text-[8px] text-slate-400 shrink-0">{task.date}</span>
-                            </div>
-                            {task.note && (
-                              <p className="text-slate-500 line-clamp-1 italic text-[9px]">
-                                &ldquo;{task.note}&rdquo;
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Bottom Row: Direct Approval & Decline Buttons */}
-                          <div className="flex items-center justify-between pt-0.5 border-t border-slate-100">
-                            <Link
-                              href={`/approval-center/${task.id}`}
-                              className="text-[9px] font-semibold text-slate-500 hover:text-blue-600 inline-flex items-center gap-0.5 cursor-pointer transition-colors"
-                            >
-                              <span>Detail</span>
-                              <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
-                            </Link>
-
-                            {/* Direct Action Buttons */}
-                            {isWaiting && userCanApprove ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  disabled={isProcessing}
-                                  onClick={() => handleQuickDecision(task.id, 'REJECT')}
-                                  className="w-5 h-5 flex items-center justify-center bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded transition-colors cursor-pointer disabled:opacity-50"
-                                  title="Tolak / Decline task ini"
-                                  aria-label="Decline task"
+                                <span className="material-symbols-outlined text-[12px]">history_edu</span>
+                                <span>Revisi</span>
+                              </Link>
+                            ) : userCanApprove ? (
+                              <>
+                                <Link
+                                  href={`/approval-center/${task.id}`}
+                                  className="w-6 h-6 flex items-center justify-center bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-md transition-colors cursor-pointer"
+                                  title="Buka gambar untuk memberi coretan & catatan revisi"
+                                  aria-label="Minta Revisi dengan Coretan"
                                 >
-                                  <span className="material-symbols-outlined text-[13px]">close</span>
-                                </button>
+                                  <span className="material-symbols-outlined text-[12px] font-bold">history_edu</span>
+                                </Link>
                                 <button
                                   type="button"
                                   disabled={isProcessing}
                                   onClick={() => handleQuickDecision(task.id, 'APPROVE')}
-                                  className="w-5 h-5 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow-3xs transition-colors cursor-pointer disabled:opacity-50"
-                                  title="Setujui / Approve task ini"
-                                  aria-label="Approve task"
+                                  className="w-6 h-6 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-3xs transition-colors cursor-pointer disabled:opacity-50"
+                                  title="Setujui (Approve)"
+                                  aria-label="Setujui"
                                 >
-                                  <span className="material-symbols-outlined text-[13px]">check</span>
+                                  <span className="material-symbols-outlined text-[13px] font-bold">check</span>
                                 </button>
-                              </div>
+                              </>
                             ) : (
-                              <span className="text-[8px] font-semibold text-slate-400 italic">
-                                {isWaiting && !userCanApprove ? 'Menunggu approver' : 'Selesai'}
-                              </span>
+                              <Link
+                                href={`/approval-center/${task.id}`}
+                                className="text-gray-400 hover:text-blue-600 p-1 rounded"
+                                title="Buka review"
+                              >
+                                <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                              </Link>
                             )}
                           </div>
                         </div>
@@ -861,16 +933,52 @@ export default function DashboardPage() {
           {/* ========================================================================= */}
           {/* CARD 3: Reminder Lifetime CellPart (≤5 Mgg & Overdue)                     */}
           {/* ========================================================================= */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-[calc(100vh-140px)] min-h-[500px]">
-            {/* Header Card CellPart */}
-            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">notifications_active</span>
-                Reminder CellPart
+          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
+            {/* Header Card CellPart (Expand Search on Hover / Focus, Hides Title) */}
+            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
+              {/* Title (Hidden when hovered/focused or when search query is active) */}
+              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
+                cellPartSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
+              }`}>
+                Childpart Reminder
               </h2>
-              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${cpStats.overdue > 0 ? 'bg-rose-500 text-white' : 'bg-white/20 text-white'}`}>
-                {cpStats.total}
-              </span>
+
+              {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
+              <div className={`flex items-center transition-all duration-200 ${
+                cellPartSearch 
+                  ? 'w-full' 
+                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+              }`}>
+                <div className="relative flex items-center w-full">
+                  <span
+                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
+                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari CellPart..."
+                    value={cellPartSearch}
+                    onChange={(e) => setCellPartSearch(e.target.value)}
+                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
+                      cellPartSearch
+                        ? 'opacity-100 cursor-text'
+                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
+                    }`}
+                  />
+                  {cellPartSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setCellPartSearch('')}
+                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Content Container */}
@@ -886,20 +994,6 @@ export default function DashboardPage() {
                   <span className="font-semibold text-amber-600">&le;5 Mgg:</span>
                   <span className="font-black text-amber-700">{cpStats.warning}</span>
                 </div>
-              </div>
-
-              {/* Quick Search */}
-              <div className="relative flex items-center w-full shrink-0">
-                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Cari part / parent..."
-                  value={cellPartSearch}
-                  onChange={(e) => setCellPartSearch(e.target.value)}
-                  className="w-full pl-6 pr-2 h-6 bg-slate-50 border border-slate-200 rounded-md text-[10px] leading-normal focus:ring-1 focus:ring-blue-500 outline-none text-slate-700 placeholder:text-slate-400"
-                />
               </div>
 
               {/* List */}
@@ -990,16 +1084,52 @@ export default function DashboardPage() {
           {/* ========================================================================= */}
           {/* CARD 4: Monitoring Lifetime & Stok Jig (Stock vs Minimum & Due Date)      */}
           {/* ========================================================================= */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-[calc(100vh-140px)] min-h-[500px]">
-            {/* Header Card Stok */}
-            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">inventory_2</span>
+          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden h-full min-h-[380px]">
+            {/* Header Card Stok (Expand Search on Hover / Focus, Hides Title) */}
+            <div className="h-8 px-2.5 bg-[#0063ff] text-white flex items-center justify-between relative overflow-hidden shrink-0 group/header">
+              {/* Title (Hidden when hovered/focused or when search query is active) */}
+              <h2 className={`text-[11px] font-bold uppercase tracking-wider text-white shrink-0 transition-opacity duration-200 ${
+                lifetimeSearch ? 'opacity-0 pointer-events-none' : 'group-hover/header:opacity-0 group-focus-within/header:opacity-0'
+              }`}>
                 Lifetime & Stok Jig
               </h2>
-              <span className="text-[9px] font-bold px-1.5 py-0.2 bg-white/20 text-white rounded">
-                {lifetimeStats.total}
-              </span>
+
+              {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
+              <div className={`flex items-center transition-all duration-200 ${
+                lifetimeSearch 
+                  ? 'w-full' 
+                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+              }`}>
+                <div className="relative flex items-center w-full">
+                  <span
+                    className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
+                    style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
+                  >
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari stok / part..."
+                    value={lifetimeSearch}
+                    onChange={(e) => setLifetimeSearch(e.target.value)}
+                    className={`w-full pl-2.5 pr-6 h-5 bg-white/20 hover:bg-white/25 focus:bg-white text-white focus:text-slate-800 placeholder:text-white/70 focus:placeholder:text-slate-400 rounded text-[9px] outline-none transition-all duration-200 ${
+                      lifetimeSearch
+                        ? 'opacity-100 cursor-text'
+                        : 'opacity-0 group-hover/header:opacity-100 group-focus-within/header:opacity-100 cursor-pointer group-hover/header:cursor-text group-focus-within/header:cursor-text'
+                    }`}
+                  />
+                  {lifetimeSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLifetimeSearch('')}
+                      className="absolute right-6 text-white/70 hover:text-white focus:text-slate-600 text-[11px] leading-none cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Content Container */}
@@ -1020,20 +1150,6 @@ export default function DashboardPage() {
                   <span className="font-semibold text-emerald-600">Aman:</span>
                   <span className="font-black text-emerald-700">{lifetimeStats.safe}</span>
                 </div>
-              </div>
-
-              {/* Quick Search Input */}
-              <div className="relative flex items-center w-full shrink-0">
-                <span className="material-symbols-outlined text-slate-400 absolute left-2 pointer-events-none select-none flex items-center justify-center leading-none" style={{ fontSize: '11px', width: '11px', height: '11px' }}>
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Cari reg / part..."
-                  value={lifetimeSearch}
-                  onChange={(e) => setLifetimeSearch(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-[10px] rounded-md pl-6 pr-2 h-6 leading-normal text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
               </div>
 
               {/* Items List (Compact Rows) */}
@@ -1139,6 +1255,76 @@ export default function DashboardPage() {
 
         </div>
       </div>
+
+      {/* POP UP KONFIRMASI: APPROVE SEMUA TASK */}
+      {showBulkApproveModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[99]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col shadow-2xl relative text-gray-800 animate-in fade-in zoom-in-95">
+            {/* Header Standar (Icon + Teks, Tanpa background berwarna tebal) */}
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-emerald-600 text-sm">done_all</span>
+                Konfirmasi Setujui Semua Task
+              </h3>
+              <button
+                type="button"
+                disabled={isBulkApproving}
+                onClick={() => setShowBulkApproveModal(false)}
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 text-emerald-600">
+                  <span className="material-symbols-outlined text-lg">help</span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-900 leading-snug">
+                    Yakin ingin menyetujui semua task yang sedang menunggu?
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                    Terdapat <strong className="text-emerald-700 font-semibold">{taskStats.waiting} task</strong> yang akan disetujui sekaligus. Tindakan ini akan melanjutkan seluruh revisi atau pembaruan stok ke tahap berikutnya.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-gray-150">
+                <button
+                  type="button"
+                  disabled={isBulkApproving}
+                  onClick={() => setShowBulkApproveModal(false)}
+                  className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isBulkApproving}
+                  onClick={handleBulkApprove}
+                  className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {isBulkApproving ? (
+                    <>
+                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                      <span>Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-sm">check</span>
+                      <span>Ya, Setujui Semua</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

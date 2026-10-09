@@ -44,13 +44,15 @@ function mapBackendApproval(backend: any): ApprovalItem {
     date: formattedDate,
     author: backend.submittedBy?.name || 'PIC Submitter',
     authorAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD0K5uMa_eyzsLMfQnbYnlDlbL0hBNbMgB43eKGSSrulPd8R9KaBD-eOVIRnjge_lre88wQy32ZMQbO5pKvKoJdf7atqBmlbiSVEQIAF1Wf7obS1uwccX8H_uNfR8SZ6-SE-1fv1hDVDh_g8Jp0I7dS5FLdPtJ_RtVTHs-mnlA6p4X_ZzB-516cPH-NL6fxEyDNf7v4FLZ2X5nqNvfLo15Em1bnYhl46iz08ZtBfbLW2c17XuJTiElB',
-    note: backend.revisionNote || '',
+    note: backend.revisionNote || backend.finalComment || backend.sectionComment || backend.deptComment || '',
     type: backend.type === 'DESIGN_REVISION' ? 'Design Rev' : 'Inventory Update',
     status: backend.status,
     color: backend.type === 'DESIGN_REVISION' ? 'bg-accent-orange border-orange-200/50' : 'bg-[#d8b4fe] border-purple-300/50',
     has3DRender: backend.item?.type === 'JF',
     sectionStatus: backend.sectionStatus,
     deptStatus: backend.deptStatus,
+    markupData: backend.markupData || undefined,
+    annotatedDocPath: backend.annotatedDocPath || undefined,
   };
 }
 

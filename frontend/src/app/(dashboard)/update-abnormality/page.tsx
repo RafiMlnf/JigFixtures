@@ -10,6 +10,7 @@ import {
   createAbnormality,
   updateAbnormalityStatus,
   fetchMachinesDashboard,
+  updateMachineStatus,
   registerMachine,
   deleteMachine,
   fetchLinesAndProcesses,
@@ -164,13 +165,18 @@ export default function UpdateAbnormalityPage() {
   // Filtered Machines
   const filteredMachines = useMemo(() => {
     return machines.filter((m) => {
-      const matchesLine = lineFilter === 'All' || m.lineName === lineFilter || m.lineId === lineFilter;
       const q = search.toLowerCase().trim();
+      const searchTerms = q.split(/\s+/).filter(Boolean);
       const matchesSearch =
-        !q ||
-        m.name.toLowerCase().includes(q) ||
-        m.code.toLowerCase().includes(q) ||
-        (m.designNoReg && m.designNoReg.toLowerCase().includes(q));
+        searchTerms.length === 0 ||
+        searchTerms.every(
+          (term) =>
+            m.name.toLowerCase().includes(term) ||
+            m.code.toLowerCase().includes(term) ||
+            (m.lineName && m.lineName.toLowerCase().includes(term)) ||
+            (m.location && m.location.toLowerCase().includes(term)) ||
+            (m.designNoReg && m.designNoReg.toLowerCase().includes(term))
+        );
 
       let matchesStatus = true;
       if (statusFilter === 'SAFE') {
@@ -184,9 +190,31 @@ export default function UpdateAbnormalityPage() {
         matchesStatus = m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE';
       }
 
-      return matchesLine && matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [machines, lineFilter, search, statusFilter]);
+  }, [machines, search, statusFilter]);
+
+  // Group filtered machines by Lane / Line (sorted by machine count then name for balanced grid layout)
+  const groupedMachines = useMemo(() => {
+    const groups: Record<string, MachineDashboardItem[]> = {};
+    filteredMachines.forEach((m) => {
+      const key = m.lineName || 'Area Lainnya';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+
+    // Sort so cards with similar sizes/capacities pair up side-by-side neatly
+    return Object.fromEntries(
+      Object.entries(groups).sort((a, b) => {
+        // First sort by number of machines descending (pair large lanes together, small lanes together)
+        if (b[1].length !== a[1].length) {
+          return b[1].length - a[1].length;
+        }
+        // Then naturally by line name
+        return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: 'base' });
+      })
+    );
+  }, [filteredMachines]);
 
   // Register Machine Handler
   const handleRegisterMachine = async (e: React.FormEvent) => {
@@ -235,11 +263,68 @@ export default function UpdateAbnormalityPage() {
     }
   };
 
-  // Open Abnormality Form from Machine Card / Detail Modal
-  const handleOpenReportFromMachine = (machine: MachineDashboardItem) => {
+  const [updatingMachineStatus, setUpdatingMachineStatus] = useState(false);
+
+  // Manual Status Change Handler (Kondisi Jig / Jadwal TPM: Hijau, Kuning, Merah, atau Auto)
+  const handleManualStatusChange = async (
+    field: 'jigCondition' | 'tpmSchedule',
+    newStatus: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO'
+  ) => {
+    if (!selectedMachineDetail) return;
+    setUpdatingMachineStatus(true);
+    try {
+      await updateMachineStatus(selectedMachineDetail.id, {
+        [field]: newStatus,
+      });
+
+      // Update locally
+      setSelectedMachineDetail((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          [field]: newStatus === 'AUTO' ? prev[field] : newStatus,
+        };
+      });
+
+      setToast({
+        type: 'success',
+        msg: `Status ${field === 'jigCondition' ? 'Kondisi Jig' : 'Jadwal TPM'} berhasil diubah ke ${
+          newStatus === 'AUTO' ? 'Otomatis' : newStatus === 'WARNING' ? 'Kuning (Warning)' : newStatus === 'OVERDUE' ? 'Merah (Overdue)' : 'Hijau (Safe)'
+        }!`,
+      });
+
+      await loadData();
+    } catch (err: any) {
+      setToast({ type: 'error', msg: err.message || 'Gagal mengubah status mesin' });
+    } finally {
+      setUpdatingMachineStatus(false);
+    }
+  };
+
+  // Open Abnormality Form for Jig Condition
+  const handleOpenReportForJig = (machine: MachineDashboardItem) => {
     if (machine.designId) {
       setSelectedItemId(machine.designId);
+    } else {
+      const match = items.find((i) => i.lineProduct === machine.lineName);
+      if (match) setSelectedItemId(match.id);
     }
+    setAbnType('AUS');
+    setDescription(`[Kondisi Jig] Laporan masalah/ketidaksesuaian jig pada mesin ${machine.code}${machine.name ? ` (${machine.name})` : ''}`);
+    setSelectedMachineDetail(null);
+    setActiveTab('form');
+  };
+
+  // Open Abnormality Form for TPM Schedule
+  const handleOpenReportForTpm = (machine: MachineDashboardItem) => {
+    if (machine.designId) {
+      setSelectedItemId(machine.designId);
+    } else {
+      const match = items.find((i) => i.lineProduct === machine.lineName);
+      if (match) setSelectedItemId(match.id);
+    }
+    setAbnType('LAINNYA');
+    setDescription(`[Jadwal TPM] Laporan keterlambatan/temuan jadwal preventif pada mesin ${machine.code}${machine.name ? ` (${machine.name})` : ''}`);
     setSelectedMachineDetail(null);
     setActiveTab('form');
   };
@@ -331,36 +416,42 @@ export default function UpdateAbnormalityPage() {
         </div>
       )}
 
-      {/* ─── STANDARD TOPBAR (Matching Design, Inventory, TPM, Approval Center) ──────────────── */}
+      {/* ─── STANDARD TOPBAR ──────────────── */}
       <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
-        <div className="flex items-center gap-4 flex-1">
-          {/* Title */}
-          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
-            <span className="material-symbols-outlined text-[#0063ff] text-lg">report_problem</span>
-            Monitoring Abnormality
-          </h2>
-
-
-          {/* Line Filter pill in header */}
-          <div className="relative flex items-center gap-1 text-[9px] text-gray-500 font-semibold border border-gray-200 rounded-full px-2.5 py-1 cursor-pointer hover:bg-gray-50">
-            <span>Line: {lineFilter}</span>
-            <span className="material-symbols-outlined text-[12px]">expand_more</span>
-            <select
-              value={lineFilter}
-              onChange={(e) => setLineFilter(e.target.value)}
-              className="absolute inset-0 opacity-0 cursor-pointer text-xs"
+        <div className="flex items-center gap-3 flex-1">
+          {/* Search bar inside header */}
+          <div className="relative flex items-center w-80">
+            <span
+              className="material-symbols-outlined absolute left-2.5 text-gray-400 pointer-events-none select-none flex items-center justify-center leading-none"
+              style={{ fontSize: '11px', width: '11px', height: '11px' }}
             >
-              {uniqueLines.map((l) => (
-                <option key={l} value={l}>
-                  {l === 'All' ? 'All Lines' : `Line ${l}`}
-                </option>
-              ))}
-            </select>
+              search
+            </span>
+            <input
+              className="pl-7 pr-2.5 py-1.5 bg-gray-50 hover:bg-gray-100/70 border border-gray-300 rounded-lg w-full text-[10px] outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-medium transition-all text-gray-700 placeholder-gray-400"
+              placeholder="Cari Line / Mesin / Kode / Area..."
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
         </div>
 
         {/* Right side actions group */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Tombol Daftarkan Mesin di Topbar */}
+          {isPic && (
+            <button
+              type="button"
+              onClick={() => setShowRegisterModal(true)}
+              className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Daftarkan Mesin Baru di Line Produksi"
+            >
+              <span className="material-symbols-outlined text-[15px]">add</span>
+              <span>Daftarkan Mesin</span>
+            </button>
+          )}
+
           {/* Tab buttons */}
           <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
             <button
@@ -407,83 +498,6 @@ export default function UpdateAbnormalityPage() {
       {/* ─── TAB 1: DASHBOARD MESIN (CARDS) ─────────────────────────────────── */}
       {activeTab === 'dashboard' && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Status Row & Action (Flat style with bottom divider) */}
-          <div className="flex items-center justify-between gap-3 pb-3 mb-4 border-b border-gray-200 shrink-0">
-            {/* Status Filters (Super compact vertical 3-row layout) */}
-            <div className="flex flex-col gap-0.5 text-[9px] leading-tight">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(statusFilter === 'SAFE' ? 'ALL' : 'SAFE')}
-                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    statusFilter === 'SAFE'
-                      ? 'text-emerald-700 font-bold'
-                      : 'text-gray-500 hover:text-gray-800 font-medium'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ${statusFilter === 'SAFE' ? 'ring-1.5 ring-emerald-300' : ''}`} />
-                  <span>Aman</span>
-                  <span className="text-[8px] text-gray-400 font-mono">({safeCount})</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(statusFilter === 'WARNING' ? 'ALL' : 'WARNING')}
-                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    statusFilter === 'WARNING'
-                      ? 'text-amber-700 font-bold'
-                      : 'text-gray-500 hover:text-gray-800 font-medium'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 ${statusFilter === 'WARNING' ? 'ring-1.5 ring-amber-300' : ''}`} />
-                  <span>Warning</span>
-                  <span className="text-[8px] text-gray-400 font-mono">({warningCount})</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter(statusFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
-                  className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    statusFilter === 'OVERDUE'
-                      ? 'text-rose-700 font-bold'
-                      : 'text-gray-500 hover:text-gray-800 font-medium'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0 ${statusFilter === 'OVERDUE' ? 'ring-1.5 ring-rose-300' : ''}`} />
-                  <span>Lewat Lifetime</span>
-                  <span className="text-[8px] text-gray-400 font-mono">({overdueCount})</span>
-                </button>
-
-                {statusFilter !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('ALL')}
-                    className="text-[8px] text-gray-400 hover:text-gray-600 font-semibold underline cursor-pointer ml-1"
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Tombol Daftarkan Mesin (Sebaris dengan status) */}
-            {isPic && (
-              <button
-                type="button"
-                onClick={() => setShowRegisterModal(true)}
-                className="bg-[#0063ff] text-white px-3.5 py-1.5 rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-                title="Daftarkan Mesin Baru di Line Produksi"
-              >
-                <span className="material-symbols-outlined text-[16px]">add</span>
-                <span>Daftarkan Mesin</span>
-              </button>
-            )}
-          </div>
-
           {/* Cards Grid Container */}
           <div className="flex-1 overflow-y-auto pr-1 pb-4">
             {loading ? (
@@ -511,50 +525,72 @@ export default function UpdateAbnormalityPage() {
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {filteredMachines.map((machine) => {
-                  const topCircleClass = getCircleColor(machine.jigCondition);
-                  const btmCircleClass = getCircleColor(machine.tpmSchedule);
-
-                  return (
-                    <div
-                      key={machine.id}
-                      onClick={() => setSelectedMachineDetail(machine)}
-                      className="bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all p-3 flex flex-col justify-between cursor-pointer group relative overflow-hidden"
-                    >
-                      {/* Top Header inside Card: Machine Code & Line Badge */}
-                      <div className="flex items-center justify-between gap-1 mb-2">
-                        <span className="text-[9px] font-black font-mono text-gray-500 uppercase tracking-tight truncate">
-                          {machine.code}
-                        </span>
-                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200 shrink-0">
-                          {machine.lineName}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+                {Object.entries(groupedMachines).map(([laneName, laneMachines]) => (
+                  <div key={laneName} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-2xs">
+                    {/* Lane Header Bar (Gaya Tabel Header) */}
+                    <div className="flex items-center justify-between px-2.5 py-1 bg-slate-50 border-b border-gray-200">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-[11px] font-bold text-gray-800 leading-tight">{laneName}</h3>
+                        <span className="text-[8px] font-semibold px-1 py-0.5 rounded bg-blue-100/70 text-blue-700 leading-none">
+                          {laneMachines.length}
                         </span>
                       </div>
-
-                      {/* Machine Name */}
-                      <h4 className="text-xs font-bold text-gray-800 line-clamp-1 mb-3 group-hover:text-blue-600 transition-colors">
-                        {machine.name}
-                      </h4>
-
-                      {/* ─── STRICT 2-BULAT STATUS INDICATOR ───────────────── */}
-                      {/* Inside card: ONLY 2 simple circles as requested, no extra descriptions */}
-                      <div className="py-3 my-auto flex flex-col items-center justify-center gap-3 bg-gray-50/80 rounded-xl border border-gray-150">
-                        {/* Bulat Atas: Jig Condition */}
-                        <div
-                          className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${topCircleClass}`}
-                          title={`Bulat Atas: Kondisi Jig (${machine.jigCondition})`}
-                        />
-
-                        {/* Bulat Bawah: TPM Schedule */}
-                        <div
-                          className={`w-6 h-6 rounded-full border-2 shadow ring-2 transition-transform group-hover:scale-110 ${btmCircleClass}`}
-                          title={`Bulat Bawah: Jadwal TPM (${machine.tpmSchedule})`}
-                        />
+                      <div className="flex items-center gap-2 text-[8.5px] text-gray-400 font-medium">
+                        <span className="flex items-center gap-1" title="Aman">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          {laneMachines.filter((m) => m.jigCondition === 'SAFE' && m.tpmSchedule === 'SAFE').length}
+                        </span>
+                        <span className="flex items-center gap-1" title="Peringatan">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                          {laneMachines.filter((m) => m.jigCondition === 'WARNING' || m.tpmSchedule === 'WARNING').length}
+                        </span>
+                        <span className="flex items-center gap-1" title="Lewat Lifetime / Overdue">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                          {laneMachines.filter((m) => m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE').length}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
+
+                    {/* Flat Grid Cell Table Layout - Tanpa Card, Border Pemisah Presisi */}
+                    <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8 border-t border-l border-gray-200 bg-gray-200 gap-px">
+                      {laneMachines.map((machine) => {
+                        const topCircleClass = getCircleColor(machine.jigCondition);
+                        const btmCircleClass = getCircleColor(machine.tpmSchedule);
+
+                        return (
+                          <div
+                            key={machine.id}
+                            onClick={() => setSelectedMachineDetail(machine)}
+                            className="aspect-square bg-white hover:bg-blue-50/50 p-1 flex flex-col justify-between items-center cursor-pointer group select-none transition-colors"
+                            title={`${machine.code} - ${machine.name} (${laneName})`}
+                          >
+                            {/* Machine Code at top */}
+                            <div className="w-full text-center">
+                              <span className="text-[9.5px] font-black font-mono text-gray-800 group-hover:text-blue-600 transition-colors block truncate leading-tight">
+                                {machine.code}
+                              </span>
+                            </div>
+
+                            {/* 2-Circle Status Indicators in Center */}
+                            <div className="flex flex-col items-center justify-center gap-1.5 my-auto">
+                              {/* Bulat Atas: Kondisi Jig */}
+                              <div
+                                className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${topCircleClass}`}
+                                title={`Kondisi Jig: ${machine.jigCondition}`}
+                              />
+                              {/* Bulat Bawah: Jadwal TPM */}
+                              <div
+                                className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${btmCircleClass}`}
+                                title={`Jadwal TPM: ${machine.tpmSchedule}`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -942,17 +978,17 @@ export default function UpdateAbnormalityPage() {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-lg">precision_manufacturing</span>
-                <h3 className="text-sm font-bold">Daftarkan Mesin Baru di Line</h3>
-              </div>
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">precision_manufacturing</span>
+                Daftarkan Mesin Baru di Line
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowRegisterModal(false)}
-                className="text-white/80 hover:text-white cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
-                <span className="material-symbols-outlined text-sm">close</span>
+                ✕
               </button>
             </div>
 
@@ -1074,137 +1110,256 @@ export default function UpdateAbnormalityPage() {
       )}
 
       {/* ─── MODAL 2: DETAIL MESIN ────────────────────────────────────────── */}
+      {/* ─── MODAL 2: DETAIL MESIN (SIMPLE: 2 BULATAN BESAR & TEKS INTI) ─── */}
       {selectedMachineDetail && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header: Name | Code, Lokasi Mesin */}
-            <div className="px-4 py-3 bg-slate-900 text-white flex items-start justify-between">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-xs overflow-hidden p-5 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header Ringkas */}
+            <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>{selectedMachineDetail.name}</span>
-                  <span className="text-slate-500 font-normal">|</span>
-                  <span className="font-mono text-blue-400 font-semibold">{selectedMachineDetail.code}</span>
+                <h3 className="text-base font-bold text-gray-900 leading-tight">
+                  {selectedMachineDetail.code || selectedMachineDetail.name}
                 </h3>
-                <p className="text-[10px] text-slate-300 font-medium mt-0.5">
-                  {selectedMachineDetail.location || `Line ${selectedMachineDetail.lineName}`}
+                <p className="text-xs text-gray-500 font-medium">
+                  {selectedMachineDetail.lineName} {selectedMachineDetail.name && selectedMachineDetail.code ? `• ${selectedMachineDetail.name}` : ''}
                 </p>
               </div>
               <button
                 onClick={() => setSelectedMachineDetail(null)}
-                className="text-gray-400 hover:text-white cursor-pointer ml-2 p-0.5"
+                className="text-gray-400 hover:text-gray-700 cursor-pointer text-lg leading-none p-1 -mr-1 -mt-1"
+                aria-label="Tutup"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-4 space-y-3 text-xs">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                <span className="text-[10px] text-gray-500 font-bold uppercase">Line Produksi</span>
-                <span className="font-bold text-gray-800">{selectedMachineDetail.lineName}</span>
-              </div>
-
-              {/* Status explanation */}
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-3.5 h-3.5 rounded-full inline-block ${getCircleColor(
-                        selectedMachineDetail.jigCondition
-                      )}`}
-                    ></span>
-                    <span className="text-[10px] font-bold text-gray-700">Bulat Atas: Kondisi Jig</span>
-                  </div>
+            {/* 2 Bulatan Besar Indikator (Atas - Bawah) dengan Kontrol Ubah Manual */}
+            <div className="flex flex-col gap-3.5 my-4 p-3.5 bg-gray-50 rounded-xl border border-gray-150">
+              {/* Bulatan Atas: Kondisi Jig */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-3">
                   <span
-                    className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                      selectedMachineDetail.jigCondition === 'OVERDUE'
-                        ? 'bg-rose-100 text-rose-700'
-                        : selectedMachineDetail.jigCondition === 'WARNING'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                    }`}
-                  >
-                    {selectedMachineDetail.jigCondition}
-                  </span>
+                    className={`w-10 h-10 shrink-0 rounded-full shadow-sm transition-transform hover:scale-105 ${getCircleColor(
+                      selectedMachineDetail.jigCondition
+                    )}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">Kondisi Jig</span>
+                      <span
+                        className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
+                          selectedMachineDetail.jigCondition === 'OVERDUE'
+                            ? 'bg-rose-100 text-rose-700'
+                            : selectedMachineDetail.jigCondition === 'WARNING'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {selectedMachineDetail.jigCondition === 'OVERDUE' ? 'Merah' : selectedMachineDetail.jigCondition === 'WARNING' ? 'Kuning' : 'Hijau'}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-gray-400">Bulatan Atas</span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-3.5 h-3.5 rounded-full inline-block ${getCircleColor(
-                        selectedMachineDetail.tpmSchedule
-                      )}`}
-                    ></span>
-                    <span className="text-[10px] font-bold text-gray-700">Bulat Bawah: Jadwal TPM</span>
-                  </div>
-                  <span
-                    className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                      selectedMachineDetail.tpmSchedule === 'OVERDUE'
-                        ? 'bg-rose-100 text-rose-700'
-                        : selectedMachineDetail.tpmSchedule === 'WARNING'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                    }`}
-                  >
-                    {selectedMachineDetail.tpmSchedule}
-                  </span>
-                </div>
-              </div>
-
-              {/* Jig Info Box inside Popup */}
-              <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3">
-                <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider block mb-0.5">
-                  Jig Terkait
-                </span>
-                <p className="text-xs font-bold text-gray-800">
-                  {selectedMachineDetail.designNoReg
-                    ? `${selectedMachineDetail.designNoReg} ${
-                        selectedMachineDetail.designName ? `— ${selectedMachineDetail.designName}` : ''
-                      }`
-                    : 'Mengikuti status line'}
-                </p>
-              </div>
-
-              <div className="space-y-1 text-[11px] text-gray-600">
-                {selectedMachineDetail.description && (
-                  <p>
-                    <strong>Keterangan:</strong> {selectedMachineDetail.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Actions inside modal */}
-              <div className="pt-3 border-t border-gray-150 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleOpenReportFromMachine(selectedMachineDetail)}
-                  className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[15px]">report_problem</span>
-                  <span>Buat Laporan Abnormality</span>
-                </button>
-
-                <div className="flex items-center justify-between pt-1">
-                  {isPic ? (
+                {/* Dot Warna Ubah Manual Kondisi Jig */}
+                {isPic && (
+                  <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-gray-200/50">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleDeleteMachine(selectedMachineDetail.id, selectedMachineDetail.name)
-                      }
-                      className="text-rose-600 hover:text-rose-800 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('jigCondition', 'SAFE')}
+                      className={`w-4 h-4 rounded-full bg-emerald-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.jigCondition === 'SAFE'
+                          ? 'ring-2 ring-emerald-600 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Hijau (Safe)"
+                      aria-label="Set Hijau"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('jigCondition', 'WARNING')}
+                      className={`w-4 h-4 rounded-full bg-amber-400 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.jigCondition === 'WARNING'
+                          ? 'ring-2 ring-amber-500 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Kuning (Warning)"
+                      aria-label="Set Kuning"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('jigCondition', 'OVERDUE')}
+                      className={`w-4 h-4 rounded-full bg-rose-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.jigCondition === 'OVERDUE'
+                          ? 'ring-2 ring-rose-600 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Merah (Overdue / Rusak)"
+                      aria-label="Set Merah"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('jigCondition', 'AUTO')}
+                      className="ml-auto w-4 h-4 rounded-full border border-gray-300 bg-white hover:bg-gray-100 hover:scale-110 transition-transform cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs"
+                      title="Reset ke Otomatis"
+                      aria-label="Reset ke Otomatis"
                     >
-                      <span className="material-symbols-outlined text-xs">delete</span>
-                      Hapus Mesin
+                      <span className="material-symbols-outlined text-[10px]">sync</span>
                     </button>
-                  ) : <div />}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMachineDetail(null)}
-                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-200 cursor-pointer"
-                  >
-                    Tutup
-                  </button>
-                </div>
+                  </div>
+                )}
+
+                {/* Tombol Laporan Khusus Masalah Jig */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenReportForJig(selectedMachineDetail)}
+                  className="mt-1.5 w-full py-1.5 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-800 border border-blue-200/80 rounded-lg text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                  title="Buat Laporan Masalah / Ketidaksesuaian Jig"
+                >
+                  <span className="material-symbols-outlined text-[14px]">report_problem</span>
+                  <span>Buat Laporan Kondisi Jig</span>
+                </button>
               </div>
+
+              {/* Garis pemisah tipis */}
+              <div className="border-t border-gray-200/60" />
+
+              {/* Bulatan Bawah: Jadwal TPM */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`w-10 h-10 shrink-0 rounded-full shadow-sm transition-transform hover:scale-105 ${getCircleColor(
+                      selectedMachineDetail.tpmSchedule
+                    )}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">Jadwal TPM</span>
+                      <span
+                        className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
+                          selectedMachineDetail.tpmSchedule === 'OVERDUE'
+                            ? 'bg-rose-100 text-rose-700'
+                            : selectedMachineDetail.tpmSchedule === 'WARNING'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {selectedMachineDetail.tpmSchedule === 'OVERDUE' ? 'Merah' : selectedMachineDetail.tpmSchedule === 'WARNING' ? 'Kuning' : 'Hijau'}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-gray-400">Bulatan Bawah</span>
+                  </div>
+                </div>
+
+                {/* Dot Warna Ubah Manual Jadwal TPM */}
+                {isPic && (
+                  <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-gray-200/50">
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('tpmSchedule', 'SAFE')}
+                      className={`w-4 h-4 rounded-full bg-emerald-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.tpmSchedule === 'SAFE'
+                          ? 'ring-2 ring-emerald-600 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Hijau (Safe)"
+                      aria-label="Set Hijau"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('tpmSchedule', 'WARNING')}
+                      className={`w-4 h-4 rounded-full bg-amber-400 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.tpmSchedule === 'WARNING'
+                          ? 'ring-2 ring-amber-500 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Kuning (Warning)"
+                      aria-label="Set Kuning"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('tpmSchedule', 'OVERDUE')}
+                      className={`w-4 h-4 rounded-full bg-rose-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
+                        selectedMachineDetail.tpmSchedule === 'OVERDUE'
+                          ? 'ring-2 ring-rose-600 ring-offset-1 scale-105'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title="Set Merah (Overdue)"
+                      aria-label="Set Merah"
+                    />
+                    <button
+                      type="button"
+                      disabled={updatingMachineStatus}
+                      onClick={() => handleManualStatusChange('tpmSchedule', 'AUTO')}
+                      className="ml-auto w-4 h-4 rounded-full border border-gray-300 bg-white hover:bg-gray-100 hover:scale-110 transition-transform cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs"
+                      title="Reset ke Otomatis"
+                      aria-label="Reset ke Otomatis"
+                    >
+                      <span className="material-symbols-outlined text-[10px]">sync</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Tombol Laporan Khusus Jadwal TPM */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenReportForTpm(selectedMachineDetail)}
+                  className="mt-1.5 w-full py-1.5 px-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 border border-amber-200/80 rounded-lg text-[11px] font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                  title="Buat Laporan Jadwal Preventif / TPM"
+                >
+                  <span className="material-symbols-outlined text-[14px]">event_busy</span>
+                  <span>Buat Laporan Jadwal TPM</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Teks Inti Singkat */}
+            <div className="space-y-1.5 text-xs text-gray-600 mb-4 pb-3 border-b border-gray-100">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400 text-[11px]">Jig Reg:</span>
+                <span className="font-semibold text-gray-800 truncate max-w-[170px]">
+                  {selectedMachineDetail.designNoReg || '—'}
+                </span>
+              </div>
+              {selectedMachineDetail.location && (
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-400 text-[11px]">Lokasi:</span>
+                  <span className="font-semibold text-gray-800 truncate max-w-[170px]">
+                    {selectedMachineDetail.location}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex items-center justify-between pt-1">
+              {isPic ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleDeleteMachine(selectedMachineDetail.id, selectedMachineDetail.name)
+                  }
+                  className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-xs">delete</span>
+                  Hapus Mesin
+                </button>
+              ) : <div />}
+              <button
+                type="button"
+                onClick={() => setSelectedMachineDetail(null)}
+                className="px-3 py-1.5 border border-gray-200 hover:bg-gray-100 text-gray-600 hover:text-gray-900 rounded-lg text-xs font-semibold cursor-pointer ml-auto transition-colors"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

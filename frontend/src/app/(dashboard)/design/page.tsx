@@ -4,8 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, fetchDashboardAlerts, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, updateCellPart, renewCellPart, renewDesign, recordUsage, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, downloadDesignPdfFull, fetchDesignPdfBlob } from '@/lib/api/phase3';
-import { updateTpmSchedule } from '@/lib/api/tpm';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, downloadDesignPdfFull, fetchDesignPdfBlob } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 
 interface DocumentInfo {
@@ -20,7 +19,6 @@ interface RevHistoryInfo {
   revStatus: string;
   description: string;
   poNumber: string | null;
-  cost: number;
   leadTime: number | null;
   approvedByName: string | null;
   createdAt: string;
@@ -50,6 +48,7 @@ interface AbnormalityInfo {
 
 interface CellPartInfo {
   id: string;
+  itemNo?: number;
   partNumber: string;
   name: string;
   description: string | null;
@@ -67,9 +66,11 @@ interface CellPartInfo {
   dueDate: string;
   daysRemaining: number;
   lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-  minimumStock: number;
-  actualStock: number;
+  minimumStock?: number;
+  actualStock?: number;
   pdfPageIndex: number | null;
+  material?: string | null;
+  qty?: string | number;
   tpmScheduleStart?: string | null;
   tpmScheduleDeadline?: string | null;
   tpmLifetimeSetAt?: string | null;
@@ -234,15 +235,9 @@ export function DesignPageContent() {
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [loading, setLoading] = useState(true);
 
-  // System warning alerts states
-  const [alerts, setAlerts] = useState<any>({
-    redItems: [],
-    delayedAbnormalities: [],
-    waitingApprovalsCount: 0,
-  });
   const [showNotifications, setShowNotifications] = useState(false);
   const waitingApprovalsCount = approvals.filter((a) => a.status === 'WAITING').length;
-  const hasAlerts = alerts.redItems.length > 0 || alerts.delayedAbnormalities.length > 0 || waitingApprovalsCount > 0;
+  const hasAlerts = waitingApprovalsCount > 0;
 
   // Search & Filter state
   const [search, setSearch] = useState('');
@@ -250,10 +245,8 @@ export function DesignPageContent() {
   const [processFilter, setProcessFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
   const [vendorFilter, setVendorFilter] = useState('All');
-  const [lifecycleFilter, setLifecycleFilter] = useState('All');
   const [revFilter, setRevFilter] = useState('All');
-  const [inventoryFilter, setInventoryFilter] = useState('All');
-  const [abnormalityFilter, setAbnormalityFilter] = useState('All');
+  const [approvalFilter, setApprovalFilter] = useState('All');
 
   // Pagination & Multi-Page Selection States
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -277,8 +270,6 @@ export function DesignPageContent() {
     type: true,
     lifecycleStatus: true,
     revStatus: true,
-    cost: true,
-    stock: true,
   });
 
   // Modal toggles
@@ -299,10 +290,8 @@ export function DesignPageContent() {
   const [cpPartNumber, setCpPartNumber] = useState('');
   const [cpName, setCpName] = useState('');
   const [cpDescription, setCpDescription] = useState('');
-  const [cpLifetimeDays, setCpLifetimeDays] = useState(180);
-  const [cpInstallDate, setCpInstallDate] = useState(new Date().toISOString().split('T')[0]);
-  const [cpMinStock, setCpMinStock] = useState(0);
-  const [cpActStock, setCpActStock] = useState(0);
+  const [cpQty, setCpQty] = useState<string>('1');
+  const [cpMaterial, setCpMaterial] = useState<string>('');
 
   // Lists for dropdown
   const [lines, setLines] = useState<any[]>([]);
@@ -314,60 +303,8 @@ export function DesignPageContent() {
   const [noItem, setNoItem] = useState('');
   const [qty, setQty] = useState('1');
   const [type, setType] = useState<'JF' | 'EQ'>('JF');
-  const [minimumStock, setMinimumStock] = useState<number>(0);
-  const [actualStock, setActualStock] = useState<number>(0);
   const [lineInput, setLineInput] = useState('');
   const [processInput, setProcessInput] = useState('');
-  const [lifetimeDaysInput, setLifetimeDaysInput] = useState(180);
-  const [lifetimeTypeInput, setLifetimeTypeInput] = useState<'DUAL' | 'USAGE' | 'DAYS'>('DUAL');
-  const [maxUsageInput, setMaxUsageInput] = useState<number>(500);
-  const [currentUsageInput, setCurrentUsageInput] = useState<number>(0);
-  const [tpmScheduleStartInput, setTpmScheduleStartInput] = useState('');
-  const [tpmScheduleDeadlineInput, setTpmScheduleDeadlineInput] = useState('');
-
-  // 2-Way Lifetime states for CellPart Modal
-  const [cpLifetimeType, setCpLifetimeType] = useState<'DUAL' | 'USAGE' | 'DAYS'>('DUAL');
-  const [cpMaxUsage, setCpMaxUsage] = useState<number>(500);
-  const [cpCurrentUsage, setCpCurrentUsage] = useState<number>(0);
-
-  // Quick Modal: Log Usage
-  const [showUsageModal, setShowUsageModal] = useState(false);
-  const [usageTarget, setUsageTarget] = useState<{
-    target: 'design' | 'cell-part';
-    id: string;
-    noRegOrPart: string;
-    name: string;
-    currentUsage: number;
-    maxUsage: number;
-  } | null>(null);
-  const [usageAmountInput, setUsageAmountInput] = useState<number>(50);
-  const [usageMode, setUsageMode] = useState<'ADD' | 'SET'>('ADD');
-
-  // TPM Schedule Modal State (Pengganti Konfigurasi Lifetime manual)
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [selectedScheduleTarget, setSelectedScheduleTarget] = useState<{
-    id: string;
-    isCellPart: boolean;
-    noReg: string;
-    name: string;
-    tpmScheduleStart: string;
-    tpmScheduleDeadline: string;
-    lifetimeDays: number;
-    lifetimeType: 'DUAL' | 'USAGE' | 'DAYS';
-    maxUsage: number;
-    currentUsage: number;
-  } | null>(null);
-
-  // Quick Modal: Renew Lifetime
-  const [showRenewModal, setShowRenewModal] = useState(false);
-  const [renewTarget, setRenewTarget] = useState<{
-    target: 'design' | 'cell-part';
-    id: string;
-    noRegOrPart: string;
-    name: string;
-  } | null>(null);
-  const [renewResetDays, setRenewResetDays] = useState(true);
-  const [renewResetUsage, setRenewResetUsage] = useState(true);
 
   // Drawing PDF Extraction & BOM states
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
@@ -384,7 +321,6 @@ export function DesignPageContent() {
   const [revisionNote, setRevisionNote] = useState('');
   const [selectedVendorId, setSelectedVendorId] = useState('');
   const [poNumber, setPoNumber] = useState('');
-  const [cost, setCost] = useState<number>(0);
   const [leadTime, setLeadTime] = useState<number>(1);
 
   const [submitting, setSubmitting] = useState(false);
@@ -393,7 +329,7 @@ export function DesignPageContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [list, vList, meta, alertData] = await Promise.all([
+      const [list, vList, meta] = await Promise.all([
         fetchMasterList().catch((err) => {
           if (err?.status === 401 || err?.status === 403) throw err;
           console.warn('Failed to fetch master list, fallback empty:', err);
@@ -409,13 +345,11 @@ export function DesignPageContent() {
           console.warn('Failed to fetch lines/processes, fallback empty:', err);
           return { lines: [], processes: [] };
         }),
-        fetchDashboardAlerts().catch(() => ({ redItems: [], delayedAbnormalities: [], waitingApprovalsCount: 0 })),
       ]);
       setItems(list || []);
       setVendors(vList || []);
       setLines(meta?.lines || []);
       setProcesses(meta?.processes || []);
-      setAlerts(alertData);
     } catch (e: any) {
       console.error(e);
       if (e.status === 401 || e.status === 403) {
@@ -455,7 +389,6 @@ export function DesignPageContent() {
       (revisionNote !== '' && revisionNote !== 'Initial Release') ||
       selectedVendorId !== '' ||
       poNumber !== '' ||
-      cost !== 0 ||
       leadTime !== 1 ||
       lineInput !== '' ||
       processInput !== ''
@@ -470,7 +403,6 @@ export function DesignPageContent() {
       revisionNote !== '' ||
       selectedVendorId !== '' ||
       poNumber !== '' ||
-      cost !== 0 ||
       leadTime !== 1
     );
   };
@@ -481,8 +413,6 @@ export function DesignPageContent() {
     setNoItem('');
     setQty('1');
     setType('JF');
-    setMinimumStock(0);
-    setActualStock(0);
     setLineInput('');
     setProcessInput('');
     setRevStatus('0');
@@ -492,7 +422,6 @@ export function DesignPageContent() {
     setRevisionNote('Initial Release');
     setSelectedVendorId('');
     setPoNumber('');
-    setCost(0);
     setLeadTime(1);
     setExtractedJig(null);
     setExtractedCellParts([]);
@@ -524,7 +453,6 @@ export function DesignPageContent() {
     setRevisionNote('');
     setSelectedVendorId('');
     setPoNumber('');
-    setCost(0);
     setLeadTime(1);
     setToast(null);
     setShowEditModal(true);
@@ -573,7 +501,6 @@ export function DesignPageContent() {
     setRevisionNote('');
     setSelectedVendorId('');
     setPoNumber('');
-    setCost(0);
     setLeadTime(1);
     router.push('/design');
   };
@@ -592,7 +519,6 @@ export function DesignPageContent() {
         revisionNote: revisionNote || undefined,
         vendorId: selectedVendorId || undefined,
         poNumber: poNumber || undefined,
-        cost: cost ? parseFloat(String(cost)) : undefined,
         leadTime: leadTime ? parseInt(String(leadTime), 10) : undefined,
       });
 
@@ -653,12 +579,6 @@ export function DesignPageContent() {
         lineName,
         processId,
         processName,
-        minimumStock,
-        actualStock,
-        lifetimeDays: lifetimeDaysInput,
-        lifetimeType: lifetimeTypeInput,
-        maxUsage: maxUsageInput,
-        currentUsage: currentUsageInput,
         revStatus,
         designDateNew,
         docLocation2D: docLocation2D || undefined,
@@ -666,7 +586,6 @@ export function DesignPageContent() {
         revisionNote: revisionNote || undefined,
         vendorId: selectedVendorId || undefined,
         poNumber: poNumber || undefined,
-        cost: cost ? parseFloat(String(cost)) : undefined,
         leadTime: leadTime ? parseInt(String(leadTime), 10) : undefined,
         cellParts: cellPartsToCreate.length > 0 ? cellPartsToCreate : undefined,
       });
@@ -694,7 +613,6 @@ export function DesignPageContent() {
         revisionNote: revisionNote || undefined,
         vendorId: selectedVendorId || undefined,
         poNumber: poNumber || undefined,
-        cost: cost ? parseFloat(String(cost)) : undefined,
         leadTime: leadTime ? parseInt(String(leadTime), 10) : undefined,
       });
 
@@ -722,14 +640,9 @@ export function DesignPageContent() {
     setCellPartParentId(designId);
     setCpPartNumber('');
     setCpName('');
+    setCpMaterial('');
+    setCpQty('1');
     setCpDescription('');
-    setCpLifetimeDays(180);
-    setCpLifetimeType('DUAL');
-    setCpMaxUsage(500);
-    setCpCurrentUsage(0);
-    setCpInstallDate(new Date().toISOString().split('T')[0]);
-    setCpMinStock(0);
-    setCpActStock(0);
     setShowCellPartModal(true);
   };
 
@@ -741,143 +654,13 @@ export function DesignPageContent() {
         designId: cellPartParentId,
         partNumber: cpPartNumber,
         name: cpName,
-        description: cpDescription || undefined,
-        lifetimeDays: cpLifetimeDays,
-        lifetimeType: cpLifetimeType,
-        maxUsage: cpMaxUsage,
-        currentUsage: cpCurrentUsage,
-        installDate: cpInstallDate,
-        minimumStock: cpMinStock,
-        actualStock: cpActStock,
+        description: cpMaterial ? `${cpMaterial}${cpDescription ? ` | ${cpDescription}` : ''}` : (cpDescription || undefined),
       });
       setToast({ type: 'success', msg: `CellPart "${cpName}" berhasil ditambahkan!` });
       setShowCellPartModal(false);
       await loadData();
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message || 'Gagal menambah CellPart.' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Quick Usage Logging Handler
-  const handleOpenUsageModal = (
-    target: 'design' | 'cell-part',
-    id: string,
-    noRegOrPart: string,
-    name: string,
-    currentUsage: number = 0,
-    maxUsage: number = 500,
-  ) => {
-    setUsageTarget({ target, id, noRegOrPart, name, currentUsage, maxUsage });
-    setUsageAmountInput(50);
-    setUsageMode('ADD');
-    setShowUsageModal(true);
-  };
-
-  const handleSaveUsage = async () => {
-    if (!usageTarget) return;
-    setSubmitting(true);
-    try {
-      await recordUsage(usageTarget.target, usageTarget.id, usageAmountInput, usageMode);
-      setToast({
-        type: 'success',
-        msg: `Pemakaian "${usageTarget.name}" berhasil dicatat (${usageMode === 'ADD' ? `+${usageAmountInput}` : `set ${usageAmountInput}`}x)!`,
-      });
-      setShowUsageModal(false);
-      setUsageTarget(null);
-      await loadData();
-    } catch (err: any) {
-      setToast({ type: 'error', msg: err.message || 'Gagal mencatat pemakaian.' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Quick Lifetime Renewal Handler
-  const handleOpenRenewModal = (
-    target: 'design' | 'cell-part',
-    id: string,
-    noRegOrPart: string,
-    name: string,
-  ) => {
-    setRenewTarget({ target, id, noRegOrPart, name });
-    setRenewResetDays(true);
-    setRenewResetUsage(true);
-    setShowRenewModal(true);
-  };
-
-  const handleConfirmRenew = async () => {
-    if (!renewTarget) return;
-    setSubmitting(true);
-    try {
-      if (renewTarget.target === 'design') {
-        await renewDesign(renewTarget.id, { resetDays: renewResetDays, resetUsage: renewResetUsage });
-      } else {
-        await renewCellPart(renewTarget.id, { resetDays: renewResetDays, resetUsage: renewResetUsage });
-      }
-      setToast({
-        type: 'success',
-        msg: `Lifetime "${renewTarget.name}" berhasil di-renew!`,
-      });
-      setShowRenewModal(false);
-      setRenewTarget(null);
-      await loadData();
-    } catch (err: any) {
-      setToast({ type: 'error', msg: err.message || 'Gagal me-renew lifetime.' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handlers for Set Schedule TPM
-  const handleOpenScheduleModal = (target: 'design' | 'cell-part', item: any) => {
-    const isCp = target === 'cell-part';
-    const isApproved = isCp
-      ? true
-      : item.documents?.[item.documents.length - 1]?.approvalStatus === 'APPROVED';
-    if (!isApproved) {
-      setToast({ type: 'error', msg: 'Jadwal TPM baru bisa diatur setelah desain di-approve.' });
-      return;
-    }
-    setSelectedScheduleTarget({
-      id: item.id,
-      isCellPart: isCp,
-      noReg: isCp ? item.partNumber : item.noReg,
-      name: isCp ? item.name : item.assyPartName,
-      tpmScheduleStart: item.tpmScheduleStart ? item.tpmScheduleStart.split('T')[0] : '',
-      tpmScheduleDeadline: item.tpmScheduleDeadline ? item.tpmScheduleDeadline.split('T')[0] : '',
-      lifetimeDays: item.lifetimeDays || 180,
-      lifetimeType: item.lifetimeType || 'DUAL',
-      maxUsage: item.maxUsage || 500,
-      currentUsage: item.currentUsage || 0,
-    });
-    setShowScheduleModal(true);
-  };
-
-  const handleSaveTpmSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedScheduleTarget) return;
-    setSubmitting(true);
-    try {
-      await updateTpmSchedule(selectedScheduleTarget.id, {
-        isCellPart: selectedScheduleTarget.isCellPart,
-        tpmScheduleStart: selectedScheduleTarget.tpmScheduleStart || undefined,
-        tpmScheduleDeadline: selectedScheduleTarget.tpmScheduleDeadline || undefined,
-        lifetimeDays: selectedScheduleTarget.lifetimeDays,
-        lifetimeType: selectedScheduleTarget.lifetimeType,
-        maxUsage: selectedScheduleTarget.maxUsage,
-        currentUsage: selectedScheduleTarget.currentUsage,
-      });
-      setToast({
-        type: 'success',
-        msg: `Kalender TPM untuk "${selectedScheduleTarget.name}" berhasil disimpan!`,
-      });
-      setShowScheduleModal(false);
-      setSelectedScheduleTarget(null);
-      await loadData();
-    } catch (err: any) {
-      setToast({ type: 'error', msg: err.message || 'Gagal menyimpan schedule TPM.' });
     } finally {
       setSubmitting(false);
     }
@@ -915,16 +698,17 @@ export function DesignPageContent() {
     const matchesProcess = processFilter === 'All' || item.process === processFilter;
     const matchesType = typeFilter === 'All' || item.type === typeFilter;
     const matchesVendor = vendorFilter === 'All' || item.vendor?.id === vendorFilter;
-    const matchesLifecycle = lifecycleFilter === 'All' || item.lifecycleStatus === lifecycleFilter;
     const matchesRev = revFilter === 'All' || item.revStatus === revFilter;
-    const matchesInv = inventoryFilter === 'All' || item.inventoryStatus === inventoryFilter;
 
-    const matchesAbn =
-      abnormalityFilter === 'All' ||
-      (abnormalityFilter === 'OPEN' && item.abnormalityStatus !== 'RESOLVED') ||
-      (abnormalityFilter === 'CLOSED' && item.abnormalityStatus === 'RESOLVED');
+    const doc = item.documents?.[item.documents.length - 1] || item.documents?.[0];
+    const approvalStatus = doc?.approvalStatus || 'DRAFT';
+    const matchesApproval =
+      approvalFilter === 'All' ||
+      (approvalFilter === 'APPROVED' && approvalStatus === 'APPROVED') ||
+      (approvalFilter === 'WAITING' && approvalStatus === 'WAITING') ||
+      (approvalFilter === 'DRAFT' && approvalStatus !== 'APPROVED' && approvalStatus !== 'WAITING');
 
-    return matchesSearch && matchesLine && matchesProcess && matchesType && matchesVendor && matchesLifecycle && matchesRev && matchesInv && matchesAbn;
+    return matchesSearch && matchesLine && matchesProcess && matchesType && matchesVendor && matchesRev && matchesApproval;
   });
 
   // Reset page when filters change
@@ -936,10 +720,8 @@ export function DesignPageContent() {
     processFilter,
     typeFilter,
     vendorFilter,
-    lifecycleFilter,
     revFilter,
-    inventoryFilter,
-    abnormalityFilter,
+    approvalFilter,
     pageSize,
   ]);
 
@@ -1150,12 +932,6 @@ export function DesignPageContent() {
     if (exportCols.type) columns.push({ header: 'Tipe', key: 'type', width: 14 });
     if (exportCols.lifecycleStatus) columns.push({ header: 'Lifecycle', key: 'lifecycleStatus', width: 18 });
     if (exportCols.revStatus) columns.push({ header: 'Revisi Terakhir', key: 'revStatus', width: 14 });
-    if (exportCols.cost) columns.push({ header: 'Biaya Terakhir (Rp)', key: 'cost', width: 22 });
-    if (exportCols.stock) {
-      columns.push({ header: 'Stok Aktual', key: 'actualStock', width: 14 });
-      columns.push({ header: 'Stok Minimum', key: 'minimumStock', width: 14 });
-      columns.push({ header: 'Status Stok', key: 'stockStatus', width: 14 });
-    }
     sheet.columns = columns;
 
     // ─── Title row ─────────────────────────────────────────────────────────────
@@ -1201,12 +977,6 @@ export function DesignPageContent() {
 
     // ─── Data rows ───────────────────────────────────────────────────────────
     itemsToExport.forEach((item, idx) => {
-      const stockStatus =
-        item.actualStock === 0 ? 'EMPTY'
-          : item.actualStock < item.minimumStock * 0.5 ? 'CRITICAL'
-            : item.actualStock < item.minimumStock ? 'WARNING'
-              : 'AMAN';
-
       const rowData: any = { no: idx + 1 };
       if (exportCols.noReg) rowData.noReg = item.noReg;
       if (exportCols.assyPartName) rowData.assyPartName = item.assyPartName;
@@ -1215,12 +985,6 @@ export function DesignPageContent() {
       if (exportCols.type) rowData.type = item.type === 'JF' ? 'Jig Fixture' : 'Equipment';
       if (exportCols.lifecycleStatus) rowData.lifecycleStatus = item.lifecycleStatus;
       if (exportCols.revStatus) rowData.revStatus = `Rev ${item.revStatus}`;
-      if (exportCols.cost) rowData.cost = item.revisionHistories[0]?.cost || 0;
-      if (exportCols.stock) {
-        rowData.actualStock = item.actualStock;
-        rowData.minimumStock = item.minimumStock;
-        rowData.stockStatus = stockStatus;
-      }
 
       const row = sheet.addRow(rowData);
       const isEven = idx % 2 === 0;
@@ -1236,29 +1000,6 @@ export function DesignPageContent() {
           left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
         };
-
-        if (exportCols.stock) {
-          const stockColIdx = columns.findIndex(c => c.key === 'stockStatus') + 1;
-          if (colNumber === stockColIdx) {
-            const val = cell.value as string;
-            const bgMap: Record<string, string> = {
-              EMPTY: 'FFFEF2F2', CRITICAL: 'FFFEE2E2', WARNING: 'FFFEFCE8', AMAN: 'FFF0FDF4'
-            };
-            const fgMap: Record<string, string> = {
-              EMPTY: 'FF991B1B', CRITICAL: 'FFDC2626', WARNING: 'FFCA8A04', AMAN: 'FF16A34A'
-            };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgMap[val] || rowBg } };
-            cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: fgMap[val] || 'FF000000' } };
-            cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          }
-        }
-
-        if (exportCols.cost) {
-          const costColIdx = columns.findIndex(c => c.key === 'cost') + 1;
-          if (colNumber === costColIdx) {
-            cell.numFmt = '#,##0';
-          }
-        }
       });
       row.height = 18;
     });
@@ -1284,8 +1025,8 @@ export function DesignPageContent() {
       <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
         <div className="flex items-center gap-4 flex-1">
           <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
-            <span className="material-symbols-outlined text-blue-600 text-lg">database</span>
-            Master Data
+            <span className="material-symbols-outlined text-blue-600 text-lg">draft</span>
+            Master Drawing
           </h2>
           {/* Search bar inside header */}
           <div className="relative flex items-center w-80">
@@ -1336,12 +1077,12 @@ export function DesignPageContent() {
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="bg-red-600 hover:bg-red-700 text-white w-8 h-8 rounded-full flex items-center justify-center relative cursor-pointer shadow-sm transition-all shrink-0 animate-vibrate"
+                className="bg-blue-600 hover:bg-blue-700 text-white w-8 h-8 rounded-full flex items-center justify-center relative cursor-pointer shadow-sm transition-all shrink-0 animate-vibrate"
                 title="Pemberitahuan Sistem"
               >
                 <span className="material-symbols-outlined text-[16px]">notifications</span>
                 <span className="absolute -top-1 -right-1 bg-yellow-400 text-yellow-950 text-[7px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">
-                  {alerts.redItems.length + alerts.delayedAbnormalities.length + (waitingApprovalsCount > 0 ? 1 : 0)}
+                  {waitingApprovalsCount}
                 </span>
               </button>
 
@@ -1356,43 +1097,6 @@ export function DesignPageContent() {
                   </div>
 
                   <div className="space-y-1.5 max-h-48 overflow-y-auto no-scrollbar">
-                    {/* Red Items */}
-                    {alerts.redItems.length > 0 && (
-                      <Link
-                        href="/inventory"
-                        onClick={() => setShowNotifications(false)}
-                        className="block p-1.5 rounded bg-red-600 hover:bg-red-700 transition-colors text-[9px] text-white"
-                      >
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                          </span>
-                          <span className="font-bold">Kritis: Stok 0 Unit</span>
-                        </div>
-                        <p className="text-[8.5px] text-red-100 leading-tight">
-                          {alerts.redItems.length} Jig habis stok.
-                        </p>
-                      </Link>
-                    )}
-
-                    {/* Delayed Abnormalities */}
-                    {alerts.delayedAbnormalities.length > 0 && (
-                      <Link
-                        href="/update-abnormality"
-                        onClick={() => setShowNotifications(false)}
-                        className="block p-1.5 rounded bg-amber-50 hover:bg-amber-100/50 transition-colors text-[9px]"
-                      >
-                        <div className="flex items-center gap-1 mb-0.5">
-                          <span className="material-symbols-outlined text-[10px] text-amber-600 font-bold">report_problem</span>
-                          <span className="font-bold text-amber-700">Anomali &gt; 2 Hari</span>
-                        </div>
-                        <p className="text-[8.5px] text-amber-650 leading-tight">
-                          {alerts.delayedAbnormalities.length} anomali belum ditindak.
-                        </p>
-                      </Link>
-                    )}
-
                     {/* Approvals */}
                     {waitingApprovalsCount > 0 && (
                       <Link
@@ -1415,7 +1119,7 @@ export function DesignPageContent() {
       </header>
 
       {/* Grid of filters */}
-      <div className="grid grid-cols-8 gap-2 bg-gray-50 p-2.5 rounded-xl mb-3 border border-gray-150 text-[9px] font-semibold text-gray-600">
+      <div className="grid grid-cols-6 gap-2 bg-gray-50 p-2.5 rounded-xl mb-3 border border-gray-150 text-[9px] font-semibold text-gray-600">
         {/* Production Line */}
         <div>
           <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Line</label>
@@ -1459,19 +1163,6 @@ export function DesignPageContent() {
           </select>
         </div>
 
-        {/* Lifecycle Status */}
-        <div>
-          <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Lifecycle</label>
-          <select value={lifecycleFilter} onChange={(e) => setLifecycleFilter(e.target.value)} className="w-full border border-gray-350 bg-white rounded p-1 text-[9px] outline-none">
-            <option value="All">All Lifecycle</option>
-            <option value="ACTIVE">Active</option>
-            <option value="UNDER_REPAIR">Under Repair</option>
-            <option value="UNDER_IMPROVEMENT">Under Improvement</option>
-            <option value="OBSOLETE">Obsolete</option>
-            <option value="SCRAP">Scrap</option>
-          </select>
-        </div>
-
         {/* Revision Status */}
         <div>
           <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Revision</label>
@@ -1483,24 +1174,14 @@ export function DesignPageContent() {
           </select>
         </div>
 
-        {/* Inventory Indicator Status */}
+        {/* Approval Status Filter */}
         <div>
-          <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Stock Status</label>
-          <select value={inventoryFilter} onChange={(e) => setInventoryFilter(e.target.value)} className="w-full border border-gray-350 bg-white rounded p-1 text-[9px] outline-none">
-            <option value="All">All Stock Status</option>
-            <option value="GREEN">Green (Aman)</option>
-            <option value="YELLOW">Yellow (Warning)</option>
-            <option value="RED">Red (Stok 0)</option>
-          </select>
-        </div>
-
-        {/* Abnormality Status */}
-        <div>
-          <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Abnormality</label>
-          <select value={abnormalityFilter} onChange={(e) => setAbnormalityFilter(e.target.value)} className="w-full border border-gray-350 bg-white rounded p-1 text-[9px] outline-none">
-            <option value="All">All Abnormality</option>
-            <option value="OPEN">Open (Problematic)</option>
-            <option value="CLOSED">Closed (Selesai)</option>
+          <label className="block text-[8px] text-gray-400 mb-0.5 uppercase">Status Approval</label>
+          <select value={approvalFilter} onChange={(e) => setApprovalFilter(e.target.value)} className="w-full border border-gray-350 bg-white rounded p-1 text-[9px] outline-none">
+            <option value="All">All Status</option>
+            <option value="APPROVED">Approved</option>
+            <option value="WAITING">Waiting</option>
+            <option value="DRAFT">Draft</option>
           </select>
         </div>
       </div>
@@ -1535,15 +1216,9 @@ export function DesignPageContent() {
                 <th className="px-2 py-1 w-[85px]">Line</th>
                 <th className="px-2 py-1 w-[85px]">OP (Process)</th>
                 <th className="px-1 py-1 text-center w-[45px]">Type</th>
-                <th className="px-1 py-1 text-center w-[58px]">
-                  <div className="grid grid-cols-2 gap-x-1.5 gap-y-0.5 text-[8px] font-bold text-gray-500 leading-tight">
-                    <span className="text-center" title="Approval Status">Appr</span>
-                    <span className="text-center" title="Lifecycle Status">Life</span>
-                    <span className="text-center" title="Stock Status">Stok</span>
-                    <span className="text-center" title="Abnormality Status">Abn</span>
-                  </div>
+                <th className="px-1 py-1 text-center w-[75px]">
+                  Approval
                 </th>
-                <th className="px-1.5 py-1 text-center w-[120px]">Jadwal TPM</th>
                 <th className="px-1.5 py-1 text-center w-[65px]">Aksi</th>
               </tr>
             </thead>
@@ -1551,8 +1226,6 @@ export function DesignPageContent() {
               {paginatedItems.map((item, index) => {
                 const globalIndex = pageSize === 'All' ? index : (validCurrentPage - 1) * (pageSize as number) + index;
                 const isSelected = selectedIds.has(item.id);
-                const isRed = item.actualStock < item.minimumStock * 0.5;
-                const isYellow = item.actualStock < item.minimumStock && item.actualStock >= item.minimumStock * 0.5;
                 const isExpanded = expandedRows.has(item.id);
                 const cellParts = [...(item.cellParts || [])].sort((a, b) => {
                   const pageA = a.pdfPageIndex ?? 999999;
@@ -1630,126 +1303,20 @@ export function DesignPageContent() {
                       <td className="px-1 py-0.5 font-bold text-[9px] text-gray-500 text-center truncate">
                         {item.type}
                       </td>
-                      {/* 2x2 Grid Status: Approval, Lifecycle, Stock, Abnormality (Full Fill Width & Height) */}
-                      <td className="p-0 text-center relative h-full min-h-full" onClick={(e) => e.stopPropagation()}>
-                        <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 w-full h-full divide-x divide-y divide-black/10">
-                          {/* 1. Approval Status (Top-Left) */}
-                          <div
-                            className={`w-full h-full transition-opacity hover:opacity-80 cursor-help ${isApproved
-                                ? 'bg-emerald-500'
-                                : isWaiting
-                                  ? 'bg-amber-500'
-                                  : 'bg-gray-300'
-                              }`}
-                            title={`Approval: ${statusLabel}`}
-                          />
-
-                          {/* 2. Lifecycle Status (Top-Right) */}
-                          <div
-                            className={`w-full h-full transition-opacity hover:opacity-80 cursor-help ${item.lifecycleStatus === 'UNDER_REPAIR'
-                                ? 'bg-orange-500'
-                                : item.lifecycleStatus === 'UNDER_IMPROVEMENT'
-                                  ? 'bg-blue-500'
-                                  : item.lifecycleStatus === 'OBSOLETE'
-                                    ? 'bg-gray-400'
-                                    : item.lifecycleStatus === 'SCRAP'
-                                      ? 'bg-rose-500'
-                                      : 'bg-emerald-500'
-                              }`}
-                            title={`Lifecycle: ${item.lifecycleStatus || 'ACTIVE'}`}
-                          />
-
-                          {/* 3. Stock Status (Bottom-Left) */}
-                          <div
-                            className={`w-full h-full transition-opacity hover:opacity-80 cursor-help ${isRed
-                                ? 'bg-rose-500'
-                                : isYellow
-                                  ? 'bg-amber-400'
-                                  : 'bg-emerald-500'
-                              }`}
-                            title={`Stock: ${isRed ? 'Critical' : isYellow ? 'Warning' : 'Aman'} (${item.actualStock}/${item.minimumStock})`}
-                          />
-
-                          {/* 4. Abnormality Status (Bottom-Right) */}
-                          <div
-                            className={`w-full h-full transition-opacity hover:opacity-80 cursor-help ${item.abnormalityStatus === 'RESOLVED' || !item.abnormalityStatus
-                                ? 'bg-emerald-500'
-                                : item.abnormalityStatus === 'IN_PROGRESS'
-                                  ? 'bg-amber-400'
-                                  : 'bg-rose-500'
-                              }`}
-                            title={`Abnormality: ${item.abnormalityStatus === 'RESOLVED' || !item.abnormalityStatus
-                                ? 'Aman / Nihil'
-                                : item.abnormalityStatus === 'IN_PROGRESS'
-                                  ? 'Monitoring'
-                                  : 'Ada Anomali'
-                              }`}
-                          />
-                        </div>
-                      </td>
-
-                      {/* Jadwal TPM (By Kalender Tanggal) - Full Fill */}
-                      <td
-                        className={`p-0 text-center relative h-full min-h-full ${!isApproved
-                          ? 'bg-gray-100'
-                          : item.tpmScheduleDeadline
-                            ? (() => {
-                              const dline = new Date(item.tpmScheduleDeadline);
-                              const now = new Date();
-                              now.setHours(0, 0, 0, 0);
-                              const diffDays = Math.ceil((dline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                              return diffDays < 0
-                                ? 'bg-rose-600'
-                                : diffDays <= 7
-                                  ? 'bg-amber-500'
-                                  : 'bg-blue-600';
-                            })()
-                            : 'bg-gray-100'
+                      {/* Approval Status Only */}
+                      <td className="px-1.5 py-0.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <span
+                          className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[8.5px] font-bold tracking-tight shadow-3xs cursor-help ${
+                            isApproved
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : isWaiting
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : 'bg-gray-100 text-gray-700 border border-gray-300'
                           }`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="absolute inset-0 flex items-center justify-center gap-1.5 px-1 whitespace-nowrap">
-                          {!isApproved ? (
-                            <span
-                              className="text-[8.5px] text-gray-400 italic"
-                              title="Jadwal TPM baru bisa diatur setelah desain di-approve"
-                            >
-                              Menunggu approval
-                            </span>
-                          ) : item.tpmScheduleDeadline ? (
-                            (() => {
-                              const dline = new Date(item.tpmScheduleDeadline);
-                              const now = new Date();
-                              now.setHours(0, 0, 0, 0);
-                              const diffDays = Math.ceil((dline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                              const isOverdue = diffDays < 0;
-                              const isWarning = diffDays >= 0 && diffDays <= 7;
-
-                              return (
-                                <span
-                                  className="text-[9px] font-bold text-white tracking-wide truncate"
-                                  title={`Deadline TPM: ${dline.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}${item.tpmScheduleStart ? ` (Mulai: ${new Date(item.tpmScheduleStart).toLocaleDateString('id-ID')})` : ''} — ${isOverdue ? `Lewat ${Math.abs(diffDays)} hari!` : isWarning ? `Tersisa ${diffDays} hari` : `${diffDays} hari lagi`}`}
-                                >
-                                  {dline.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                </span>
-                              );
-                            })()
-                          ) : (
-                            <span className="text-[8.5px] text-gray-400 italic">Belum diatur</span>
-                          )}
-
-                          {/* Quick Action Button for Set Kalender TPM */}
-                          {isPic && isApproved && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenScheduleModal('design', item)}
-                              className="text-[9px] font-extrabold text-gray-900 bg-white hover:bg-white/95 px-2 py-0.5 rounded shadow-sm hover:shadow transition-all shrink-0 leading-none cursor-pointer active:scale-95"
-                              title="Atur Kalender Jadwal TPM"
-                            >
-                              Set
-                            </button>
-                          )}
-                        </div>
+                          title={`Approval: ${statusLabel}`}
+                        >
+                          {isApproved ? 'Approved' : isWaiting ? 'Waiting' : 'Draft'}
+                        </span>
                       </td>
 
                       <td className="px-1 py-0.5 text-center truncate" onClick={(e) => e.stopPropagation()}>
@@ -1826,17 +1393,14 @@ export function DesignPageContent() {
                                     <th className="px-3 py-1.5 text-left">Part Number</th>
                                     <th className="px-2 py-1.5 text-left">Nama</th>
                                     <th className="px-2 py-1.5 text-center">Hal Drawing</th>
-                                    <th className="px-2 py-1.5 text-center">Lifetime</th>
-                                    <th className="px-2 py-1.5 text-center">Due Date</th>
-                                    <th className="px-2 py-1.5 text-center">Stock</th>
-                                    <th className="px-2 py-1.5 text-center w-20">Aksi</th>
+                                    <th className="px-2 py-1.5 text-center">Qty</th>
+                                    <th className="px-2 py-1.5 text-left">Material / Deskripsi</th>
+                                    <th className="px-2 py-1.5 text-center w-16">Aksi</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {cellParts.map((cp) => {
                                     const isCpSelected = selectedCpIds.has(cp.id);
-                                    const cpStockRed = cp.actualStock === 0;
-                                    const cpStockYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
                                     return (
                                       <tr key={cp.id} className={`border-b border-gray-100 hover:bg-gray-50/50 ${isCpSelected ? 'bg-blue-50/60' : ''}`}>
                                         <td className="px-2 py-1.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1881,42 +1445,11 @@ export function DesignPageContent() {
                                             <span className="text-[8px] text-gray-400 italic">Standar</span>
                                           )}
                                         </td>
-                                        <td className="px-2 py-1.5 text-center">
-                                          <span
-                                            className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full ${cp.lifetimeStatus === 'OVERDUE'
-                                              ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                                              : cp.lifetimeStatus === 'WARNING'
-                                                ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                              }`}
-                                            title={
-                                              cp.lifetimeStatus === 'OVERDUE'
-                                                ? `AUS / OVERDUE! (${cp.currentUsage ?? 0}/${cp.maxUsage ?? 500}x | ${cp.daysRemaining ?? 0}d)`
-                                                : cp.lifetimeStatus === 'WARNING'
-                                                  ? `PERINGATAN MENDEKATI AUS (${cp.currentUsage ?? 0}/${cp.maxUsage ?? 500}x | ${cp.daysRemaining ?? 0}d)`
-                                                  : `LIFETIME AMAN (${cp.currentUsage ?? 0}/${cp.maxUsage ?? 500}x | ${cp.daysRemaining ?? 0}d)`
-                                            }
-                                          >
-                                            <span className="material-symbols-outlined text-[8px]">
-                                              {cp.lifetimeStatus === 'OVERDUE' ? 'error' : cp.lifetimeStatus === 'WARNING' ? 'warning' : 'check_circle'}
-                                            </span>
-                                            <span>
-                                              {cp.lifetimeType === 'DAYS'
-                                                ? `${cp.daysRemaining}d`
-                                                : cp.lifetimeType === 'USAGE'
-                                                  ? `${cp.currentUsage ?? 0}/${cp.maxUsage ?? 500}x`
-                                                  : `${cp.currentUsage ?? 0}/${cp.maxUsage ?? 500}x · ${cp.daysRemaining}d`}
-                                            </span>
-                                          </span>
+                                        <td className="px-2 py-1.5 text-center font-mono font-medium text-gray-700">
+                                          {cp.qty || '1'}
                                         </td>
-                                        <td className="px-2 py-1.5 text-center text-gray-500 text-[9px]">
-                                          {new Date(cp.dueDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-center">
-                                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${cpStockRed ? 'bg-red-100 text-red-700' : cpStockYellow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                                            }`}>
-                                            {cp.actualStock}/{cp.minimumStock}
-                                          </span>
+                                        <td className="px-2 py-1.5 text-gray-600 text-[9px] truncate max-w-[140px]" title={cp.material || cp.description || '-'}>
+                                          {cp.material || cp.description || '—'}
                                         </td>
                                         <td className="px-2 py-1.5 text-center">
                                           <div className="flex items-center justify-center gap-1">
@@ -1928,32 +1461,14 @@ export function DesignPageContent() {
                                               <span className="material-symbols-outlined text-[13px]">visibility</span>
                                             </Link>
                                             {isPic && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenUsageModal('cell-part', cp.id, cp.partNumber, cp.name, cp.currentUsage ?? 0, cp.maxUsage ?? 500)}
-                                                  className="text-blue-600 hover:text-blue-800 transition-colors cursor-pointer p-0.5 rounded hover:bg-blue-50"
-                                                  title="Catat Pemakaian CellPart (+X)"
-                                                >
-                                                  <span className="material-symbols-outlined text-[12px]">speed</span>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenRenewModal('cell-part', cp.id, cp.partNumber, cp.name)}
-                                                  className="text-amber-600 hover:text-amber-800 transition-colors cursor-pointer p-0.5 rounded hover:bg-amber-50"
-                                                  title="Renew Lifetime CellPart"
-                                                >
-                                                  <span className="material-symbols-outlined text-[12px]">autorenew</span>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleDeleteCellPart(cp.id, cp.name)}
-                                                  className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-0.5 rounded hover:bg-red-50"
-                                                  title="Hapus CellPart"
-                                                >
-                                                  <span className="material-symbols-outlined text-[12px]">delete</span>
-                                                </button>
-                                              </>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteCellPart(cp.id, cp.name)}
+                                                className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-0.5 rounded hover:bg-red-50"
+                                                title="Hapus CellPart"
+                                              >
+                                                <span className="material-symbols-outlined text-[12px]">delete</span>
+                                              </button>
                                             )}
                                           </div>
                                         </td>
@@ -2176,20 +1691,27 @@ export function DesignPageContent() {
 
       {/* CREATE DESIGN MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
-          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-3 sm:p-4 z-[90]">
+          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-xl max-h-[88vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gray-50">
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
               <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-green-600 text-sm">add_box</span>
                 Tambah Desain Baru
               </h3>
-              <button onClick={handleCloseCreateModal} className="text-gray-400 hover:text-gray-600 font-bold text-sm">✕</button>
+              <button
+                type="button"
+                onClick={handleCloseCreateModal}
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
             {/* Form Body */}
-            <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
-              <div className="grid grid-cols-2 gap-3.5">
+            <form onSubmit={handleCreateSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
+                <div className="grid grid-cols-2 gap-3.5">
 
 
                 {/* Assembly Part Name */}
@@ -2277,38 +1799,7 @@ export function DesignPageContent() {
                   />
                 </div>
 
-                {/* Stock levels */}
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Minimum *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-green-500"
-                    value={minimumStock}
-                    onChange={(e) => setMinimumStock(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Aktual *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-green-500"
-                    value={actualStock}
-                    onChange={(e) => setActualStock(parseInt(e.target.value) || 0)}
-                  />
-                </div>
 
-                {/* Info: Jadwal TPM diatur setelah approval */}
-                <div className="col-span-2 flex items-start gap-2 bg-blue-50/40 border border-blue-200/80 rounded-xl px-3 py-2">
-                  <span className="material-symbols-outlined text-[14px] text-[#0063ff] mt-px">info</span>
-                  <p className="text-[10px] text-blue-900 leading-snug">
-                    Jadwal TPM dapat diatur setelah desain ini <span className="font-semibold">di-approve</span>.
-                    Desain baru hanya masuk ke halaman TPM setelah approval selesai.
-                  </p>
-                </div>
 
                 {/* 2D PDF & 3D Model Upload Side by Side */}
                 <div className="col-span-2 grid grid-cols-2 gap-3">
@@ -2643,19 +2134,6 @@ export function DesignPageContent() {
                     />
                   </div>
                 </div>
-
-                {/* Cost */}
-                <div className="col-span-2">
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Biaya Pembuatan (Cost IDR)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Contoh: 15000000"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 outline-none text-gray-700 font-bold"
-                    value={cost}
-                    onChange={(e) => setCost(parseFloat(e.target.value) || 0)}
-                  />
-                </div>
               </div>
 
               {/* Initial release note */}
@@ -2670,35 +2148,36 @@ export function DesignPageContent() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 outline-none resize-none text-gray-700"
                 />
               </div>
+            </div>
 
-              {/* Footer Actions */}
-              <div className="flex gap-2 border-t border-gray-150 pt-4 pb-2">
-                <button
-                  type="button"
-                  onClick={handleCloseCreateModal}
-                  className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  {submitting ? (
-                    <span className="material-symbols-outlined animate-spin text-sm">sync</span>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-sm">check</span>
-                      <span>Buat Desain Baru</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
+            {/* Footer Actions (Sticky at bottom, never cut off) */}
+            <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCloseCreateModal}
+                className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex-1 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+              >
+                {submitting ? (
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">check</span>
+                    <span>Buat Desain Baru</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </div>
+    )}
 
 
       {/* DELETE CONFIRMATION MODAL */}
@@ -2886,19 +2365,6 @@ export function DesignPageContent() {
                     />
                   </div>
                 </div>
-
-                {/* Cost */}
-                <div className="col-span-2">
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Biaya Pembuatan (Cost IDR)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Contoh: 15000000"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#0063ff] outline-none text-gray-700 font-bold"
-                    value={cost}
-                    onChange={(e) => setCost(parseFloat(e.target.value) || 0)}
-                  />
-                </div>
               </div>
 
               {/* Change Reason */}
@@ -3055,24 +2521,6 @@ export function DesignPageContent() {
                   onChange={(e) => setExportCols({ ...exportCols, revStatus: e.target.checked })}
                 />
                 <span>Revision Status</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={exportCols.cost}
-                  onChange={(e) => setExportCols({ ...exportCols, cost: e.target.checked })}
-                />
-                <span>Vendor Cost (Biaya)</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 col-span-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={exportCols.stock}
-                  onChange={(e) => setExportCols({ ...exportCols, stock: e.target.checked })}
-                />
-                <span>Stock Levels & Status (Min/Act)</span>
               </label>
             </div>
 
@@ -3332,19 +2780,6 @@ export function DesignPageContent() {
                       />
                     </div>
 
-                    {/* Cost / Biaya */}
-                    <div>
-                      <label className="block text-[9px] font-bold text-gray-400 uppercase mb-1">Estimasi Biaya (Rp)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Rp..."
-                        className="w-full border border-gray-250 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-705 font-bold"
-                        value={cost || ''}
-                        onChange={(e) => setCost(parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-
                     {/* Lead Time */}
                     <div>
                       <label className="block text-[9px] font-bold text-gray-400 uppercase mb-1">Lead Time (Hari)</label>
@@ -3412,12 +2847,18 @@ export function DesignPageContent() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
           <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
               <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-blue-600 text-sm">account_tree</span>
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">account_tree</span>
                 Tambah CellPart
               </h3>
-              <button onClick={() => setShowCellPartModal(false)} className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer">✕</button>
+              <button
+                type="button"
+                onClick={() => setShowCellPartModal(false)}
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
             {/* Form Body */}
@@ -3448,61 +2889,39 @@ export function DesignPageContent() {
                     placeholder="Contoh: Pin Locator"
                   />
                 </div>
-
-                {/* TPM Schedule Information Note */}
-                <div className="col-span-2 bg-blue-50/50 border border-blue-200/80 rounded-xl p-2.5 flex items-center justify-between text-[9px] text-blue-900">
-                  <div className="flex items-center gap-1.5 font-medium">
-                    <span className="material-symbols-outlined text-sm text-[#0063ff]">calendar_month</span>
-                    <span>Jadwal & Target Servis TPM CellPart dapat diatur melalui tombol <strong>Set Schedule</strong>.</span>
-                  </div>
-                  <span className="text-[8px] font-bold bg-white text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
-                    Modul TPM
-                  </span>
-                </div>
-
-                {/* Install Date */}
-                <div className="col-span-2">
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tanggal Install / Pasang *</label>
+                {/* Material */}
+                <div>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Material</label>
                   <input
-                    type="date"
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white outline-none text-gray-700 focus:ring-1 focus:ring-blue-500"
-                    value={cpInstallDate}
-                    onChange={(e) => setCpInstallDate(e.target.value)}
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
+                    value={cpMaterial}
+                    onChange={(e) => setCpMaterial(e.target.value)}
+                    placeholder="Contoh: S45C / SS400"
                   />
                 </div>
 
-                {/* Stock */}
+                {/* Qty */}
                 <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Minimum</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Jumlah (Qty)</label>
                   <input
-                    type="number"
-                    min="0"
+                    type="text"
                     className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
-                    value={cpMinStock}
-                    onChange={(e) => setCpMinStock(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Stok Aktual</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
-                    value={cpActStock}
-                    onChange={(e) => setCpActStock(parseInt(e.target.value) || 0)}
+                    value={cpQty}
+                    onChange={(e) => setCpQty(e.target.value)}
+                    placeholder="Contoh: 1"
                   />
                 </div>
 
                 {/* Description */}
                 <div className="col-span-2">
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Deskripsi (opsional)</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Deskripsi / Catatan (opsional)</label>
                   <textarea
                     className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500 resize-none"
                     rows={2}
                     value={cpDescription}
                     onChange={(e) => setCpDescription(e.target.value)}
-                    placeholder="Keterangan tambahan..."
+                    placeholder="Keterangan dimensi atau toleransi..."
                   />
                 </div>
               </div>
@@ -3536,429 +2955,6 @@ export function DesignPageContent() {
         </div>
       )}
 
-      {/* QUICK MODAL: CATAT PEMAKAIAN (LOG USAGE) */}
-      {showUsageModal && usageTarget && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
-          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">speed</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Catat Pemakaian (Usage Counter)</h3>
-                  <p className="text-[9px] text-gray-500">Log siklus kerja / stroke count harian atau batch</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUsageModal(false);
-                  setUsageTarget(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Target Card & Progress */}
-            <div className="p-4 space-y-4">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8.5px] font-bold text-gray-500 uppercase">
-                    {usageTarget.target === 'design' ? 'Jig & Fixture (Induk)' : 'CellPart (Komponen)'}
-                  </span>
-                  <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                    {usageTarget.noRegOrPart}
-                  </span>
-                </div>
-                <div className="font-bold text-xs text-gray-900 truncate" title={usageTarget.name}>
-                  {usageTarget.name}
-                </div>
-
-                {/* Current Counter Status */}
-                <div className="pt-1">
-                  <div className="flex justify-between items-center text-[9px] font-semibold text-gray-600 mb-1">
-                    <span>Counter Saat Ini:</span>
-                    <span className="font-mono font-bold text-gray-900">
-                      {usageTarget.currentUsage} / {usageTarget.maxUsage}x
-                      <span className="text-gray-500 font-normal ml-1">
-                        ({Math.round(((usageTarget.currentUsage || 0) / (usageTarget.maxUsage || 500)) * 100)}%)
-                      </span>
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all ${usageTarget.currentUsage >= usageTarget.maxUsage
-                        ? 'bg-rose-500'
-                        : usageTarget.currentUsage >= usageTarget.maxUsage * 0.85
-                          ? 'bg-amber-500'
-                          : 'bg-blue-600'
-                        }`}
-                      style={{
-                        width: `${Math.min(100, Math.round(((usageTarget.currentUsage || 0) / (usageTarget.maxUsage || 500)) * 100))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Mode Toggle: ADD (+X) vs SET (=X) */}
-              <div>
-                <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1.5">
-                  Metode Input Counter
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setUsageMode('ADD')}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${usageMode === 'ADD'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                      : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-50'
-                      }`}
-                  >
-                    <span className="material-symbols-outlined text-sm">add_circle</span>
-                    <span>Tambah Pemakaian (+X)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUsageMode('SET');
-                      setUsageAmountInput(usageTarget.currentUsage);
-                    }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${usageMode === 'SET'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                      : 'bg-white text-gray-600 border-gray-250 hover:bg-gray-50'
-                      }`}
-                  >
-                    <span className="material-symbols-outlined text-sm">tune</span>
-                    <span>Set Langsung Counter (=X)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick Preset Buttons (if ADD mode) */}
-              {usageMode === 'ADD' && (
-                <div>
-                  <label className="block text-[8.5px] font-bold text-gray-400 uppercase mb-1">
-                    Preset Cepat
-                  </label>
-                  <div className="flex gap-1.5">
-                    {[10, 25, 50, 100, 200].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setUsageAmountInput(preset)}
-                        className={`flex-1 py-1 text-[10px] font-bold rounded-md border transition-all cursor-pointer ${usageAmountInput === preset
-                          ? 'bg-blue-50 border-blue-400 text-blue-700'
-                          : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                          }`}
-                      >
-                        +{preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Input Value */}
-              <div>
-                <label className="block text-[9px] font-bold text-gray-600 uppercase mb-1">
-                  {usageMode === 'ADD' ? 'Jumlah Pemakaian yang Ditambahkan (siklus) *' : 'Nilai Total Counter Pemakaian (siklus) *'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-blue-500"
-                    value={usageAmountInput}
-                    onChange={(e) => setUsageAmountInput(parseInt(e.target.value) || 0)}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">kali / siklus</span>
-                </div>
-              </div>
-
-              {/* Simulation Result Preview */}
-              {(() => {
-                const simulatedNew =
-                  usageMode === 'ADD'
-                    ? (usageTarget.currentUsage || 0) + (usageAmountInput || 0)
-                    : usageAmountInput || 0;
-                const max = usageTarget.maxUsage || 500;
-                const isOverdue = simulatedNew >= max;
-                const isWarning = !isOverdue && (simulatedNew >= max * 0.85 || max - simulatedNew <= 50);
-
-                return (
-                  <div
-                    className={`p-2.5 rounded-xl border text-[9.5px] flex items-center justify-between ${isOverdue
-                      ? 'bg-rose-50 border-rose-200 text-rose-800'
-                      : isWarning
-                        ? 'bg-amber-50 border-amber-200 text-amber-800'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm">
-                        {isOverdue ? 'error' : isWarning ? 'warning' : 'check_circle'}
-                      </span>
-                      <span>
-                        Hasil simulasi:{' '}
-                        <strong>
-                          {simulatedNew} / {max}x
-                        </strong>
-                      </span>
-                    </div>
-                    <span className="font-bold uppercase text-[8.5px] px-1.5 py-0.5 rounded-full bg-white/80 border">
-                      {isOverdue ? 'Aus / Overdue' : isWarning ? 'Mendekati Aus' : 'Aman'}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUsageModal(false);
-                    setUsageTarget(null);
-                  }}
-                  className="flex-1 py-2 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting || usageAmountInput < 0}
-                  onClick={handleSaveUsage}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <>
-                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
-                      Menyimpan...
-                    </>
-                  ) : (
-                    'Simpan Pemakaian'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QUICK MODAL: RENEW LIFETIME (RESET OPTIONS) */}
-      {showRenewModal && renewTarget && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
-          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">autorenew</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Renew Lifetime</h3>
-                  <p className="text-[9px] text-gray-500">Reset parameter keausan setelah rekondisi atau ganti part</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRenewModal(false);
-                  setRenewTarget(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Target Card & Options */}
-            <div className="p-4 space-y-4">
-              <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[8.5px] font-bold text-gray-500 uppercase">
-                    {renewTarget.target === 'design' ? 'Jig & Fixture (Induk)' : 'CellPart (Komponen)'}
-                  </span>
-                  <span className="font-mono text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                    {renewTarget.noRegOrPart}
-                  </span>
-                </div>
-                <div className="font-bold text-xs text-gray-900 truncate" title={renewTarget.name}>
-                  {renewTarget.name}
-                </div>
-              </div>
-
-              {/* Explanation */}
-              <p className="text-[10px] text-gray-600 leading-relaxed">
-                Pilih opsi parameter yang ingin di-reset ke kondisi awal:
-              </p>
-
-              {/* Checkboxes */}
-              <div className="space-y-2.5">
-                <label className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-200 hover:border-blue-400 bg-white transition-all cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={renewResetUsage}
-                    onChange={(e) => setRenewResetUsage(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                  <div className="flex-1 text-[10px]">
-                    <div className="font-bold text-gray-800">Reset Counter Pemakaian ke 0</div>
-                    <div className="text-gray-500 text-[8.5px] mt-0.5">
-                      Jumlah pemakaian (siklus) akan dikembalikan ke 0x. Status keausan kembali <strong>SAFE (Aman)</strong>.
-                    </div>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-200 hover:border-blue-400 bg-white transition-all cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={renewResetDays}
-                    onChange={(e) => setRenewResetDays(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                  />
-                  <div className="flex-1 text-[10px]">
-                    <div className="font-bold text-gray-800">Reset Tanggal Pasang / Desain ke Hari Ini</div>
-                    <div className="text-gray-500 text-[8.5px] mt-0.5">
-                      Menjadikan hari ini sebagai tanggal pasang/pembaruan baru sehingga sisa hari kalender kembali penuh (180 hari).
-                    </div>
-                  </div>
-                </label>
-              </div>
-
-              {!renewResetDays && !renewResetUsage && (
-                <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[9px] font-semibold flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-xs">warning</span>
-                  Pilih minimal salah satu opsi reset di atas.
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowRenewModal(false);
-                    setRenewTarget(null);
-                  }}
-                  className="flex-1 py-2 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  disabled={submitting || (!renewResetDays && !renewResetUsage)}
-                  onClick={handleConfirmRenew}
-                  className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <>
-                      <span className="material-symbols-outlined animate-spin text-sm">sync</span>
-                      Memproses...
-                    </>
-                  ) : (
-                    'Konfirmasi Renew'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* TPM SCHEDULE MODAL (PENGGANTI KONFIGURASI LIFETIME MANUAL) */}
-      {showScheduleModal && selectedScheduleTarget && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
-          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">calendar_month</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Set Kalender TPM</h3>
-                  <p className="text-[9px] text-gray-500">
-                    {selectedScheduleTarget.isCellPart ? 'CellPart:' : 'Jig & Fixture:'} {selectedScheduleTarget.noReg} — {selectedScheduleTarget.name}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowScheduleModal(false);
-                  setSelectedScheduleTarget(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveTpmSchedule} className="p-4 space-y-3">
-              <div className="bg-blue-50/50 border border-blue-200/80 rounded-xl p-3">
-                <p className="text-[9px] text-blue-900 font-medium mb-2.5">
-                  Tentukan tanggal kalender jadwal dan target deadline servis preventif TPM untuk item ini.
-                </p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[8.5px] font-bold text-gray-600 uppercase mb-1">
-                      Mulai Masuk Jadwal TPM
-                    </label>
-                    <input
-                      type="date"
-                      value={selectedScheduleTarget.tpmScheduleStart}
-                      onChange={(e) =>
-                        setSelectedScheduleTarget((prev) => prev ? ({ ...prev, tpmScheduleStart: e.target.value }) : null)
-                      }
-                      className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[8.5px] font-bold text-gray-600 uppercase mb-1">
-                      Target Deadline Servis TPM *
-                    </label>
-                    <input
-                      type="date"
-                      value={selectedScheduleTarget.tpmScheduleDeadline}
-                      onChange={(e) =>
-                        setSelectedScheduleTarget((prev) => prev ? ({ ...prev, tpmScheduleDeadline: e.target.value }) : null)
-                      }
-                      className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none focus:border-[#0063ff]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowScheduleModal(false);
-                    setSelectedScheduleTarget(null);
-                  }}
-                  className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-3.5 py-1.5 bg-[#0063ff] text-white hover:bg-[#0052d4] rounded-lg text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-[13px]">event_available</span>
-                  {submitting ? 'Menyimpan...' : 'Simpan Kalender TPM'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

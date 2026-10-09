@@ -104,7 +104,6 @@ export default function TPMPage() {
     durationMinutes: 60,
     partsReplaced: '',
     status: 'COMPLETED',
-    cost: 0,
     resetLifetime: false,
   });
 
@@ -1313,7 +1312,7 @@ export default function TPMPage() {
                         <div className="flex items-center gap-1 text-[9px]">
                           <span className="font-medium text-gray-700">{item.performedBy}</span>
                           <span className="text-gray-400 text-[8px]">
-                            ({item.durationMinutes}m{item.cost && item.cost > 0 ? ` · Rp ${Number(item.cost).toLocaleString('id-ID')}` : ''})
+                            ({item.durationMinutes}m)
                           </span>
                         </div>
                       </td>
@@ -1368,22 +1367,15 @@ export default function TPMPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
           <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">calendar_month</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Atur Jadwal &amp; Lifetime TPM</h3>
-                  <p className="text-[9px] text-gray-500">
-                    {selectedScheduleItem.noReg} — {selectedScheduleItem.name}
-                  </p>
-                </div>
-              </div>
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">calendar_month</span>
+                <span>Atur Jadwal TPM — <span className="font-mono text-[#0063ff]">{selectedScheduleItem.noReg}</span></span>
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowScheduleModal(false)}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1515,23 +1507,18 @@ export default function TPMPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
           <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-[#0063ff] text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">speed</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Catat Pemakaian (Usage Counter)</h3>
-                  <p className="text-[9px] text-gray-500">Update siklus kerja jig untuk pelacakan keausan fisik</p>
-                </div>
-              </div>
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">speed</span>
+                Catat Pemakaian (Usage Counter)
+              </h3>
               <button
                 type="button"
                 onClick={() => {
                   setShowUsageModal(false);
                   setUsageTarget(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1655,21 +1642,15 @@ export default function TPMPage() {
       {showChecklistModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95] overflow-y-auto">
           <div className="bg-white border border-gray-300 rounded-2xl max-w-lg w-full p-5 shadow-2xl relative my-6 text-gray-800">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-150">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0063ff] flex items-center justify-center">
-                  <span className="material-symbols-outlined text-lg">fact_check</span>
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-gray-900">Form Checklist Inspeksi TPM</h3>
-                  <p className="text-[9px] text-gray-500">
-                    Inspeksi mandiri kondisi fisik, fungsi mekanisme, dan kelayakan Jig
-                  </p>
-                </div>
-              </div>
+            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">fact_check</span>
+                Form Checklist Inspeksi TPM
+              </h3>
               <button
+                type="button"
                 onClick={() => setShowChecklistModal(false)}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1891,18 +1872,15 @@ export default function TPMPage() {
       {showLogModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95] overflow-y-auto">
           <div className="bg-white border border-gray-300 rounded-2xl max-w-lg w-full p-5 shadow-2xl relative my-6 text-gray-800">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-150">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-lg">handyman</span>
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-gray-900">Catat Aktivitas Maintenance</h3>
-                </div>
-              </div>
+            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#0063ff] text-sm">handyman</span>
+                Catat Aktivitas Maintenance
+              </h3>
               <button
+                type="button"
                 onClick={() => setShowLogModal(false)}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -2030,33 +2008,17 @@ export default function TPMPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
-                    Part yang Diganti (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Locator Pin D10, O-ring..."
-                    value={logForm.partsReplaced}
-                    onChange={(e) => setLogForm((prev) => ({ ...prev, partsReplaced: e.target.value }))}
-                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
-                    Estimasi Biaya (Rp)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={logForm.cost}
-                    onChange={(e) =>
-                      setLogForm((prev) => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))
-                    }
-                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">
+                  Part yang Diganti (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Locator Pin D10, O-ring..."
+                  value={logForm.partsReplaced}
+                  onChange={(e) => setLogForm((prev) => ({ ...prev, partsReplaced: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none"
+                />
               </div>
 
               {/* Reset lifetime checkbox */}
@@ -2105,23 +2067,18 @@ export default function TPMPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[95]">
           <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
-            <div className="p-4 border-b border-gray-150 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-lg">autorenew</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-xs text-gray-800">Renew Lifetime</h3>
-                  <p className="text-[9px] text-gray-500">Reset parameter keausan setelah perbaikan atau rekondisi</p>
-                </div>
-              </div>
+            <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
+              <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-amber-600 text-sm">autorenew</span>
+                Renew Lifetime
+              </h3>
               <button
                 type="button"
                 onClick={() => {
                   setShowRenewModal(false);
                   setRenewTarget(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 font-bold text-sm cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
               </button>

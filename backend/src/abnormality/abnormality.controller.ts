@@ -51,6 +51,19 @@ export class AbnormalityController {
     return this.abnormalityService.createMachine(dto);
   }
 
+  /** Update machine manual status (Jig Condition and TPM Schedule) */
+  @Patch('machines/:id/status')
+  updateMachineStatus(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      jigCondition?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+      tpmSchedule?: 'SAFE' | 'WARNING' | 'OVERDUE' | 'AUTO';
+    },
+  ) {
+    return this.abnormalityService.updateMachineStatus(id, dto);
+  }
+
   /** Delete a machine */
   @Delete('machines/:id')
   deleteMachine(@Param('id') id: string) {
