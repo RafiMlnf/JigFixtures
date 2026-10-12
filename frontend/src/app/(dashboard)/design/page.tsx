@@ -4,8 +4,9 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, uploadFile, getFileUrl, deleteDesignItem, fetchCellParts, createCellPart, deleteCellPart, parseDrawingPdf, ParsedJigMetadata, ParsedCellPartItem, downloadDesignPdfPage, downloadDesignPdfFull, downloadMergedDesignPdf, fetchDesignPdfBlob } from '@/lib/api/phase3';
+import { fetchMasterList, fetchVendors, fetchLinesAndProcesses, createDesignItem, submitDesignUpdate, uploadFile, getFileUrl, deleteDesignItem, fetchChildParts, createChildPart, deleteChildPart, parseDrawingPdf, ParsedJigMetadata, ParsedChildPartItem, downloadDesignPdfPage, downloadDesignPdfFull, downloadMergedDesignPdf, fetchDesignPdfBlob } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
+import { TableSkeleton } from '@/components/ui/SkeletonLoading';
 
 interface DocumentInfo {
   id: string;
@@ -46,7 +47,7 @@ interface AbnormalityInfo {
   reportedBy: string;
 }
 
-interface CellPartInfo {
+interface ChildPartInfo {
   id: string;
   itemNo?: number;
   partNumber: string;
@@ -111,7 +112,7 @@ interface MasterItem {
   documents: DocumentInfo[];
   revisionHistories: RevHistoryInfo[];
   abnormalities: AbnormalityInfo[];
-  cellParts: CellPartInfo[];
+  childParts: ChildPartInfo[];
 }
 
 function SearchableDropdown({
@@ -283,10 +284,10 @@ export function DesignPageContent() {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<MasterItem | null>(null);
 
-  // CellPart expand and modal state
+  // ChildPart expand and modal state
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [showCellPartModal, setShowCellPartModal] = useState(false);
-  const [cellPartParentId, setCellPartParentId] = useState('');
+  const [showChildPartModal, setShowChildPartModal] = useState(false);
+  const [cellPartParentId, setChildPartParentId] = useState('');
   const [cpPartNumber, setCpPartNumber] = useState('');
   const [cpName, setCpName] = useState('');
   const [cpDescription, setCpDescription] = useState('');
@@ -309,7 +310,7 @@ export function DesignPageContent() {
   // Drawing PDF Extraction & BOM states
   const [isAnalyzingPdf, setIsAnalyzingPdf] = useState(false);
   const [extractedJig, setExtractedJig] = useState<ParsedJigMetadata | null>(null);
-  const [extractedCellParts, setExtractedCellParts] = useState<ParsedCellPartItem[]>([]);
+  const [extractedChildParts, setExtractedChildParts] = useState<ParsedChildPartItem[]>([]);
   const [selectedCpKeys, setSelectedCpKeys] = useState<Set<number>>(new Set());
   const [showExtractedBOM, setShowExtractedBOM] = useState(true);
 
@@ -424,7 +425,7 @@ export function DesignPageContent() {
     setPoNumber('');
     setLeadTime(1);
     setExtractedJig(null);
-    setExtractedCellParts([]);
+    setExtractedChildParts([]);
     setSelectedCpKeys(new Set());
     setToast(null);
     setShowCreateModal(true);
@@ -552,7 +553,7 @@ export function DesignPageContent() {
       const processId = matchedProcess ? matchedProcess.id : undefined;
       const processName = matchedProcess ? undefined : processInput.trim();
 
-      const cellPartsToCreate = extractedCellParts
+      const cellPartsToCreate = extractedChildParts
         .filter((cp) => selectedCpKeys.has(cp.itemNo))
         .map((cp) => ({
           partNumber: cp.partNumber,
@@ -587,10 +588,10 @@ export function DesignPageContent() {
         vendorId: selectedVendorId || undefined,
         poNumber: poNumber || undefined,
         leadTime: leadTime ? parseInt(String(leadTime), 10) : undefined,
-        cellParts: cellPartsToCreate.length > 0 ? cellPartsToCreate : undefined,
+        childParts: cellPartsToCreate.length > 0 ? cellPartsToCreate : undefined,
       });
 
-      setToast({ type: 'success', msg: `Desain baru ${noReg} (${assyPartName}) beserta ${cellPartsToCreate.length} CellPart berhasil dibuat!` });
+      setToast({ type: 'success', msg: `Desain baru ${noReg} (${assyPartName}) beserta ${cellPartsToCreate.length} ChildPart berhasil dibuat!` });
       setShowCreateModal(false);
       loadData();
     } catch (err: any) {
@@ -626,7 +627,7 @@ export function DesignPageContent() {
     }
   };
 
-  // CellPart Handlers
+  // ChildPart Handlers
   const toggleExpandRow = (id: string) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -636,44 +637,44 @@ export function DesignPageContent() {
     });
   };
 
-  const handleOpenCellPartModal = (designId: string) => {
-    setCellPartParentId(designId);
+  const handleOpenChildPartModal = (designId: string) => {
+    setChildPartParentId(designId);
     setCpPartNumber('');
     setCpName('');
     setCpMaterial('');
     setCpQty('1');
     setCpDescription('');
-    setShowCellPartModal(true);
+    setShowChildPartModal(true);
   };
 
-  const handleCellPartSubmit = async (e: React.FormEvent) => {
+  const handleChildPartSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await createCellPart({
+      await createChildPart({
         designId: cellPartParentId,
         partNumber: cpPartNumber,
         name: cpName,
         description: cpMaterial ? `${cpMaterial}${cpDescription ? ` | ${cpDescription}` : ''}` : (cpDescription || undefined),
       });
-      setToast({ type: 'success', msg: `CellPart "${cpName}" berhasil ditambahkan!` });
-      setShowCellPartModal(false);
+      setToast({ type: 'success', msg: `ChildPart "${cpName}" berhasil ditambahkan!` });
+      setShowChildPartModal(false);
       await loadData();
     } catch (err: any) {
-      setToast({ type: 'error', msg: err.message || 'Gagal menambah CellPart.' });
+      setToast({ type: 'error', msg: err.message || 'Gagal menambah ChildPart.' });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteCellPart = async (cpId: string, cpName: string) => {
-    if (!window.confirm(`Hapus CellPart "${cpName}"? Data tidak bisa dikembalikan.`)) return;
+  const handleDeleteChildPart = async (cpId: string, cpName: string) => {
+    if (!window.confirm(`Hapus ChildPart "${cpName}"? Data tidak bisa dikembalikan.`)) return;
     try {
-      await deleteCellPart(cpId);
-      setToast({ type: 'success', msg: `CellPart "${cpName}" berhasil dihapus!` });
+      await deleteChildPart(cpId);
+      setToast({ type: 'success', msg: `ChildPart "${cpName}" berhasil dihapus!` });
       await loadData();
     } catch (err: any) {
-      setToast({ type: 'error', msg: err.message || 'Gagal menghapus CellPart.' });
+      setToast({ type: 'error', msg: err.message || 'Gagal menghapus ChildPart.' });
     }
   };
 
@@ -778,14 +779,14 @@ export function DesignPageContent() {
     });
   };
 
-  const toggleSelectAllCellPartsOfItem = (itemCellParts: any[]) => {
+  const toggleSelectAllChildPartsOfItem = (itemChildParts: any[]) => {
     setSelectedCpIds((prev) => {
       const next = new Set(prev);
-      const allSelected = itemCellParts.every((cp) => next.has(cp.id));
+      const allSelected = itemChildParts.every((cp) => next.has(cp.id));
       if (allSelected) {
-        itemCellParts.forEach((cp) => next.delete(cp.id));
+        itemChildParts.forEach((cp) => next.delete(cp.id));
       } else {
-        itemCellParts.forEach((cp) => next.add(cp.id));
+        itemChildParts.forEach((cp) => next.add(cp.id));
       }
       return next;
     });
@@ -826,8 +827,8 @@ export function DesignPageContent() {
     // Collect all selected cell parts
     const selectedCpList: { item: MasterItem; cp: any }[] = [];
     for (const item of items) {
-      if (item.cellParts && item.cellParts.length > 0) {
-        for (const cp of item.cellParts) {
+      if (item.childParts && item.childParts.length > 0) {
+        for (const cp of item.childParts) {
           if (selectedCpIds.has(cp.id)) {
             selectedCpList.push({ item, cp });
           }
@@ -838,7 +839,7 @@ export function DesignPageContent() {
     const totalDownloadCount = itemsWithApprovedPdf.length + selectedCpList.length;
 
     if (totalDownloadCount === 0) {
-      alert('Tidak ada item atau CellPart terpilih yang memiliki dokumen PDF drawing resmi.');
+      alert('Tidak ada item atau ChildPart terpilih yang memiliki dokumen PDF drawing resmi.');
       return;
     }
 
@@ -846,7 +847,7 @@ export function DesignPageContent() {
     setPdfDownloadProgress({ current: 1, total: totalDownloadCount });
 
     try {
-      // Build targets for backend merging: full designs and/or specific CellPart pages
+      // Build targets for backend merging: full designs and/or specific ChildPart pages
       const targets: Array<{ designId: string; pageNumber?: number }> = [];
 
       for (const item of itemsWithApprovedPdf) {
@@ -1174,10 +1175,7 @@ export function DesignPageContent() {
       {/* Main Datatable */}
       <div className="flex-1 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-gray-200 bg-white shadow-3xs">
         {loading ? (
-          <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
-            <span className="material-symbols-outlined animate-spin text-2xl mb-1 text-blue-600">sync</span>
-            <span>Memuat data master...</span>
-          </div>
+          <TableSkeleton rows={8} cols={10} compact />
         ) : (
           <table className="w-full text-left border-collapse text-[10px] table-fixed">
             <thead>
@@ -1199,7 +1197,7 @@ export function DesignPageContent() {
                 <th className="px-2 py-1 w-[115px]">No. Reg</th>
                 <th className="px-2 py-1 w-[140px]">Assy Part Name</th>
                 <th className="px-2 py-1 w-[85px]">Line</th>
-                <th className="px-2 py-1 w-[85px]">OP (Process)</th>
+                <th className="px-2 py-1 w-[85px]">OP</th>
                 <th className="px-1 py-1 text-center w-[45px]">Type</th>
                 <th className="px-1 py-1 text-center w-[75px]">
                   Approval
@@ -1212,7 +1210,7 @@ export function DesignPageContent() {
                 const globalIndex = pageSize === 'All' ? index : (validCurrentPage - 1) * (pageSize as number) + index;
                 const isSelected = selectedIds.has(item.id);
                 const isExpanded = expandedRows.has(item.id);
-                const cellParts = [...(item.cellParts || [])].sort((a, b) => {
+                const childParts = [...(item.childParts || [])].sort((a, b) => {
                   const pageA = a.pdfPageIndex ?? 999999;
                   const pageB = b.pdfPageIndex ?? 999999;
                   if (pageA !== pageB) return pageA - pageB;
@@ -1240,7 +1238,7 @@ export function DesignPageContent() {
                       onClick={() => toggleExpandRow(item.id)}
                       className={`border-b border-gray-200 hover:bg-blue-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/80 font-medium' : isExpanded ? 'bg-blue-50/25' : ''
                         }`}
-                      title={cellParts.length > 0 ? (isExpanded ? 'Klik untuk menutup daftar CellPart' : 'Klik untuk melihat daftar CellPart') : undefined}
+                      title={childParts.length > 0 ? (isExpanded ? 'Klik untuk menutup daftar ChildPart' : 'Klik untuk melihat daftar ChildPart') : undefined}
                     >
                       {/* Checkbox cell */}
                       <td
@@ -1334,7 +1332,7 @@ export function DesignPageContent() {
                       </td>
                     </tr>
 
-                    {/* CellPart Expanded Sub-Row */}
+                    {/* ChildPart Expanded Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-50/80">
                         <td colSpan={10} className="px-4 py-3">
@@ -1343,24 +1341,24 @@ export function DesignPageContent() {
                             <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
                               <div className="flex items-center gap-1.5">
                                 <span className="material-symbols-outlined text-blue-600 text-sm">account_tree</span>
-                                <span className="text-[10px] font-bold text-gray-700">Cell Parts — {item.noReg}</span>
-                                <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">{cellParts.length} items</span>
+                                <span className="text-[10px] font-bold text-gray-700">Child Parts — {item.noReg}</span>
+                                <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">{childParts.length} items</span>
                               </div>
                               {isPic && (
                                 <button
-                                  onClick={() => handleOpenCellPartModal(item.id)}
+                                  onClick={() => handleOpenChildPartModal(item.id)}
                                   className="flex items-center gap-1 text-[9px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                                 >
                                   <span className="material-symbols-outlined text-xs">add</span>
-                                  Tambah CellPart
+                                  Tambah ChildPart
                                 </button>
                               )}
                             </div>
 
-                            {cellParts.length === 0 ? (
+                            {childParts.length === 0 ? (
                               <div className="text-center py-6 text-gray-400 text-[10px]">
                                 <span className="material-symbols-outlined text-lg mb-1 block">widgets</span>
-                                Belum ada CellPart. Klik "Tambah CellPart" untuk menambahkan.
+                                Belum ada ChildPart. Klik "Tambah ChildPart" untuk menambahkan.
                               </div>
                             ) : (
                               <table className="w-full text-[10px]">
@@ -1369,10 +1367,10 @@ export function DesignPageContent() {
                                     <th className="px-2 py-1.5 text-center w-8">
                                       <input
                                         type="checkbox"
-                                        checked={cellParts.length > 0 && cellParts.every((cp) => selectedCpIds.has(cp.id))}
-                                        onChange={() => toggleSelectAllCellPartsOfItem(cellParts)}
+                                        checked={childParts.length > 0 && childParts.every((cp) => selectedCpIds.has(cp.id))}
+                                        onChange={() => toggleSelectAllChildPartsOfItem(childParts)}
                                         className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                        title="Pilih semua CellPart untuk Jig ini"
+                                        title="Pilih semua ChildPart untuk Jig ini"
                                       />
                                     </th>
                                     <th className="px-3 py-1.5 text-left">Part Number</th>
@@ -1384,7 +1382,7 @@ export function DesignPageContent() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {cellParts.map((cp) => {
+                                  {childParts.map((cp) => {
                                     const isCpSelected = selectedCpIds.has(cp.id);
                                     return (
                                       <tr key={cp.id} className={`border-b border-gray-100 hover:bg-gray-50/50 ${isCpSelected ? 'bg-blue-50/60' : ''}`}>
@@ -1394,7 +1392,7 @@ export function DesignPageContent() {
                                             checked={isCpSelected}
                                             onChange={() => toggleSelectCpItem(cp.id)}
                                             className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                            title={`Pilih CellPart ${cp.partNumber}`}
+                                            title={`Pilih ChildPart ${cp.partNumber}`}
                                           />
                                         </td>
                                         <td className="px-3 py-1.5 font-mono font-bold text-gray-800">
@@ -1448,9 +1446,9 @@ export function DesignPageContent() {
                                             {isPic && (
                                               <button
                                                 type="button"
-                                                onClick={() => handleDeleteCellPart(cp.id, cp.name)}
+                                                onClick={() => handleDeleteChildPart(cp.id, cp.name)}
                                                 className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-0.5 rounded hover:bg-red-50"
-                                                title="Hapus CellPart"
+                                                title="Hapus ChildPart"
                                               >
                                                 <span className="material-symbols-outlined text-[12px]">delete</span>
                                               </button>
@@ -1618,7 +1616,7 @@ export function DesignPageContent() {
               <div className="text-xs font-bold leading-tight">
                 {selectedIds.size > 0 && <span>{selectedIds.size} Jig</span>}
                 {selectedIds.size > 0 && selectedCpIds.size > 0 && <span> + </span>}
-                {selectedCpIds.size > 0 && <span>{selectedCpIds.size} CellPart</span>} Terpilih
+                {selectedCpIds.size > 0 && <span>{selectedCpIds.size} ChildPart</span>} Terpilih
               </div>
               <div className="text-[9px] text-slate-400">
                 Gabungkan & unduh jadi 1 berkas PDF drawing resmi
@@ -1817,11 +1815,11 @@ export function DesignPageContent() {
                             const result = await parseDrawingPdf(file);
                             setDocLocation2D(result.url);
                             if (result.parsed) {
-                              const { jig, cellParts } = result.parsed;
+                              const { jig, childParts } = result.parsed;
                               setExtractedJig(jig);
-                              setExtractedCellParts(cellParts);
-                              setSelectedCpKeys(new Set(cellParts.map((c) => c.itemNo)));
-                              if (cellParts.length > 0 || jig.partName || jig.partNumber) {
+                              setExtractedChildParts(childParts);
+                              setSelectedCpKeys(new Set(childParts.map((c) => c.itemNo)));
+                              if (childParts.length > 0 || jig.partName || jig.partNumber) {
                                 setShowExtractedBOM(true);
                               }
 
@@ -1918,30 +1916,30 @@ export function DesignPageContent() {
                       <div className="flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-blue-600 text-sm">widgets</span>
                         <span className="text-[10px] font-bold text-gray-800 uppercase">
-                          Daftar CellPart ({extractedCellParts.filter((cp) => selectedCpKeys.has(cp.itemNo)).length}/{extractedCellParts.length} Dipilih)
+                          Daftar ChildPart ({extractedChildParts.filter((cp) => selectedCpKeys.has(cp.itemNo)).length}/{extractedChildParts.length} Dipilih)
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {extractedCellParts.length > 0 && (
+                        {extractedChildParts.length > 0 && (
                           <button
                             type="button"
                             onClick={() => {
-                              if (selectedCpKeys.size === extractedCellParts.length) {
+                              if (selectedCpKeys.size === extractedChildParts.length) {
                                 setSelectedCpKeys(new Set());
                               } else {
-                                setSelectedCpKeys(new Set(extractedCellParts.map((c) => c.itemNo)));
+                                setSelectedCpKeys(new Set(extractedChildParts.map((c) => c.itemNo)));
                               }
                             }}
                             className="text-[9px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
                           >
-                            {selectedCpKeys.size === extractedCellParts.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
+                            {selectedCpKeys.size === extractedChildParts.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => {
-                            const nextItemNo = extractedCellParts.length > 0 ? Math.max(...extractedCellParts.map((c) => c.itemNo)) + 1 : 1;
-                            const newCp: ParsedCellPartItem = {
+                            const nextItemNo = extractedChildParts.length > 0 ? Math.max(...extractedChildParts.map((c) => c.itemNo)) + 1 : 1;
+                            const newCp: ParsedChildPartItem = {
                               itemNo: nextItemNo,
                               name: `Part #${nextItemNo}`,
                               partNumber: `CP-${nextItemNo}`,
@@ -1949,7 +1947,7 @@ export function DesignPageContent() {
                               material: 'SS400',
                               isStandardPart: false,
                             };
-                            setExtractedCellParts((prev) => [...prev, newCp]);
+                            setExtractedChildParts((prev) => [...prev, newCp]);
                             setSelectedCpKeys((prev) => new Set(prev).add(nextItemNo));
                           }}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer"
@@ -1960,10 +1958,10 @@ export function DesignPageContent() {
                       </div>
                     </div>
 
-                    {extractedCellParts.length === 0 ? (
+                    {extractedChildParts.length === 0 ? (
                       <div className="text-center py-4 bg-white/60 border border-dashed border-gray-300 rounded-lg text-gray-400 text-[10px]">
                         <span className="material-symbols-outlined text-lg mb-0.5 block text-gray-400">format_list_bulleted</span>
-                        Tidak ada etiket CellPart terdeteksi otomatis dari sheet PDF ini. Klik <strong>"Tambah Manual"</strong> jika ingin mendaftarkan CellPart.
+                        Tidak ada etiket ChildPart terdeteksi otomatis dari sheet PDF ini. Klik <strong>"Tambah Manual"</strong> jika ingin mendaftarkan ChildPart.
                       </div>
                     ) : (
                       <div className="max-h-48 overflow-y-auto no-scrollbar border border-gray-200 rounded-lg bg-white">
@@ -1980,7 +1978,7 @@ export function DesignPageContent() {
                             </tr>
                           </thead>
                           <tbody>
-                            {extractedCellParts.map((cp, idx) => {
+                            {extractedChildParts.map((cp, idx) => {
                               const isChecked = selectedCpKeys.has(cp.itemNo);
                               return (
                                 <tr
@@ -2007,7 +2005,7 @@ export function DesignPageContent() {
                                       value={cp.partNumber}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        setExtractedCellParts((prev) =>
+                                        setExtractedChildParts((prev) =>
                                           prev.map((c) => (c.itemNo === cp.itemNo ? { ...c, partNumber: val } : c)),
                                         );
                                       }}
@@ -2020,7 +2018,7 @@ export function DesignPageContent() {
                                       value={cp.name}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        setExtractedCellParts((prev) =>
+                                        setExtractedChildParts((prev) =>
                                           prev.map((c) => (c.itemNo === cp.itemNo ? { ...c, name: val } : c)),
                                         );
                                       }}
@@ -2033,7 +2031,7 @@ export function DesignPageContent() {
                                       value={cp.qty}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        setExtractedCellParts((prev) =>
+                                        setExtractedChildParts((prev) =>
                                           prev.map((c) => (c.itemNo === cp.itemNo ? { ...c, qty: val } : c)),
                                         );
                                       }}
@@ -2047,7 +2045,7 @@ export function DesignPageContent() {
                                       placeholder="SS400..."
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        setExtractedCellParts((prev) =>
+                                        setExtractedChildParts((prev) =>
                                           prev.map((c) => (c.itemNo === cp.itemNo ? { ...c, material: val } : c)),
                                         );
                                       }}
@@ -2058,7 +2056,7 @@ export function DesignPageContent() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setExtractedCellParts((prev) => prev.filter((c) => c.itemNo !== cp.itemNo));
+                                        setExtractedChildParts((prev) => prev.filter((c) => c.itemNo !== cp.itemNo));
                                         setSelectedCpKeys((prev) => {
                                           const next = new Set(prev);
                                           next.delete(cp.itemNo);
@@ -2066,7 +2064,7 @@ export function DesignPageContent() {
                                         });
                                       }}
                                       className="text-gray-400 hover:text-red-600 transition-colors p-0.5 cursor-pointer"
-                                      title="Hapus baris CellPart"
+                                      title="Hapus baris ChildPart"
                                     >
                                       <span className="material-symbols-outlined text-[12px]">delete</span>
                                     </button>
@@ -2828,18 +2826,18 @@ export function DesignPageContent() {
       )}
 
       {/* CELLPART CREATE MODAL */}
-      {showCellPartModal && (
+      {showChildPartModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
           <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
             {/* Header */}
             <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
               <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[#0063ff] text-sm">account_tree</span>
-                Tambah CellPart
+                Tambah ChildPart
               </h3>
               <button
                 type="button"
-                onClick={() => setShowCellPartModal(false)}
+                onClick={() => setShowChildPartModal(false)}
                 className="text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
               >
                 ✕
@@ -2847,7 +2845,7 @@ export function DesignPageContent() {
             </div>
 
             {/* Form Body */}
-            <form onSubmit={handleCellPartSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+            <form onSubmit={handleChildPartSubmit} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
               <div className="grid grid-cols-2 gap-3">
                 {/* Part Number */}
                 <div className="col-span-2">
@@ -2864,7 +2862,7 @@ export function DesignPageContent() {
 
                 {/* Name */}
                 <div className="col-span-2">
-                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama CellPart *</label>
+                  <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama ChildPart *</label>
                   <input
                     type="text"
                     required
@@ -2915,7 +2913,7 @@ export function DesignPageContent() {
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowCellPartModal(false)}
+                  onClick={() => setShowChildPartModal(false)}
                   className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-100 transition-colors cursor-pointer"
                 >
                   Batal
@@ -2931,7 +2929,7 @@ export function DesignPageContent() {
                       Menyimpan...
                     </>
                   ) : (
-                    'Simpan CellPart'
+                    'Simpan ChildPart'
                   )}
                 </button>
               </div>
@@ -2947,11 +2945,8 @@ export function DesignPageContent() {
 export default function DesignPage() {
   return (
     <Suspense fallback={
-      <div className="flex-1 flex items-center justify-center p-6 bg-white">
-        <div className="text-center">
-          <span className="material-symbols-outlined animate-spin text-2xl text-primary">sync</span>
-          <p className="text-xs text-gray-500 mt-2 font-medium">Memuat data desain...</p>
-        </div>
+      <div className="flex-1 flex flex-col p-4 bg-white">
+        <TableSkeleton rows={10} cols={10} compact />
       </div>
     }>
       <DesignPageContent />

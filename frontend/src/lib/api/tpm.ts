@@ -18,7 +18,7 @@ export class HttpError extends Error {
 export interface TpmSummary {
   totalItems: number;
   totalDesigns: number;
-  totalCellParts: number;
+  totalChildParts: number;
   pendingApprovalCount?: number;
   safeCount: number;
   warningCount: number;
@@ -36,7 +36,7 @@ export interface TpmScheduleItem {
   parentId?: string;
   parentNoReg?: string;
   parentName?: string;
-  isCellPart: boolean;
+  isChildPart: boolean;
   noReg: string;
   partNumber: string;
   name: string;
@@ -56,13 +56,13 @@ export interface TpmScheduleItem {
   tpmScheduleStart?: string | null;
   tpmScheduleDeadline?: string | null;
   tpmLifetimeSetAt?: string | null;
-  cellPartsCount: number;
+  childPartsCount: number;
 }
 
 export interface TpmChecklistItem {
   id: string;
   designId: string;
-  cellPartId?: string | null;
+  childPartId?: string | null;
   inspectorName: string;
   shift: string;
   checkDate: string;
@@ -84,7 +84,7 @@ export interface TpmChecklistItem {
     line?: { lineName: string };
     process?: { name: string };
   };
-  cellPart?: {
+  childPart?: {
     id: string;
     partNumber: string;
     name: string;
@@ -94,7 +94,7 @@ export interface TpmChecklistItem {
 export interface TpmMaintenanceLogItem {
   id: string;
   designId: string;
-  cellPartId?: string | null;
+  childPartId?: string | null;
   actionType: 'PREVENTIVE' | 'CORRECTIVE' | 'RENEWAL' | 'CALIBRATION' | 'OVERHAUL';
   title: string;
   description: string;
@@ -112,7 +112,7 @@ export interface TpmMaintenanceLogItem {
     line?: { lineName: string };
     process?: { name: string };
   };
-  cellPart?: {
+  childPart?: {
     id: string;
     partNumber: string;
     name: string;
@@ -121,7 +121,7 @@ export interface TpmMaintenanceLogItem {
 
 export interface CreateTpmChecklistPayload {
   designId: string;
-  cellPartId?: string;
+  childPartId?: string;
   inspectorName: string;
   shift?: string;
   checkDate?: string;
@@ -138,7 +138,7 @@ export interface CreateTpmChecklistPayload {
 
 export interface CreateTpmLogPayload {
   designId: string;
-  cellPartId?: string;
+  childPartId?: string;
   actionType: 'PREVENTIVE' | 'CORRECTIVE' | 'RENEWAL' | 'CALIBRATION' | 'OVERHAUL';
   title: string;
   description: string;
@@ -151,7 +151,7 @@ export interface CreateTpmLogPayload {
 }
 
 export interface UpdateTpmSchedulePayload {
-  isCellPart?: boolean;
+  isChildPart?: boolean;
   tpmScheduleStart?: string;
   tpmScheduleDeadline?: string;
   lifetimeDays?: number;
@@ -175,7 +175,7 @@ export async function fetchTpmSchedules(params?: {
   lineId?: string;
   processId?: string;
   status?: string;
-  type?: 'ALL' | 'DESIGN' | 'CELL_PART';
+  type?: 'ALL' | 'DESIGN' | 'CHILD_PART';
 }): Promise<TpmScheduleItem[]> {
   const query = new URLSearchParams();
   if (params?.search) query.append('search', params.search);
@@ -191,7 +191,7 @@ export async function fetchTpmSchedules(params?: {
   return res.json();
 }
 
-/** Update Schedule & Lifetime for Design or CellPart */
+/** Update Schedule & Lifetime for Design or ChildPart */
 export async function updateTpmSchedule(
   id: string,
   payload: UpdateTpmSchedulePayload,

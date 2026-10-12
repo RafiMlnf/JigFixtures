@@ -64,36 +64,34 @@ export default function LoginPage() {
         }}
       />
 
-      <div className="w-[850px] bg-white/80 backdrop-blur-xl border border-gray-200 rounded-3xl p-8 shadow-[0_20px_50px_rgba(15,23,42,0.08)] flex gap-8 z-10 transition-all duration-300">
+      <div className="w-[450px] max-w-full bg-white/90 backdrop-blur-xl border border-gray-200 rounded-3xl p-8 shadow-[0_20px_50px_rgba(15,23,42,0.08)] flex flex-col z-10 transition-all duration-300">
 
-        {/* Left Side: Brand info */}
-        <div className="w-1/2 flex flex-col justify-center items-start border-r border-gray-150 pr-8">
-          <div className="text-left w-full pl-2">
-            <div className="mb-4">
-              <img
-                src="/assets/img/logoapp.png"
-                alt="Logo Jig & Fixtures"
-                className="h-28 w-auto object-contain drop-shadow-md mb-2"
-              />
-            </div>
-            <h1 className="text-5xl font-bold italic tracking-tight text-gray-900 leading-none mb-3 whitespace-nowrap" style={{ fontFamily: "'Arial Narrow', Arial, sans-serif" }}>
-              Jig &amp; Fixtures
-            </h1>
-            <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">
-              Management System
-            </p>
+        {/* Logos Header: Mengisi lebar card secara natural & proporsional */}
+        <div className="flex items-center justify-between w-full gap-6 mb-6 pb-5 border-b border-gray-150 px-2">
+          {/* Logo Jig (Kompak/Kotak, lebih tinggi & tegas) */}
+          <div className="shrink-0 flex items-center justify-center">
+            <img
+              src="/assets/img/logoapp.png"
+              alt="Logo Jig & Fixtures"
+              className="h-16 w-auto object-contain brightness-0 drop-shadow-sm"
+            />
           </div>
-        </div>
 
-        {/* Right Side: Credentials Login */}
-        <div className="w-1/2 flex flex-col justify-center pl-4">
-          <div className="mb-4">
+          {/* Garis pembatas vertikal */}
+          <div className="h-12 border-r border-gray-300 shrink-0 self-center" />
+
+          {/* Logo MTM (Wide/Memanjang, mengisi ruang sisa lebar kartu) */}
+          <div className="flex-1 flex items-center justify-end">
             <img
               src="/assets/img/mtmwide.png"
               alt="Logo MTM"
-              className="h-11 w-auto object-contain opacity-95"
+              className="h-12 max-w-full w-auto object-contain opacity-95"
             />
           </div>
+        </div>
+
+        {/* Form Container */}
+        <div className="w-full flex flex-col justify-center">
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>

@@ -31,7 +31,7 @@ export interface ParsedCellPart {
 
 export interface ParsedDrawingResult {
   jig: ParsedJigInfo;
-  cellParts: ParsedCellPart[];
+  childParts: ParsedCellPart[];
   totalPages: number;
   extractedTextSummary?: string;
 }
@@ -41,7 +41,7 @@ export class DrawingParserService {
   private readonly logger = new Logger(DrawingParserService.name);
 
   /**
-   * Parse an engineering drawing PDF buffer to extract Jig metadata and CellPart list.
+   * Parse an engineering drawing PDF buffer to extract Jig metadata and ChildPart list.
    */
   async parseDrawingPdf(buffer: Buffer): Promise<ParsedDrawingResult> {
     let fullPdfData: any = null;
@@ -79,7 +79,7 @@ export class DrawingParserService {
           model: '',
           qty: '1 Set',
         },
-        cellParts: [],
+        childParts: [],
         totalPages,
       };
     }
@@ -103,17 +103,17 @@ export class DrawingParserService {
       };
     }
 
-    // 2. Extract CellParts directly from each subsequent sheet / etiket (Pages 2..N)
-    let cellParts: ParsedCellPart[] = [];
+    // 2. Extract ChildParts directly from each subsequent sheet / etiket (Pages 2..N)
+    let childParts: ParsedCellPart[] = [];
     try {
-      cellParts = this.extractCellPartsFromSheets(pageTexts);
+      childParts = this.extractCellPartsFromSheets(pageTexts);
     } catch (e) {
       this.logger.warn('Failed to extract cell parts from sheets:', e);
     }
 
     return {
       jig,
-      cellParts,
+      childParts,
       totalPages,
       extractedTextSummary: page1Text.slice(0, 500),
     };
@@ -278,7 +278,7 @@ export class DrawingParserService {
 
 
   /**
-   * Extract CellParts directly from subsequent drawing sheets / etiket (Pages 2..N).
+   * Extract ChildParts directly from subsequent drawing sheets / etiket (Pages 2..N).
    * Does NOT scrape from the Page 1 BOM table, as requested.
    */
   private extractCellPartsFromSheets(pageTexts: string[]): ParsedCellPart[] {

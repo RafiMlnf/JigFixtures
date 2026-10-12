@@ -1,4 +1,4 @@
-export class CreateCellPartDto {
+export class CreateChildPartDto {
   designId!: string;
   partNumber!: string;
   name!: string;

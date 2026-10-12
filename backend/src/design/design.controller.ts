@@ -75,7 +75,7 @@ export class DesignController {
     return this.designService.getDesignHistory(id);
   }
 
-  /** Download single page (Hal 1 for Induk, Hal N for CellPart) as standalone PDF */
+  /** Download single page (Hal 1 for Induk, Hal N for ChildPart) as standalone PDF */
   @Get(':id/pdf-page/:page')
   async downloadPdfPage(
     @Param('id') id: string,

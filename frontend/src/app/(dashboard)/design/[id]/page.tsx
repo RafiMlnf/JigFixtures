@@ -5,8 +5,9 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl, createCellPart, deleteCellPart, downloadDesignPdfPage, downloadDesignPdfFull } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createChildPart, deleteChildPart, downloadDesignPdfPage, downloadDesignPdfFull } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
+import { DetailSkeleton } from '@/components/ui/SkeletonLoading';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -50,7 +51,7 @@ interface AbnormalityInfo {
   reportedBy: string;
 }
 
-interface CellPartInfo {
+interface ChildPartInfo {
   id: string;
   partNumber: string;
   name: string;
@@ -114,14 +115,14 @@ interface MasterItem {
   documents: DocumentInfo[];
   revisionHistories: RevHistoryInfo[];
   abnormalities: AbnormalityInfo[];
-  cellParts: CellPartInfo[];
+  childParts: ChildPartInfo[];
 }
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-type InspectorTab = 'info' | 'cellpart' | 'rev' | 'abn';
+type InspectorTab = 'info' | 'childpart' | 'rev' | 'abn';
 
 function DesignDetailPageContent({ params }: PageProps) {
   const resolvedParams = use(params);
@@ -145,16 +146,16 @@ function DesignDetailPageContent({ params }: PageProps) {
     if (tabParam === 'etiket') {
       setActiveTab('info');
       setInspectorOpen(true);
-    } else if (tabParam && ['info', 'cellpart', 'rev', 'abn'].includes(tabParam)) {
+    } else if (tabParam && ['info', 'childpart', 'rev', 'abn'].includes(tabParam)) {
       setActiveTab(tabParam as InspectorTab);
       setInspectorOpen(true);
     }
   }, [searchParams]);
 
-  // Multi-page 2D drawing state (Page 1 = Parent Jig, Page 2+ = Child CellParts)
+  // Multi-page 2D drawing state (Page 1 = Parent Jig, Page 2+ = Child ChildParts)
   const [activePdfPage, setActivePdfPage] = useState<number>(1);
 
-  // CellPart management modal state
+  // ChildPart management modal state
   const [showAddCpModal, setShowAddCpModal] = useState(false);
   const [cpPartNumber, setCpPartNumber] = useState('');
   const [cpName, setCpName] = useState('');
@@ -184,7 +185,7 @@ function DesignDetailPageContent({ params }: PageProps) {
   };
 
   const handleOpenAddCpModal = () => {
-    const nextPageIndex = item?.cellParts ? item.cellParts.length + 2 : 2;
+    const nextPageIndex = item?.childParts ? item.childParts.length + 2 : 2;
     setCpPartNumber('');
     setCpName('');
     setCpDescription('');
@@ -198,12 +199,12 @@ function DesignDetailPageContent({ params }: PageProps) {
     setShowAddCpModal(true);
   };
 
-  const handleCreateCellPart = async (e: React.FormEvent) => {
+  const handleCreateChildPart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!item) return;
     setCpSubmitting(true);
     try {
-      await createCellPart({
+      await createChildPart({
         designId: item.id,
         partNumber: cpPartNumber,
         name: cpName,
@@ -220,7 +221,7 @@ function DesignDetailPageContent({ params }: PageProps) {
       setShowAddCpModal(false);
       await loadItem();
     } catch (err: any) {
-      alert(`Gagal menambah CellPart: ${err.message || 'Error server'}`);
+      alert(`Gagal menambah ChildPart: ${err.message || 'Error server'}`);
     } finally {
       setCpSubmitting(false);
     }
@@ -229,12 +230,12 @@ function DesignDetailPageContent({ params }: PageProps) {
 
 
   const handleDeleteCp = async (cpId: string, cpName: string) => {
-    if (!window.confirm(`Hapus CellPart "${cpName}"?`)) return;
+    if (!window.confirm(`Hapus ChildPart "${cpName}"?`)) return;
     try {
-      await deleteCellPart(cpId);
+      await deleteChildPart(cpId);
       await loadItem();
     } catch (err: any) {
-      alert(`Gagal menghapus CellPart: ${err.message || 'Error server'}`);
+      alert(`Gagal menghapus ChildPart: ${err.message || 'Error server'}`);
     }
   };
 
@@ -268,12 +269,7 @@ function DesignDetailPageContent({ params }: PageProps) {
   useEffect(() => { loadItem(); }, [id]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex flex-col justify-center items-center bg-gray-50 gap-2">
-        <span className="material-symbols-outlined animate-spin text-3xl text-blue-600">sync</span>
-        <span className="text-xs text-gray-500 font-medium">Memuat data design...</span>
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (!item) {
@@ -306,7 +302,7 @@ function DesignDetailPageContent({ params }: PageProps) {
 
   const inspectorTabs: { key: InspectorTab; icon: string; label: string }[] = [
     { key: 'info', icon: 'info', label: 'Info' },
-    { key: 'cellpart', icon: 'account_tree', label: 'CellPart' },
+    { key: 'childpart', icon: 'account_tree', label: 'Child Part' },
     { key: 'rev', icon: 'history', label: 'Revisi' },
     { key: 'abn', icon: 'report_problem', label: 'Anomali' },
   ];
@@ -455,13 +451,13 @@ function DesignDetailPageContent({ params }: PageProps) {
                             )
                           )}
 
-                          {/* Single Page: CellParts */}
-                          {activeDoc?.loc2D && item.cellParts && item.cellParts.length > 0 && (
+                          {/* Single Page: ChildParts */}
+                          {activeDoc?.loc2D && item.childParts && item.childParts.length > 0 && (
                             <>
                               <div className="px-3 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50 border-t border-b border-gray-100 mt-0.5">
-                                Cell Parts (1 Halaman)
+                                Child Parts (1 Halaman)
                               </div>
-                              {[...item.cellParts]
+                              {[...item.childParts]
                                 .sort((a, b) => {
                                   const pageA = a.pdfPageIndex || 9999;
                                   const pageB = b.pdfPageIndex || 9999;
@@ -546,7 +542,7 @@ function DesignDetailPageContent({ params }: PageProps) {
             {(() => {
               // Kumpulkan semua nomor halaman unik dan urutkan secara menaik (1, 2, 3...)
               const pageSet = new Set<number>([1]);
-              (item.cellParts || []).forEach((cp, idx) => {
+              (item.childParts || []).forEach((cp, idx) => {
                 const pageNum = cp.pdfPageIndex || (idx + 2);
                 if (pageNum > 0) pageSet.add(pageNum);
               });
@@ -735,9 +731,9 @@ function DesignDetailPageContent({ params }: PageProps) {
                 {activeTab === 'info' && (() => {
                   const waitingApproval = item ? approvals?.find((a) => a.noReg === item.noReg && a.status === 'WAITING') : null;
                   
-                  // Deteksi apakah saat ini sedang di halaman CellPart (Halaman > 1)
-                  const currentCellPart = activePdfPage > 1
-                    ? item.cellParts?.find((cp, idx) => (cp.pdfPageIndex || idx + 2) === activePdfPage)
+                  // Deteksi apakah saat ini sedang di halaman ChildPart (Halaman > 1)
+                  const currentChildPart = activePdfPage > 1
+                    ? item.childParts?.find((cp, idx) => (cp.pdfPageIndex || idx + 2) === activePdfPage)
                     : null;
 
                   return (
@@ -766,7 +762,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                       {/* Header Penanda Halaman Aktif dari Scroll */}
                       <div className="flex items-center justify-between px-1">
                         <span className="text-[8.5px] font-bold text-gray-500 uppercase tracking-wider">
-                          {currentCellPart ? `Halaman ${activePdfPage} · Child Part` : `Halaman 1 · Drawing Induk Jig`}
+                          {currentChildPart ? `Halaman ${activePdfPage} · Child Part` : `Halaman 1 · Drawing Induk Jig`}
                         </span>
                         <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 font-mono font-bold text-[8px]">
                           Hal {activePdfPage}
@@ -774,14 +770,14 @@ function DesignDetailPageContent({ params }: PageProps) {
                       </div>
 
                       {/* TAMPILAN JIKA SCROLL KE HALAMAN CHILD CELLPART */}
-                      {currentCellPart ? (
+                      {currentChildPart ? (
                         <>
-                          {/* Identitas CellPart */}
+                          {/* Identitas ChildPart */}
                           <div className="bg-white p-2.5 rounded-lg border border-blue-200 ring-1 ring-blue-100 shadow-2xs space-y-2">
                             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
                               <div>
-                                <span className="text-[8px] font-bold uppercase tracking-wider text-blue-600 block">Child CellPart</span>
-                                <span className="font-mono font-bold text-gray-900 text-[11px]">{currentCellPart.partNumber}</span>
+                                <span className="text-[8px] font-bold uppercase tracking-wider text-blue-600 block">Child ChildPart</span>
+                                <span className="font-mono font-bold text-gray-900 text-[11px]">{currentChildPart.partNumber}</span>
                               </div>
                               <span className="font-bold text-[8.5px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                                 Sheet #{activePdfPage}
@@ -791,12 +787,12 @@ function DesignDetailPageContent({ params }: PageProps) {
                             <div className="space-y-1 text-[9px]">
                               <div>
                                 <span className="text-gray-400 block text-[8px]">Nama Komponen</span>
-                                <span className="font-semibold text-gray-800">{currentCellPart.name}</span>
+                                <span className="font-semibold text-gray-800">{currentChildPart.name}</span>
                               </div>
-                              {currentCellPart.description && (
+                              {currentChildPart.description && (
                                 <div>
                                   <span className="text-gray-400 block text-[8px]">Keterangan</span>
-                                  <span className="text-gray-600 italic leading-tight block">{currentCellPart.description}</span>
+                                  <span className="text-gray-600 italic leading-tight block">{currentChildPart.description}</span>
                                 </div>
                               )}
                               <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 text-[8.5px]">
@@ -806,7 +802,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                                 </div>
                                 <div>
                                   <span className="text-gray-400 block text-[8px]">Material</span>
-                                  <span className="font-semibold text-gray-800 truncate block">{currentCellPart.material || currentCellPart.description || '—'}</span>
+                                  <span className="font-semibold text-gray-800 truncate block">{currentChildPart.material || currentChildPart.description || '—'}</span>
                                 </div>
                               </div>
                             </div>
@@ -871,12 +867,12 @@ function DesignDetailPageContent({ params }: PageProps) {
                   );
                 })()}
 
-                {/* ─ CELLPART TAB ─ */}
-                {activeTab === 'cellpart' && (
+                {/* ─ CHILDPART TAB ─ */}
+                {activeTab === 'childpart' && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <p className="text-[8px] font-bold uppercase text-gray-400 tracking-wider">
-                        Child Cell Parts ({item.cellParts?.length || 0})
+                        Child Child Parts ({item.childParts?.length || 0})
                       </p>
                       <button
                         type="button"
@@ -888,20 +884,20 @@ function DesignDetailPageContent({ params }: PageProps) {
                       </button>
                     </div>
 
-                    {(!item.cellParts || item.cellParts.length === 0) ? (
+                    {(!item.childParts || item.childParts.length === 0) ? (
                       <div className="text-center py-6 bg-white rounded-lg border border-gray-200 p-3 shadow-2xs">
                         <span className="material-symbols-outlined text-xl text-blue-400 block mb-0.5">widgets</span>
-                        <p className="text-[9px] font-bold text-gray-700">Belum Ada Child CellPart</p>
+                        <p className="text-[9px] font-bold text-gray-700">Belum Ada Child ChildPart</p>
                         <button
                           type="button"
                           onClick={handleOpenAddCpModal}
                           className="mt-2 px-2.5 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded text-[8px] font-bold transition-colors cursor-pointer"
                         >
-                          + Tambah CellPart
+                          + Tambah ChildPart
                         </button>
                       </div>
                     ) : (
-                      [...item.cellParts]
+                      [...item.childParts]
                         .sort((a, b) => {
                           const pageA = a.pdfPageIndex || 9999;
                           const pageB = b.pdfPageIndex || 9999;
@@ -1117,7 +1113,7 @@ function DesignDetailPageContent({ params }: PageProps) {
             <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
               <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[#0063ff] text-sm">widgets</span>
-                Tambah Child CellPart
+                Tambah Child ChildPart
               </h3>
               <button
                 type="button"
@@ -1129,7 +1125,7 @@ function DesignDetailPageContent({ params }: PageProps) {
             </div>
 
             {/* Body */}
-            <form onSubmit={handleCreateCellPart} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar text-xs">
+            <form onSubmit={handleCreateChildPart} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar text-xs">
               <div className="bg-blue-50/70 border border-blue-200/80 rounded-lg p-2 text-[10px] text-blue-800">
                 <span className="font-bold">Induk Jig:</span> {item.noReg} — {item.assyPartName}
               </div>
@@ -1149,7 +1145,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                   <p className="text-[8px] text-gray-400 mt-0.5">Part number sublist drawing harus unik di bawah Jig ini.</p>
                 </div>
 
-                {/* Nama CellPart */}
+                {/* Nama ChildPart */}
                 <div className="col-span-2">
                   <label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama Part *</label>
                   <input
@@ -1254,7 +1250,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                       Menyimpan...
                     </>
                   ) : (
-                    'Simpan CellPart'
+                    'Simpan ChildPart'
                   )}
                 </button>
               </div>
@@ -1270,14 +1266,7 @@ function DesignDetailPageContent({ params }: PageProps) {
 export default function DesignDetailPage(props: PageProps) {
   return (
     <Suspense
-      fallback={
-        <div className="flex-1 flex items-center justify-center p-6 bg-white">
-          <div className="text-center">
-            <span className="material-symbols-outlined animate-spin text-2xl text-blue-600">sync</span>
-            <p className="text-xs text-gray-500 mt-2 font-medium">Memuat data desain &amp; E-Tiket...</p>
-          </div>
-        </div>
-      }
+      fallback={<DetailSkeleton />}
     >
       <DesignDetailPageContent {...props} />
     </Suspense>

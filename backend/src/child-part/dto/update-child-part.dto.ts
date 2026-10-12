@@ -1,4 +1,4 @@
-export class UpdateCellPartDto {
+export class UpdateChildPartDto {
   partNumber?: string;
   name?: string;
   description?: string;

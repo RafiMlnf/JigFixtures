@@ -16,6 +16,7 @@ import {
   fetchLinesAndProcesses,
   MachineDashboardItem,
 } from '@/lib/api/phase3';
+import { CardSkeleton } from '@/components/ui/SkeletonLoading';
 
 const ABNORMALITY_TYPES = ['RUSAK', 'AUS', 'DEFORMASI', 'LAINNYA'];
 
@@ -439,17 +440,28 @@ export default function UpdateAbnormalityPage() {
 
         {/* Right side actions group */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Tombol Daftarkan Mesin di Topbar */}
+          {/* Tombol Daftarkan Mesin di Topbar (+ dengan balloon chat tooltip) */}
           {isPic && (
-            <button
-              type="button"
-              onClick={() => setShowRegisterModal(true)}
-              className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-[#0052d4] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Daftarkan Mesin Baru di Line Produksi"
-            >
-              <span className="material-symbols-outlined text-[15px]">add</span>
-              <span>Daftarkan Mesin</span>
-            </button>
+            <div className="relative group inline-flex items-center">
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(true)}
+                className="w-7 h-7 bg-[#0063ff] text-white rounded-lg flex items-center justify-center hover:bg-[#0052d4] transition-all cursor-pointer shadow-sm hover:shadow active:scale-95"
+                aria-label="Daftarkan Mesin"
+              >
+                <span className="material-symbols-outlined text-[16px] font-bold">add</span>
+              </button>
+
+              {/* Balloon Chat Tooltip Popup */}
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none transition-all duration-150">
+                {/* Arrow segitiga ballon chat */}
+                <div className="w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-gray-900" />
+                {/* Isi bubble */}
+                <div className="bg-gray-900 text-white text-[10px] font-semibold px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap tracking-wide">
+                  Daftarkan Mesin
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Tab buttons */}
@@ -501,10 +513,7 @@ export default function UpdateAbnormalityPage() {
           {/* Cards Grid Container */}
           <div className="flex-1 overflow-y-auto pr-1 pb-4">
             {loading ? (
-              <div className="flex items-center justify-center h-48 text-gray-400 text-xs">
-                <span className="material-symbols-outlined animate-spin mr-2 text-blue-600">sync</span>
-                Memuat data mesin di line...
-              </div>
+              <CardSkeleton count={6} />
             ) : filteredMachines.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-300 p-8">
                 <span className="material-symbols-outlined text-4xl text-gray-300 mb-2">
@@ -1146,73 +1155,61 @@ export default function UpdateAbnormalityPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-800">Kondisi Jig</span>
-                      <span
-                        className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
-                          selectedMachineDetail.jigCondition === 'OVERDUE'
-                            ? 'bg-rose-100 text-rose-700'
-                            : selectedMachineDetail.jigCondition === 'WARNING'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
-                      >
-                        {selectedMachineDetail.jigCondition === 'OVERDUE' ? 'Merah' : selectedMachineDetail.jigCondition === 'WARNING' ? 'Kuning' : 'Hijau'}
-                      </span>
+
+                      {/* Tombol Set Warna & Reset Otomatis di samping teks */}
+                      {isPic && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('jigCondition', 'SAFE')}
+                            className={`w-3.5 h-3.5 rounded-full bg-emerald-500 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.jigCondition === 'SAFE'
+                                ? 'ring-2 ring-emerald-600 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Hijau (Safe)"
+                            aria-label="Set Hijau"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('jigCondition', 'WARNING')}
+                            className={`w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.jigCondition === 'WARNING'
+                                ? 'ring-2 ring-amber-500 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Kuning (Warning)"
+                            aria-label="Set Kuning"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('jigCondition', 'OVERDUE')}
+                            className={`w-3.5 h-3.5 rounded-full bg-rose-500 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.jigCondition === 'OVERDUE'
+                                ? 'ring-2 ring-rose-600 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Merah (Overdue / Rusak)"
+                            aria-label="Set Merah"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('jigCondition', 'AUTO')}
+                            className="w-5 h-5 rounded-md border border-gray-200 bg-white hover:bg-gray-100 hover:text-blue-600 transition-colors cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs ml-1"
+                            title="Reset ke Status Otomatis"
+                            aria-label="Reset ke Otomatis"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">refresh</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <span className="text-[9px] text-gray-400">Bulatan Atas</span>
                   </div>
                 </div>
-
-                {/* Dot Warna Ubah Manual Kondisi Jig */}
-                {isPic && (
-                  <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-gray-200/50">
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('jigCondition', 'SAFE')}
-                      className={`w-4 h-4 rounded-full bg-emerald-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.jigCondition === 'SAFE'
-                          ? 'ring-2 ring-emerald-600 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Hijau (Safe)"
-                      aria-label="Set Hijau"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('jigCondition', 'WARNING')}
-                      className={`w-4 h-4 rounded-full bg-amber-400 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.jigCondition === 'WARNING'
-                          ? 'ring-2 ring-amber-500 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Kuning (Warning)"
-                      aria-label="Set Kuning"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('jigCondition', 'OVERDUE')}
-                      className={`w-4 h-4 rounded-full bg-rose-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.jigCondition === 'OVERDUE'
-                          ? 'ring-2 ring-rose-600 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Merah (Overdue / Rusak)"
-                      aria-label="Set Merah"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('jigCondition', 'AUTO')}
-                      className="ml-auto w-4 h-4 rounded-full border border-gray-300 bg-white hover:bg-gray-100 hover:scale-110 transition-transform cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs"
-                      title="Reset ke Otomatis"
-                      aria-label="Reset ke Otomatis"
-                    >
-                      <span className="material-symbols-outlined text-[10px]">sync</span>
-                    </button>
-                  </div>
-                )}
 
                 {/* Tombol Laporan Khusus Masalah Jig */}
                 <button
@@ -1240,73 +1237,61 @@ export default function UpdateAbnormalityPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-800">Jadwal TPM</span>
-                      <span
-                        className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
-                          selectedMachineDetail.tpmSchedule === 'OVERDUE'
-                            ? 'bg-rose-100 text-rose-700'
-                            : selectedMachineDetail.tpmSchedule === 'WARNING'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}
-                      >
-                        {selectedMachineDetail.tpmSchedule === 'OVERDUE' ? 'Merah' : selectedMachineDetail.tpmSchedule === 'WARNING' ? 'Kuning' : 'Hijau'}
-                      </span>
+
+                      {/* Tombol Set Warna & Reset Otomatis di samping teks */}
+                      {isPic && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('tpmSchedule', 'SAFE')}
+                            className={`w-3.5 h-3.5 rounded-full bg-emerald-500 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.tpmSchedule === 'SAFE'
+                                ? 'ring-2 ring-emerald-600 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Hijau (Safe)"
+                            aria-label="Set Hijau"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('tpmSchedule', 'WARNING')}
+                            className={`w-3.5 h-3.5 rounded-full bg-amber-400 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.tpmSchedule === 'WARNING'
+                                ? 'ring-2 ring-amber-500 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Kuning (Warning)"
+                            aria-label="Set Kuning"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('tpmSchedule', 'OVERDUE')}
+                            className={`w-3.5 h-3.5 rounded-full bg-rose-500 hover:scale-115 transition-transform cursor-pointer shadow-3xs ${
+                              selectedMachineDetail.tpmSchedule === 'OVERDUE'
+                                ? 'ring-2 ring-rose-600 ring-offset-1 scale-110'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                            title="Set Merah (Overdue)"
+                            aria-label="Set Merah"
+                          />
+                          <button
+                            type="button"
+                            disabled={updatingMachineStatus}
+                            onClick={() => handleManualStatusChange('tpmSchedule', 'AUTO')}
+                            className="w-5 h-5 rounded-md border border-gray-200 bg-white hover:bg-gray-100 hover:text-blue-600 transition-colors cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs ml-1"
+                            title="Reset ke Status Otomatis"
+                            aria-label="Reset ke Otomatis"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">refresh</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <span className="text-[9px] text-gray-400">Bulatan Bawah</span>
                   </div>
                 </div>
-
-                {/* Dot Warna Ubah Manual Jadwal TPM */}
-                {isPic && (
-                  <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-gray-200/50">
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('tpmSchedule', 'SAFE')}
-                      className={`w-4 h-4 rounded-full bg-emerald-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.tpmSchedule === 'SAFE'
-                          ? 'ring-2 ring-emerald-600 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Hijau (Safe)"
-                      aria-label="Set Hijau"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('tpmSchedule', 'WARNING')}
-                      className={`w-4 h-4 rounded-full bg-amber-400 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.tpmSchedule === 'WARNING'
-                          ? 'ring-2 ring-amber-500 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Kuning (Warning)"
-                      aria-label="Set Kuning"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('tpmSchedule', 'OVERDUE')}
-                      className={`w-4 h-4 rounded-full bg-rose-500 hover:scale-110 transition-transform cursor-pointer shadow-3xs ${
-                        selectedMachineDetail.tpmSchedule === 'OVERDUE'
-                          ? 'ring-2 ring-rose-600 ring-offset-1 scale-105'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                      title="Set Merah (Overdue)"
-                      aria-label="Set Merah"
-                    />
-                    <button
-                      type="button"
-                      disabled={updatingMachineStatus}
-                      onClick={() => handleManualStatusChange('tpmSchedule', 'AUTO')}
-                      className="ml-auto w-4 h-4 rounded-full border border-gray-300 bg-white hover:bg-gray-100 hover:scale-110 transition-transform cursor-pointer flex items-center justify-center text-gray-500 shadow-3xs"
-                      title="Reset ke Otomatis"
-                      aria-label="Reset ke Otomatis"
-                    >
-                      <span className="material-symbols-outlined text-[10px]">sync</span>
-                    </button>
-                  </div>
-                )}
 
                 {/* Tombol Laporan Khusus Jadwal TPM */}
                 <button

@@ -128,7 +128,7 @@ model Design {
   inventoryLogs     InventoryLog[]
   notifications     Notification[]
   revisionHistories RevisionHistory[]
-  cellParts         CellPart[]
+  childParts        ChildPart[]
   tpmChecklists     TpmChecklist[]
   tpmLogs           TpmMaintenanceLog[]
   replacementLogs   PartReplacementLog[]
@@ -296,11 +296,11 @@ enum LifecycleStatus {
   SCRAP
 }
 
-// ==========================================
-// CELL PART (Child of Design/Jig)
+/// ==========================================
+// CHILD PART (Child of Design/Jig)
 // ==========================================
 
-model CellPart {
+model ChildPart {
   id              String    @id @default(cuid())
   designId        String    @map("design_id")
   design          Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
@@ -327,7 +327,7 @@ model CellPart {
   // PDF drawing page reference
   pdfPageIndex    Int?      @map("pdf_page_index")
 
-  // TPM Scheduling — kapan lifetime cell part ini akan diatur di modul TPM
+  // TPM Scheduling — kapan lifetime child part ini akan diatur di modul TPM
   tpmScheduleStart    DateTime? @map("tpm_schedule_start")
   tpmScheduleDeadline DateTime? @map("tpm_schedule_deadline")
   tpmLifetimeSetAt    DateTime? @map("tpm_lifetime_set_at")
@@ -339,7 +339,7 @@ model CellPart {
   tpmLogs         TpmMaintenanceLog[]
   replacementLogs PartReplacementLog[]
 
-  @@map("cell_part")
+  @@map("child_part")
 }
 
 // ==========================================
@@ -350,14 +350,13 @@ model TpmChecklist {
   id                String       @id @default(cuid())
   designId          String       @map("design_id")
   design            Design       @relation(fields: [designId], references: [id], onDelete: Cascade)
-  cellPartId        String?      @map("cell_part_id")
-  cellPart          CellPart?    @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+  childPartId       String?      @map("child_part_id")
+  childPart         ChildPart?   @relation(fields: [childPartId], references: [id], onDelete: SetNull)
 
   inspectorName     String       @map("inspector_name")
   shift             String       @default("Shift 1") // Shift 1, Shift 2, Shift 3, Non-Shift
   checkDate         DateTime     @default(now()) @map("check_date")
   overallResult     String       @default("OK") @map("overall_result") // OK, NG
-
   cleaningStatus    String       @default("OK") @map("cleaning_status") // OK, NG, NA
   locatorPinStatus  String       @default("OK") @map("locator_pin_status") // OK, NG, NA
   clampingStatus    String       @default("OK") @map("clamping_status") // OK, NG, NA
@@ -379,8 +378,8 @@ model TpmMaintenanceLog {
   id                String       @id @default(cuid())
   designId          String       @map("design_id")
   design            Design       @relation(fields: [designId], references: [id], onDelete: Cascade)
-  cellPartId        String?      @map("cell_part_id")
-  cellPart          CellPart?    @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+  childPartId       String?      @map("child_part_id")
+  childPart         ChildPart?   @relation(fields: [childPartId], references: [id], onDelete: SetNull)
 
   actionType        String       @default("PREVENTIVE") @map("action_type") // PREVENTIVE, CORRECTIVE, RENEWAL, CALIBRATION, OVERHAUL
   title             String
@@ -399,11 +398,11 @@ model TpmMaintenanceLog {
 }
 
 model PartReplacementLog {
-  id              String    @id @default(cuid())
-  designId        String    @map("design_id")
-  design          Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
-  cellPartId      String?   @map("cell_part_id")
-  cellPart        CellPart? @relation(fields: [cellPartId], references: [id], onDelete: SetNull)
+  id              String     @id @default(cuid())
+  designId        String     @map("design_id")
+  design          Design     @relation(fields: [designId], references: [id], onDelete: Cascade)
+  childPartId     String?    @map("child_part_id")
+  childPart       ChildPart? @relation(fields: [childPartId], references: [id], onDelete: SetNull)
 
   partNumber      String    @map("part_number")
   partName        String    @map("part_name")

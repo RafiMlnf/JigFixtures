@@ -47,7 +47,7 @@ export class DesignService {
   /** Get all items (alias for inventory list) for the design form dropdown */
   async getAllItems() {
     const designs = await this.prisma.design.findMany({
-      include: { line: true, documents: true, revisionHistories: { orderBy: { createdAt: 'desc' }, take: 1 }, cellParts: true },
+      include: { line: true, documents: true, revisionHistories: { orderBy: { createdAt: 'desc' }, take: 1 }, childParts: true },
       orderBy: { noReg: 'asc' },
     });
 
@@ -60,7 +60,7 @@ export class DesignService {
       designDateNew: d.designDateNew,
       docLocation2D: d.documents[0]?.loc2D || null,
       docLocation3D: d.revisionHistories[0]?.loc3D || null,
-      cellPartCount: d.cellParts?.length || 0,
+      childPartCount: d.childParts?.length || 0,
     }));
   }
 
@@ -177,7 +177,7 @@ export class DesignService {
           include: { changedBy: { select: { name: true } }, vendor: true },
           orderBy: { createdAt: 'desc' },
         },
-        cellParts: {
+        childParts: {
           orderBy: { partNumber: 'asc' },
         },
       },
@@ -247,7 +247,7 @@ export class DesignService {
         createdAt: abn.createdAt,
         reportedBy: abn.reportedBy.name,
       })),
-      cellParts: (d as any).cellParts?.map((cp: any) => {
+      childParts: (d as any).childParts?.map((cp: any) => {
         const lifetime = this.calculateLifetime({
           installDate: cp.installDate,
           lastRenewalDate: cp.lastRenewalDate,
@@ -418,12 +418,12 @@ export class DesignService {
       });
     }
 
-    // Bulk create CellParts if provided from drawing extraction
-    if (Array.isArray(dto.cellParts) && dto.cellParts.length > 0) {
-      for (const cp of dto.cellParts) {
+    // Bulk create ChildParts if provided from drawing extraction
+    if (Array.isArray(dto.childParts) && dto.childParts.length > 0) {
+      for (const cp of dto.childParts) {
         if (!cp.partNumber || !cp.name) continue;
         try {
-          await this.prisma.cellPart.create({
+          await this.prisma.childPart.create({
             data: {
               designId: design.id,
               partNumber: cp.partNumber.trim(),
@@ -481,7 +481,7 @@ export class DesignService {
   }
 
   /**
-   * Extract a single page of 2D drawing (Hal 1 for Induk Jig, Hal N for CellPart)
+   * Extract a single page of 2D drawing (Hal 1 for Induk Jig, Hal N for ChildPart)
    * Drawing can ONLY be downloaded when fully approved.
    * Stamped with official legal seal at the bottom-right corner.
    */
@@ -490,7 +490,7 @@ export class DesignService {
       where: { id: designId },
       include: {
         documents: { orderBy: { createdAt: 'desc' } },
-        cellParts: true,
+        childParts: true,
       },
     });
     if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);
@@ -544,7 +544,7 @@ export class DesignService {
     if (pageNumber === 1) {
       filename = `${design.noReg}_Induk_Hal_1.pdf`;
     } else {
-      const cp = design.cellParts.find((c) => (c.pdfPageIndex || 0) === pageNumber);
+      const cp = design.childParts.find((c) => (c.pdfPageIndex || 0) === pageNumber);
       if (cp) {
         filename = `${design.noReg}_CP_${cp.partNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}_Hal_${pageNumber}.pdf`;
       } else {
@@ -567,7 +567,7 @@ export class DesignService {
       where: { id: designId },
       include: {
         documents: { orderBy: { createdAt: 'desc' } },
-        cellParts: true,
+        childParts: true,
       },
     });
     if (!design) throw new NotFoundException(`Desain ${designId} tidak ditemukan.`);

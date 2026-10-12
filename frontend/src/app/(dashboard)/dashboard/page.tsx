@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useApp, JigFixtureItem, ApprovalItem } from '@/context/AppContext';
-import { fetchMasterList, fetchCellPartReminders, renewCellPart } from '@/lib/api/phase3';
+import { fetchMasterList, fetchChildPartReminders, renewChildPart } from '@/lib/api/phase3';
 import { fetchTpmSummary, fetchTpmSchedules, TpmScheduleItem, TpmSummary } from '@/lib/api/tpm';
 import { canApprove } from '@/lib/rbac';
+import { ListSkeleton } from '@/components/ui/SkeletonLoading';
 
 interface LifetimeItem {
   id: string;
@@ -44,9 +45,9 @@ export default function DashboardPage() {
   const [taskFilter, setTaskFilter] = useState<'ALL' | 'WAITING' | 'REVISION' | 'DESIGN_REV' | 'INVENTORY_UPDATE'>('ALL');
   const [taskSearch, setTaskSearch] = useState('');
 
-  // CellPart Lifetime Reminders states (Card 3)
-  const [cellPartReminders, setCellPartReminders] = useState<any[]>([]);
-  const [cellPartSearch, setCellPartSearch] = useState('');
+  // ChildPart Lifetime Reminders states (Card 3)
+  const [childPartReminders, setChildPartReminders] = useState<any[]>([]);
+  const [childPartSearch, setChildPartSearch] = useState('');
   const [processingCpId, setProcessingCpId] = useState<string | null>(null);
 
   // Lifetime states (Card 3)
@@ -57,10 +58,10 @@ export default function DashboardPage() {
   // Stok Reminder states (Card 4)
   const [stockSearch, setStockSearch] = useState('');
 
-  const loadCellPartReminders = async () => {
+  const loadChildPartReminders = async () => {
     try {
-      const res = await fetchCellPartReminders();
-      setCellPartReminders(res || []);
+      const res = await fetchChildPartReminders();
+      setChildPartReminders(res || []);
     } catch (err) {
       console.warn('Could not fetch cell part reminders', err);
     }
@@ -71,12 +72,12 @@ export default function DashboardPage() {
     try {
       const [res, cpReminders, tpmSchedRes, tpmSumRes] = await Promise.allSettled([
         fetchMasterList(),
-        fetchCellPartReminders(),
+        fetchChildPartReminders(),
         fetchTpmSchedules(),
         fetchTpmSummary(),
       ]);
       if (res.status === 'fulfilled') setMasterList(res.value || []);
-      if (cpReminders.status === 'fulfilled') setCellPartReminders(cpReminders.value || []);
+      if (cpReminders.status === 'fulfilled') setChildPartReminders(cpReminders.value || []);
       if (tpmSchedRes.status === 'fulfilled') setTpmSchedules(tpmSchedRes.value || []);
       if (tpmSumRes.status === 'fulfilled') setTpmSummary(tpmSumRes.value || null);
     } catch (err) {
@@ -377,12 +378,12 @@ export default function DashboardPage() {
     return { overdue, warning, safe, total: lifetimeItems.length };
   }, [lifetimeItems]);
 
-  // CellPart Reminders summary statistics (≤5 minggu / 35 hari & Overdue)
+  // ChildPart Reminders summary statistics (≤5 minggu / 35 hari & Overdue)
   const cpStats = useMemo(() => {
-    const overdue = cellPartReminders.filter((cp) => cp.lifetimeStatus === 'OVERDUE').length;
-    const warning = cellPartReminders.filter((cp) => cp.lifetimeStatus === 'WARNING').length;
-    return { overdue, warning, total: cellPartReminders.length };
-  }, [cellPartReminders]);
+    const overdue = childPartReminders.filter((cp) => cp.lifetimeStatus === 'OVERDUE').length;
+    const warning = childPartReminders.filter((cp) => cp.lifetimeStatus === 'WARNING').length;
+    return { overdue, warning, total: childPartReminders.length };
+  }, [childPartReminders]);
 
   // Combined Stock Items for Stok Reminder (Card 4: Jig & Part Stock)
   const stockItems = useMemo(() => {
@@ -420,10 +421,10 @@ export default function DashboardPage() {
       });
     });
 
-    // 2. CellPart Stock (from masterList)
+    // 2. ChildPart Stock (from masterList)
     masterList.forEach((m) => {
-      if (Array.isArray(m.cellParts)) {
-        m.cellParts.forEach((cp: any) => {
+      if (Array.isArray(m.childParts)) {
+        m.childParts.forEach((cp: any) => {
           const actual = cp.actualStock ?? 0;
           const min = cp.minimumStock ?? 0;
           if (min > 0 || actual > 0) {
@@ -479,26 +480,26 @@ export default function DashboardPage() {
   }, [stockItems, stockSearch]);
 
   const filteredCpReminders = useMemo(() => {
-    if (!cellPartSearch.trim()) return cellPartReminders;
-    const q = cellPartSearch.toLowerCase().trim();
-    return cellPartReminders.filter(
+    if (!childPartSearch.trim()) return childPartReminders;
+    const q = childPartSearch.toLowerCase().trim();
+    return childPartReminders.filter(
       (cp) =>
         (cp.partNumber && cp.partNumber.toLowerCase().includes(q)) ||
         (cp.name && cp.name.toLowerCase().includes(q)) ||
         (cp.parentNoReg && cp.parentNoReg.toLowerCase().includes(q)) ||
         (cp.parentName && cp.parentName.toLowerCase().includes(q))
     );
-  }, [cellPartReminders, cellPartSearch]);
+  }, [childPartReminders, childPartSearch]);
 
-  const handleRenewCellPartItem = async (cpId: string, cpName: string) => {
+  const handleRenewChildPartItem = async (cpId: string, cpName: string) => {
     try {
       setProcessingCpId(cpId);
-      await renewCellPart(cpId);
-      setActionSuccessMsg(`Lifetime CellPart "${cpName}" berhasil di-renew!`);
+      await renewChildPart(cpId);
+      setActionSuccessMsg(`Lifetime ChildPart "${cpName}" berhasil di-renew!`);
       setTimeout(() => setActionSuccessMsg(null), 3000);
       await loadAllDashboardData();
     } catch (err: any) {
-      alert(`Gagal me-renew CellPart: ${err.message || 'Error server'}`);
+      alert(`Gagal me-renew ChildPart: ${err.message || 'Error server'}`);
     } finally {
       setProcessingCpId(null);
     }
@@ -667,10 +668,7 @@ export default function DashboardPage() {
               {/* List */}
               <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
                 {isLoading ? (
-                  <div className="h-28 flex flex-col items-center justify-center text-slate-400">
-                    <span className="material-symbols-outlined animate-spin text-lg text-blue-500 mb-1">sync</span>
-                    <p className="text-[10px]">Memuat jadwal TPM...</p>
-                  </div>
+                  <ListSkeleton count={3} />
                 ) : filteredTpmSchedules.length === 0 ? (
                   <div className="h-28 flex flex-col items-center justify-center p-3 text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
                     <span className="material-symbols-outlined text-2xl text-emerald-500">verified</span>
@@ -721,12 +719,12 @@ export default function DashboardPage() {
                           </div>
                           <span
                             className={`text-[7px] font-bold px-1.5 py-0.2 rounded-full uppercase shrink-0 ${
-                              item.isCellPart
+                              item.isChildPart
                                 ? 'bg-purple-100 text-purple-700 border border-purple-200'
                                 : 'bg-blue-100 text-blue-700 border border-blue-200'
                             }`}
                           >
-                            {item.isCellPart ? 'Cell Part' : 'Jig'}
+                            {item.isChildPart ? 'Child Part' : 'Jig'}
                           </span>
                         </div>
 
@@ -735,11 +733,6 @@ export default function DashboardPage() {
                           <h4 className="text-[10px] font-bold text-slate-800 truncate leading-tight group-hover:text-blue-700 transition-colors" title={item.name}>
                             {item.name}
                           </h4>
-                          {item.isCellPart && item.parentNoReg && (
-                            <p className="text-[8px] text-slate-500 font-mono truncate">
-                              Parent: {item.parentNoReg} ({item.parentName})
-                            </p>
-                          )}
                         </div>
 
                         {/* Row 3: Schedule Deadline / Due Date & Countdown */}
@@ -908,10 +901,7 @@ export default function DashboardPage() {
               {/* Task List Content */}
               <div className="flex-1 overflow-hidden flex flex-col">
                 {isLoading ? (
-                  <div className="h-28 flex flex-col items-center justify-center text-slate-400">
-                    <span className="material-symbols-outlined animate-spin text-lg text-amber-500 mb-1">sync</span>
-                    <p className="text-[10px]">Memuat approval...</p>
-                  </div>
+                  <ListSkeleton count={3} />
                 ) : filteredTasks.length === 0 ? (
                   <div className="h-32 flex flex-col items-center justify-center p-3 text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
                     <span className="material-symbols-outlined text-4xl text-slate-400">task_alt</span>
@@ -1272,10 +1262,7 @@ export default function DashboardPage() {
               {/* Items List */}
               <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
                 {isLoading ? (
-                  <div className="h-28 flex flex-col items-center justify-center text-slate-400">
-                    <span className="material-symbols-outlined animate-spin text-lg text-blue-500 mb-1">sync</span>
-                    <p className="text-[10px]">Memuat stok...</p>
-                  </div>
+                  <ListSkeleton count={3} />
                 ) : filteredStockItems.length === 0 ? (
                   <div className="h-28 flex flex-col items-center justify-center p-3 text-slate-400 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
                     <span className="material-symbols-outlined text-2xl text-emerald-500">inventory_2</span>

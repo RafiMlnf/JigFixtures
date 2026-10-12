@@ -295,26 +295,26 @@ export async function deleteDesignItem(id: string) {
 // CELL PART API
 // ==========================================
 
-/** Fetch CellParts for a parent Design/Jig */
-export async function fetchCellParts(designId: string) {
-  const res = await fetch(`${BASE}/api/cell-part/by-design/${designId}`, {
+/** Fetch ChildParts for a parent Design/Jig */
+export async function fetchChildParts(designId: string) {
+  const res = await fetch(`${BASE}/api/child-part/by-design/${designId}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new HttpError('Failed to fetch cell parts', res.status);
   return res.json();
 }
 
-/** Fetch CellPart reminders (approaching or past due date) */
-export async function fetchCellPartReminders() {
-  const res = await fetch(`${BASE}/api/cell-part/reminders`, {
+/** Fetch ChildPart reminders (approaching or past due date) */
+export async function fetchChildPartReminders() {
+  const res = await fetch(`${BASE}/api/child-part/reminders`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new HttpError('Failed to fetch cell part reminders', res.status);
   return res.json();
 }
 
-/** Create a new CellPart under a parent Design */
-export async function createCellPart(data: {
+/** Create a new ChildPart under a parent Design */
+export async function createChildPart(data: {
   designId: string;
   partNumber: string;
   name: string;
@@ -328,7 +328,7 @@ export async function createCellPart(data: {
   actualStock?: number;
   pdfPageIndex?: number;
 }) {
-  const res = await fetch(`${BASE}/api/cell-part`, {
+  const res = await fetch(`${BASE}/api/child-part`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -343,8 +343,8 @@ export async function createCellPart(data: {
   return res.json();
 }
 
-/** Update an existing CellPart */
-export async function updateCellPart(id: string, data: {
+/** Update an existing ChildPart */
+export async function updateChildPart(id: string, data: {
   partNumber?: string;
   name?: string;
   description?: string;
@@ -357,7 +357,7 @@ export async function updateCellPart(id: string, data: {
   actualStock?: number;
   pdfPageIndex?: number;
 }) {
-  const res = await fetch(`${BASE}/api/cell-part/${id}`, {
+  const res = await fetch(`${BASE}/api/child-part/${id}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -372,9 +372,9 @@ export async function updateCellPart(id: string, data: {
   return res.json();
 }
 
-/** Renew a CellPart's lifetime (reset install date and/or reset currentUsage) */
-export async function renewCellPart(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
-  const res = await fetch(`${BASE}/api/cell-part/${id}/renew`, {
+/** Renew a ChildPart's lifetime (reset install date and/or reset currentUsage) */
+export async function renewChildPart(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
+  const res = await fetch(`${BASE}/api/child-part/${id}/renew`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -406,14 +406,14 @@ export async function renewDesign(id: string, options: { resetDays?: boolean; re
   return res.json();
 }
 
-/** Record or log usage count for a Design item or CellPart */
+/** Record or log usage count for a Design item or ChildPart */
 export async function recordUsage(
-  target: 'design' | 'cell-part',
+  target: 'design' | 'child-part',
   id: string,
   amount: number,
   mode: 'ADD' | 'SET' = 'ADD',
 ) {
-  const endpoint = target === 'design' ? `${BASE}/api/design/${id}/usage` : `${BASE}/api/cell-part/${id}/usage`;
+  const endpoint = target === 'design' ? `${BASE}/api/design/${id}/usage` : `${BASE}/api/child-part/${id}/usage`;
   const res = await fetch(endpoint, {
     method: 'PATCH',
     headers: {
@@ -429,9 +429,9 @@ export async function recordUsage(
   return res.json();
 }
 
-/** Delete a CellPart */
-export async function deleteCellPart(id: string) {
-  const res = await fetch(`${BASE}/api/cell-part/${id}`, {
+/** Delete a ChildPart */
+export async function deleteChildPart(id: string) {
+  const res = await fetch(`${BASE}/api/child-part/${id}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${getToken()}`,
@@ -447,7 +447,7 @@ export async function deleteCellPart(id: string) {
 export interface PartReplacementRecord {
   id: string;
   designId: string;
-  cellPartId?: string | null;
+  childPartId?: string | null;
   partNumber: string;
   partName: string;
   replacedAt: string;
@@ -464,7 +464,7 @@ export interface PartReplacementRecord {
     line?: { lineName: string };
     process?: { name: string };
   };
-  cellPart?: {
+  childPart?: {
     id: string;
     partNumber: string;
     name: string;
@@ -472,7 +472,7 @@ export interface PartReplacementRecord {
 }
 
 /** Record a part replacement with historical tracking */
-export async function recordCellPartReplacement(
+export async function recordChildPartReplacement(
   id: string,
   data: {
     replacedAt?: string;
@@ -482,7 +482,7 @@ export async function recordCellPartReplacement(
     resetUsage?: boolean;
   },
 ) {
-  const res = await fetch(`${BASE}/api/cell-part/${id}/replace`, {
+  const res = await fetch(`${BASE}/api/child-part/${id}/replace`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -500,15 +500,15 @@ export async function recordCellPartReplacement(
 /** Fetch part replacement historical log */
 export async function fetchReplacementHistory(query?: {
   designId?: string;
-  cellPartId?: string;
+  childPartId?: string;
   search?: string;
 }): Promise<PartReplacementRecord[]> {
   const params = new URLSearchParams();
   if (query?.designId) params.append('designId', query.designId);
-  if (query?.cellPartId) params.append('cellPartId', query.cellPartId);
+  if (query?.childPartId) params.append('childPartId', query.childPartId);
   if (query?.search) params.append('search', query.search);
 
-  const res = await fetch(`${BASE}/api/cell-part/replacement-history?${params.toString()}`, {
+  const res = await fetch(`${BASE}/api/child-part/replacement-history?${params.toString()}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new HttpError('Failed to fetch replacement history', res.status);
@@ -517,7 +517,7 @@ export async function fetchReplacementHistory(query?: {
 
 /** Delete a replacement log entry */
 export async function deleteReplacementLog(id: string) {
-  const res = await fetch(`${BASE}/api/cell-part/replacement-history/${id}`, {
+  const res = await fetch(`${BASE}/api/child-part/replacement-history/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
   });
@@ -543,7 +543,7 @@ export interface ParsedJigMetadata {
   weight?: string;
 }
 
-export interface ParsedCellPartItem {
+export interface ParsedChildPartItem {
   itemNo: number;
   name: string;
   partNumber: string;
@@ -562,7 +562,7 @@ export interface ParseDrawingResponse {
   size: number;
   parsed: {
     jig: ParsedJigMetadata;
-    cellParts: ParsedCellPartItem[];
+    childParts: ParsedChildPartItem[];
     totalPages: number;
     extractedTextSummary?: string;
   };
@@ -665,7 +665,7 @@ export async function resubmitRevision(
   return res.json();
 }
 
-/** Download a single 1-page PDF for a design (Hal 1: Induk, Hal N: CellPart) */
+/** Download a single 1-page PDF for a design (Hal 1: Induk, Hal N: ChildPart) */
 export async function downloadDesignPdfPage(designId: string, pageNumber: number, customFilename?: string) {
   const res = await fetch(`${BASE}/api/design/${designId}/pdf-page/${pageNumber}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
@@ -779,3 +779,13 @@ export async function downloadMergedDesignPdf(
 }
 
 
+
+// Backward-compatible aliases for legacy imports
+export const fetchCellParts = fetchChildParts;
+export const fetchCellPartReminders = fetchChildPartReminders;
+export const createCellPart = createChildPart;
+export const updateCellPart = updateChildPart;
+export const renewCellPart = renewChildPart;
+export const deleteCellPart = deleteChildPart;
+export const recordCellPartReplacement = recordChildPartReplacement;
+export type ParsedCellPartItem = ParsedChildPartItem;

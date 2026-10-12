@@ -15,7 +15,7 @@ export class InventoryService {
     return 'RED';
   }
 
-  private enrichCellPart(cp: any) {
+  private enrichChildPart(cp: any) {
     const baseDate = cp.lastRenewalDate || cp.installDate || new Date();
     const lifetimeDays = cp.lifetimeDays ?? 180;
     const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
@@ -145,7 +145,7 @@ export class InventoryService {
     // Fetch all designs matching criteria
     const rawItems = await this.prisma.design.findMany({
       where,
-      include: { line: true, process: true, vendor: true, cellParts: { orderBy: { partNumber: 'asc' } } },
+      include: { line: true, process: true, vendor: true, childParts: { orderBy: { partNumber: 'asc' } } },
       orderBy: { noReg: 'asc' },
     });
 
@@ -156,7 +156,7 @@ export class InventoryService {
       process: item.process.name,
       indicator: this.getIndicator(item.actualStock, item.minimumStock),
       ...this.enrichDesignLifetime(item),
-      cellParts: (item as any).cellParts?.map((cp: any) => this.enrichCellPart(cp)) || [],
+      childParts: (item as any).childParts?.map((cp: any) => this.enrichChildPart(cp)) || [],
     }));
 
     if (query.indicator) {
@@ -184,7 +184,7 @@ export class InventoryService {
   async findOne(id: string) {
     const item = await this.prisma.design.findUnique({
       where: { id },
-      include: { line: true, process: true, vendor: true, cellParts: { orderBy: { partNumber: 'asc' } } },
+      include: { line: true, process: true, vendor: true, childParts: { orderBy: { partNumber: 'asc' } } },
     });
     if (!item) {
       throw new NotFoundException(`Inventory item with ID ${id} not found`);
@@ -195,7 +195,7 @@ export class InventoryService {
       process: item.process.name,
       indicator: this.getIndicator(item.actualStock, item.minimumStock),
       ...this.enrichDesignLifetime(item),
-      cellParts: (item as any).cellParts?.map((cp: any) => this.enrichCellPart(cp)) || [],
+      childParts: (item as any).childParts?.map((cp: any) => this.enrichChildPart(cp)) || [],
     };
   }
 

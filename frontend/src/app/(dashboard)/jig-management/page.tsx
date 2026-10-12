@@ -6,13 +6,14 @@ import { canEdit } from '@/lib/rbac';
 import {
   fetchMasterList,
   fetchReplacementHistory,
-  recordCellPartReplacement,
+  recordChildPartReplacement,
   deleteReplacementLog,
   PartReplacementRecord,
-  updateCellPart,
+  updateChildPart,
 } from '@/lib/api/phase3';
+import { TableSkeleton } from '@/components/ui/SkeletonLoading';
 
-interface CellPartItem {
+interface ChildPartItem {
   id: string;
   itemNo?: number;
   partNumber: string;
@@ -54,7 +55,7 @@ interface JigMasterItem {
   daysRemaining?: number;
   dueDate?: string;
   lifetimeStatus?: 'OVERDUE' | 'WARNING' | 'SAFE';
-  cellParts?: CellPartItem[];
+  childParts?: ChildPartItem[];
 }
 
 function JigManagementContent() {
@@ -86,8 +87,8 @@ function JigManagementContent() {
   const [jigMaxUsage, setJigMaxUsage] = useState(500);
   const [jigCurrentUsage, setJigCurrentUsage] = useState(0);
 
-  // Modal: Edit Stock & Lifetime CellPart
-  const [editingCp, setEditingCp] = useState<{ parentNoReg: string; cp: CellPartItem } | null>(null);
+  // Modal: Edit Stock & Lifetime ChildPart
+  const [editingCp, setEditingCp] = useState<{ parentNoReg: string; cp: ChildPartItem } | null>(null);
   const [cpMinStock, setCpMinStock] = useState(0);
   const [cpActStock, setCpActStock] = useState(0);
   const [cpLifetimeDays, setCpLifetimeDays] = useState(180);
@@ -96,7 +97,7 @@ function JigManagementContent() {
   const [cpCurrentUsage, setCpCurrentUsage] = useState(0);
 
   // Modal: Ganti Part Baru (Record Replacement)
-  const [replacingCp, setReplacingCp] = useState<{ parentNoReg: string; cp: CellPartItem } | null>(null);
+  const [replacingCp, setReplacingCp] = useState<{ parentNoReg: string; cp: ChildPartItem } | null>(null);
   const [replaceDate, setReplaceDate] = useState(new Date().toISOString().split('T')[0]);
   const [replacePic, setReplacePic] = useState(user?.name || 'PIC Jig Fixture');
   const [replaceReason, setReplaceReason] = useState('Keausan Pemakaian (Aus Normal)');
@@ -155,15 +156,11 @@ function JigManagementContent() {
     const raw = dateStr || installStr;
     if (!raw) return '-';
     const date = new Date(raw);
-    const diffDays = Math.floor((Date.now() - date.getTime()) / 86400000);
-    const dateFormatted = date.toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-    });
-    if (diffDays === 0) return `Hari ini (${dateFormatted})`;
-    if (diffDays === 1) return `1 hr lalu (${dateFormatted})`;
-    return `${diffDays} hr lalu (${dateFormatted})`;
+    if (isNaN(date.getTime())) return '-';
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
   };
 
   // Open Jig Edit
@@ -204,7 +201,7 @@ function JigManagementContent() {
   };
 
   // Open CP Edit
-  const handleOpenCpEdit = (parentNoReg: string, cp: CellPartItem) => {
+  const handleOpenCpEdit = (parentNoReg: string, cp: ChildPartItem) => {
     setEditingCp({ parentNoReg, cp });
     setCpMinStock(cp.minimumStock ?? 0);
     setCpActStock(cp.actualStock ?? 0);
@@ -219,7 +216,7 @@ function JigManagementContent() {
     if (!editingCp) return;
     setSubmitting(true);
     try {
-      await updateCellPart(editingCp.cp.id, {
+      await updateChildPart(editingCp.cp.id, {
         minimumStock: cpMinStock,
         actualStock: cpActStock,
         lifetimeDays: cpLifetimeDays,
@@ -238,7 +235,7 @@ function JigManagementContent() {
   };
 
   // Open Replace Modal
-  const handleOpenReplace = (parentNoReg: string, cp: CellPartItem) => {
+  const handleOpenReplace = (parentNoReg: string, cp: ChildPartItem) => {
     setReplacingCp({ parentNoReg, cp });
     setReplaceDate(new Date().toISOString().split('T')[0]);
     setReplacePic(user?.name || 'PIC Jig Fixture');
@@ -251,7 +248,7 @@ function JigManagementContent() {
     if (!replacingCp) return;
     setSubmitting(true);
     try {
-      await recordCellPartReplacement(replacingCp.cp.id, {
+      await recordChildPartReplacement(replacingCp.cp.id, {
         replacedBy: replacePic,
         reason: replaceReason,
         notes: replaceNotes || undefined,
@@ -289,7 +286,7 @@ function JigManagementContent() {
         item.assyPartName.toLowerCase().includes(q) ||
         item.lineProduct.toLowerCase().includes(q) ||
         item.process.toLowerCase().includes(q) ||
-        (item.cellParts || []).some(
+        (item.childParts || []).some(
           (cp) =>
             cp.partNumber.toLowerCase().includes(q) ||
             cp.name.toLowerCase().includes(q),
@@ -310,7 +307,7 @@ function JigManagementContent() {
       if (lifetimeFilter !== 'ALL') {
         matchLifetime =
           item.lifetimeStatus === lifetimeFilter ||
-          (item.cellParts || []).some((cp) => cp.lifetimeStatus === lifetimeFilter);
+          (item.childParts || []).some((cp) => cp.lifetimeStatus === lifetimeFilter);
       }
 
       return matchSearch && matchLine && matchStock && matchLifetime;
@@ -369,14 +366,14 @@ function JigManagementContent() {
 
         {/* Tab Switcher Ringkas */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg text-xs font-bold">
+          <div className="flex gap-1 bg-gray-100 p-0.5 rounded-lg text-xs font-bold border border-gray-400/80">
             <button
               type="button"
               onClick={() => setActiveTab('MANAGEMENT')}
-              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
                 activeTab === 'MANAGEMENT'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
+                  ? 'bg-blue-600 text-white shadow-sm border-blue-700'
+                  : 'text-gray-600 hover:text-gray-900 border-transparent hover:border-gray-300'
               }`}
             >
               <span className="material-symbols-outlined text-xs">tune</span>
@@ -385,16 +382,22 @@ function JigManagementContent() {
             <button
               type="button"
               onClick={() => setActiveTab('HISTORY')}
-              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
                 activeTab === 'HISTORY'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800'
+                  ? 'bg-blue-600 text-white shadow-sm border-blue-700'
+                  : 'text-gray-600 hover:text-gray-900 border-transparent hover:border-gray-300'
               }`}
             >
               <span className="material-symbols-outlined text-xs">history</span>
               <span>Riwayat Part</span>
               {replacementLogs.length > 0 && (
-                <span className="ml-1 bg-blue-600 text-white text-[8px] px-1 py-0.2 rounded-full font-mono">
+                <span
+                  className={`ml-1 text-[8px] px-1 py-0.2 rounded-full font-mono ${
+                    activeTab === 'HISTORY'
+                      ? 'bg-white text-blue-700'
+                      : 'bg-blue-600 text-white'
+                  }`}
+                >
                   {replacementLogs.length}
                 </span>
               )}
@@ -480,10 +483,7 @@ function JigManagementContent() {
           {/* Main Datatable */}
           <div className="flex-1 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-gray-200 bg-white shadow-3xs">
             {loading ? (
-              <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
-                <span className="material-symbols-outlined animate-spin text-2xl mb-1 text-blue-600">sync</span>
-                <span>Memuat data Jig &amp; komponen...</span>
-              </div>
+              <TableSkeleton rows={8} cols={9} />
             ) : filteredItems.length === 0 ? (
               <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
                 <span className="material-symbols-outlined text-3xl mb-1 text-gray-300">search_off</span>
@@ -497,24 +497,24 @@ function JigManagementContent() {
                     <th className="px-3 py-2 w-[150px]">No. Reg</th>
                     <th className="px-3 py-2 min-w-[180px]">Nama Jig &amp; Fixture</th>
                     <th className="px-2.5 py-2 w-[100px]">Line</th>
-                    <th className="px-2.5 py-2 w-[90px]">OP (Process)</th>
-                    <th className="px-3 py-2 text-right w-[75px]">Min</th>
-                    <th className="px-3 py-2 text-right w-[75px]">Actual</th>
+                    <th className="px-2.5 py-2 w-[90px]">OP</th>
+                    <th className="px-2 py-2 text-right whitespace-nowrap">Min</th>
+                    <th className="px-2 py-2 text-right whitespace-nowrap">Actual</th>
                     <th className="px-3 py-2 text-center w-[120px]">Lifetime / Siklus</th>
-                    <th className="px-3 py-2 text-center w-[120px]">Terakhir Ganti Part</th>
+                    <th className="px-3 py-2 text-center w-[100px]">Last Replace</th>
                     {isPic && <th className="px-2 py-2 text-center w-[70px]">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 divide-y divide-gray-100">
                   {filteredItems.map((item, idx) => {
-                    const cellParts = item.cellParts || [];
+                    const childParts = item.childParts || [];
                     const isExpanded = expandedRows.has(item.id);
                     const isRed = item.actualStock === 0;
                     const isYellow = item.actualStock > 0 && item.actualStock < item.minimumStock;
 
                     // Latest part renewal among its cellparts
                     let latestPartRenewal: string | null = null;
-                    cellParts.forEach((cp) => {
+                    childParts.forEach((cp) => {
                       const d = cp.lastRenewalDate || cp.installDate;
                       if (d && (!latestPartRenewal || new Date(d) > new Date(latestPartRenewal))) {
                         latestPartRenewal = d;
@@ -530,9 +530,9 @@ function JigManagementContent() {
                     return (
                       <React.Fragment key={item.id}>
                         <tr
-                          onClick={() => cellParts.length > 0 && toggleExpand(item.id)}
+                          onClick={() => childParts.length > 0 && toggleExpand(item.id)}
                           className={`hover:bg-blue-50/40 transition-colors ${
-                            cellParts.length > 0 ? 'cursor-pointer' : ''
+                            childParts.length > 0 ? 'cursor-pointer' : ''
                           } ${isExpanded ? 'bg-blue-50/20' : ''}`}
                         >
                           {/* No */}
@@ -543,19 +543,10 @@ function JigManagementContent() {
                           {/* No Reg */}
                           <td className="px-3 py-2 font-mono font-bold text-blue-650 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
-                              {cellParts.length > 0 && (
-                                <span
-                                  className={`material-symbols-outlined text-[13px] text-blue-600 transition-transform ${
-                                    isExpanded ? 'rotate-90' : ''
-                                  }`}
-                                >
-                                  chevron_right
-                                </span>
-                              )}
                               <span>{item.noReg}</span>
-                              {cellParts.length > 0 && (
+                              {childParts.length > 0 && (
                                 <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded-full font-bold">
-                                  {cellParts.length} CP
+                                  {childParts.length} CP
                                 </span>
                               )}
                             </div>
@@ -577,13 +568,13 @@ function JigManagementContent() {
                           </td>
 
                           {/* Min Stock */}
-                          <td className="px-3 py-2 text-right font-mono font-semibold text-gray-500 whitespace-nowrap">
+                          <td className="px-2 py-2 text-right font-mono font-semibold text-gray-500 whitespace-nowrap">
                             {item.minimumStock}
                           </td>
 
                           {/* Actual Stock */}
                           <td
-                            className={`px-3 py-2 text-right font-mono font-bold whitespace-nowrap ${
+                            className={`px-2 py-2 text-right font-mono font-bold whitespace-nowrap ${
                               isRed ? 'text-rose-600' : isYellow ? 'text-amber-600' : 'text-gray-800'
                             }`}
                           >
@@ -609,8 +600,8 @@ function JigManagementContent() {
                             </div>
                           </td>
 
-                          {/* Terakhir Ganti Part */}
-                          <td className="px-3 py-2 text-center whitespace-nowrap text-[9px] text-gray-600">
+                          {/* Last Replace */}
+                          <td className="px-3 py-2 text-center whitespace-nowrap font-mono text-[9px] text-gray-600">
                             {formatLastRenewal(latestPartRenewal)}
                           </td>
 
@@ -620,17 +611,17 @@ function JigManagementContent() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenJigEdit(item)}
-                                className="inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-blue-100/70 text-blue-600 transition-colors cursor-pointer"
+                                className="inline-flex items-center justify-center w-4 h-4 rounded hover:bg-blue-100/70 text-blue-600 transition-colors cursor-pointer"
                                 title="Atur Stok & Lifetime Jig"
                               >
-                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                                <span className="material-symbols-outlined text-[10px]">edit</span>
                               </button>
                             </td>
                           )}
                         </tr>
 
-                        {/* Expandable Sub-Row: Komponen CellParts */}
-                        {isExpanded && cellParts.length > 0 && (
+                        {/* Expandable Sub-Row: Komponen ChildParts */}
+                        {isExpanded && childParts.length > 0 && (
                           <tr className="bg-slate-50/80">
                             <td colSpan={isPic ? 10 : 9} className="px-4 py-2.5">
                               <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -638,11 +629,11 @@ function JigManagementContent() {
                                   <div className="flex items-center gap-1.5">
                                     <span className="material-symbols-outlined text-blue-600 text-xs">account_tree</span>
                                     <span className="text-[9.5px] font-bold text-gray-700">
-                                      Komponen CellParts — {item.noReg}
+                                      Komponen ChildParts — {item.noReg}
                                     </span>
                                   </div>
                                   <span className="text-[8.5px] text-gray-400">
-                                    {cellParts.length} komponen terdaftar
+                                    {childParts.length} komponen terdaftar
                                   </span>
                                 </div>
                                 <table className="w-full text-[10px]">
@@ -650,15 +641,15 @@ function JigManagementContent() {
                                     <tr className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-150 text-[9px] uppercase tracking-wider">
                                       <th className="px-3 py-1.5 text-left w-[140px]">Part No</th>
                                       <th className="px-3 py-1.5 text-left">Nama Komponen</th>
-                                      <th className="px-3 py-1.5 text-right w-[80px]">Min</th>
-                                      <th className="px-3 py-1.5 text-right w-[80px]">Actual</th>
+                                      <th className="px-2 py-1.5 text-right whitespace-nowrap">Min</th>
+                                      <th className="px-2 py-1.5 text-right whitespace-nowrap">Actual</th>
                                       <th className="px-3 py-1.5 text-center w-[120px]">Masa Pakai</th>
-                                      <th className="px-3 py-1.5 text-left w-[140px]">Terakhir Diganti</th>
+                                      <th className="px-3 py-1.5 text-left w-[110px]">Last Replace</th>
                                       {isPic && <th className="px-3 py-1.5 text-center w-[120px]">Aksi</th>}
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {cellParts.map((cp) => {
+                                    {childParts.map((cp) => {
                                       const cpRed = cp.actualStock === 0;
                                       const cpYellow = cp.actualStock > 0 && cp.actualStock < cp.minimumStock;
 
@@ -670,11 +661,11 @@ function JigManagementContent() {
                                           <td className="px-3 py-1.5 text-gray-700 font-medium">
                                             {cp.name}
                                           </td>
-                                          <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-500">
+                                          <td className="px-2 py-1.5 text-right font-mono font-medium text-gray-500 whitespace-nowrap">
                                             {cp.minimumStock}
                                           </td>
                                           <td
-                                            className={`px-3 py-1.5 text-right font-mono font-bold ${
+                                            className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${
                                               cpRed ? 'text-red-600' : cpYellow ? 'text-yellow-600' : 'text-gray-800'
                                             }`}
                                           >
@@ -697,7 +688,7 @@ function JigManagementContent() {
                                               <span className="text-gray-400">({cp.lifetimeDays || 180} hr)</span>
                                             </div>
                                           </td>
-                                          <td className="px-3 py-1.5 text-[9px] text-gray-600 whitespace-nowrap">
+                                          <td className="px-3 py-1.5 font-mono text-[9px] text-gray-600 whitespace-nowrap">
                                             {formatLastRenewal(cp.lastRenewalDate, cp.installDate)}
                                           </td>
                                           {isPic && (
@@ -752,10 +743,7 @@ function JigManagementContent() {
           </div>
           <div className="flex-1 overflow-x-auto overflow-y-auto no-scrollbar rounded-lg border border-gray-200 bg-white shadow-3xs">
             {loadingHistory ? (
-              <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
-                <span className="material-symbols-outlined animate-spin text-2xl mb-1 text-blue-600">sync</span>
-                <span>Memuat riwayat pergantian part...</span>
-              </div>
+              <TableSkeleton rows={6} cols={7} />
             ) : filteredHistory.length === 0 ? (
               <div className="h-full flex flex-col justify-center items-center text-gray-400 text-xs py-12">
                 <span className="material-symbols-outlined text-3xl mb-1 text-gray-300">history_toggle_off</span>
@@ -1111,11 +1099,8 @@ export default function JigManagementPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex-1 flex items-center justify-center p-6 bg-white">
-          <div className="text-center">
-            <span className="material-symbols-outlined animate-spin text-2xl text-blue-600">sync</span>
-            <p className="text-xs text-gray-500 mt-2 font-medium">Memuat Jig Management...</p>
-          </div>
+        <div className="flex-1 flex flex-col p-4 bg-white">
+          <TableSkeleton rows={10} cols={9} />
         </div>
       }
     >

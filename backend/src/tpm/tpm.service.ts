@@ -9,7 +9,7 @@ export class TpmService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Helper to calculate 2-Way Lifetime status */
-  private enrichLifetime(item: any, isCellPart: boolean = false) {
+  private enrichLifetime(item: any, isChildPart: boolean = false) {
     const baseDate = item.lastRenewalDate || item.designDateNew || item.installDate || item.createdAt || new Date();
     const lifetimeDays = item.lifetimeDays ?? 180;
     const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
@@ -73,7 +73,7 @@ export class TpmService {
 
     return {
       ...item,
-      isCellPart,
+      isChildPart,
       baseDate,
       dueDate,
       daysRemaining,
@@ -127,7 +127,7 @@ export class TpmService {
       },
     });
 
-    const allCellParts = await this.prisma.cellPart.findMany({
+    const allCellParts = await this.prisma.childPart.findMany({
       select: {
         id: true,
         design: {
@@ -155,12 +155,12 @@ export class TpmService {
 
     // Hanya desain yang sudah di-approve yang masuk ke TPM
     const designs = allDesigns.filter((d) => this.isDesignApproved(d.documents));
-    const cellParts = allCellParts.filter((cp) => this.isDesignApproved(cp.design?.documents));
+    const childParts = allCellParts.filter((cp) => this.isDesignApproved(cp.design?.documents));
     const pendingApprovalCount = allDesigns.length - designs.length;
 
     const allItems = [
       ...designs.map((d) => this.enrichLifetime(d, false)),
-      ...cellParts.map((cp) => this.enrichLifetime(cp, true)),
+      ...childParts.map((cp) => this.enrichLifetime(cp, true)),
     ];
 
     for (const item of allItems) {
@@ -205,7 +205,7 @@ export class TpmService {
     return {
       totalItems,
       totalDesigns: designs.length,
-      totalCellParts: cellParts.length,
+      totalChildParts: childParts.length,
       pendingApprovalCount,
       safeCount,
       warningCount,
@@ -235,7 +235,7 @@ export class TpmService {
       include: {
         line: { select: { id: true, lineName: true, lineCode: true } },
         process: { select: { id: true, name: true, code: true } },
-        cellParts: true,
+        childParts: true,
         documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
       },
       orderBy: { noReg: 'asc' },
@@ -246,10 +246,10 @@ export class TpmService {
 
     const enrichedDesigns = designs.map((d) => {
       const enriched = this.enrichLifetime(d, false);
-      const enrichedCellParts = (d.cellParts || []).map((cp) => this.enrichLifetime(cp, true));
+      const enrichedCellParts = (d.childParts || []).map((cp) => this.enrichLifetime(cp, true));
       return {
         ...enriched,
-        cellParts: enrichedCellParts,
+        childParts: enrichedCellParts,
       };
     });
 
@@ -261,7 +261,7 @@ export class TpmService {
       if (filterType === 'ALL' || filterType === 'DESIGN') {
         flatItems.push({
           id: d.id,
-          isCellPart: false,
+          isChildPart: false,
           noReg: d.noReg,
           partNumber: '-',
           name: d.assyPartName,
@@ -281,18 +281,18 @@ export class TpmService {
           tpmScheduleStart: d.tpmScheduleStart,
           tpmScheduleDeadline: d.tpmScheduleDeadline,
           tpmLifetimeSetAt: d.tpmLifetimeSetAt,
-          cellPartsCount: (d.cellParts || []).length,
+          childPartsCount: (d.childParts || []).length,
         });
       }
 
       if (filterType === 'ALL' || filterType === 'CELL_PART') {
-        for (const cp of d.cellParts || []) {
+        for (const cp of d.childParts || []) {
           flatItems.push({
             id: cp.id,
             parentId: d.id,
             parentNoReg: d.noReg,
             parentName: d.assyPartName,
-            isCellPart: true,
+            isChildPart: true,
             noReg: d.noReg,
             partNumber: cp.partNumber,
             name: `${cp.name} (${d.noReg})`,
@@ -312,7 +312,7 @@ export class TpmService {
             tpmScheduleStart: cp.tpmScheduleStart,
             tpmScheduleDeadline: cp.tpmScheduleDeadline,
             tpmLifetimeSetAt: cp.tpmLifetimeSetAt,
-            cellPartsCount: 0,
+            childPartsCount: 0,
           });
         }
       }
@@ -345,7 +345,7 @@ export class TpmService {
 
   /** Update schedule and lifetime parameters */
   async updateSchedule(id: string, dto: UpdateTpmScheduleDto) {
-    const isCellPart = dto.isCellPart === true;
+    const isChildPart = dto.isChildPart === true;
 
     const dataToUpdate: any = {
       tpmLifetimeSetAt: new Date(),
@@ -370,11 +370,11 @@ export class TpmService {
       dataToUpdate.currentUsage = Number(dto.currentUsage);
     }
 
-    if (isCellPart) {
-      const cp = await this.prisma.cellPart.findUnique({ where: { id } });
-      if (!cp) throw new NotFoundException(`CellPart ${id} not found`);
+    if (isChildPart) {
+      const cp = await this.prisma.childPart.findUnique({ where: { id } });
+      if (!cp) throw new NotFoundException(`ChildPart ${id} not found`);
       await this.assertDesignApproved(cp.designId);
-      const updated = await this.prisma.cellPart.update({
+      const updated = await this.prisma.childPart.update({
         where: { id },
         data: dataToUpdate,
       });
@@ -417,7 +417,7 @@ export class TpmService {
             process: { select: { name: true } },
           },
         },
-        cellPart: {
+        childPart: {
           select: {
             id: true,
             partNumber: true,
@@ -486,7 +486,7 @@ export class TpmService {
     const checklist = await this.prisma.tpmChecklist.create({
       data: {
         designId: dto.designId,
-        cellPartId: dto.cellPartId || null,
+        childPartId: dto.childPartId || null,
         inspectorName: dto.inspectorName,
         shift: dto.shift || 'Shift 1',
         checkDate,
@@ -508,7 +508,7 @@ export class TpmService {
             assyPartName: true,
           },
         },
-        cellPart: {
+        childPart: {
           select: {
             partNumber: true,
             name: true,
@@ -551,7 +551,7 @@ export class TpmService {
             process: { select: { name: true } },
           },
         },
-        cellPart: {
+        childPart: {
           select: {
             id: true,
             partNumber: true,
@@ -587,7 +587,7 @@ export class TpmService {
     const log = await this.prisma.tpmMaintenanceLog.create({
       data: {
         designId: dto.designId,
-        cellPartId: dto.cellPartId || null,
+        childPartId: dto.childPartId || null,
         actionType: dto.actionType,
         title: dto.title,
         description: dto.description,
@@ -605,7 +605,7 @@ export class TpmService {
             assyPartName: true,
           },
         },
-        cellPart: {
+        childPart: {
           select: {
             partNumber: true,
             name: true,
@@ -616,9 +616,9 @@ export class TpmService {
 
     // If resetLifetime is checked, reset the lifetime counters!
     if (dto.resetLifetime) {
-      if (dto.cellPartId) {
-        await this.prisma.cellPart.update({
-          where: { id: dto.cellPartId },
+      if (dto.childPartId) {
+        await this.prisma.childPart.update({
+          where: { id: dto.childPartId },
           data: {
             installDate: new Date(),
             lastRenewalDate: new Date(),

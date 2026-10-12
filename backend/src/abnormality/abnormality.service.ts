@@ -172,7 +172,7 @@ export class AbnormalityService {
     const designs = await this.prisma.design.findMany({
       include: {
         line: true,
-        cellParts: true,
+        childParts: true,
         tpmChecklists: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -234,8 +234,8 @@ export class AbnormalityService {
       if (mainStatus === 'OVERDUE') return 'OVERDUE';
 
       let hasWarning = mainStatus === 'WARNING';
-      if (design.cellParts && design.cellParts.length > 0) {
-        for (const cp of design.cellParts) {
+      if (design.childParts && design.childParts.length > 0) {
+        for (const cp of design.childParts) {
           const cpStatus = getLifetimeStatus(cp);
           if (cpStatus === 'OVERDUE') return 'OVERDUE';
           if (cpStatus === 'WARNING') hasWarning = true;

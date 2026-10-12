@@ -29,9 +29,9 @@ async function main() {
     console.log('Skipped TPM log (table might not exist yet).');
   }
 
-  // 2. Delete CellPart records
-  const cellPartCount = await prisma.cellPart.deleteMany({});
-  console.log(`Deleted ${cellPartCount.count} CellPart records.`);
+  // 2. Delete ChildPart records
+  const childPartCount = await prisma.childPart.deleteMany({});
+  console.log(`Deleted ${childPartCount.count} ChildPart records.`);
 
   // 3. Delete Abnormality records
   const abnormalityCount = await prisma.abnormality.deleteMany({});

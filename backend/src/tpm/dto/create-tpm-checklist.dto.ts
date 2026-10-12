@@ -1,6 +1,6 @@
 export class CreateTpmChecklistDto {
   designId: string;
-  cellPartId?: string;
+  childPartId?: string;
   inspectorName: string;
   shift?: string;
   checkDate?: string;

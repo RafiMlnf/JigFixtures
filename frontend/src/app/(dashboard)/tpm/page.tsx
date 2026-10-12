@@ -21,7 +21,7 @@ import {
   CreateTpmChecklistPayload,
   CreateTpmLogPayload,
 } from '@/lib/api/tpm';
-import { renewDesign, renewCellPart, recordUsage } from '@/lib/api/phase3';
+import { renewDesign, renewChildPart, recordUsage } from '@/lib/api/phase3';
 
 type ActiveTab = 'schedules' | 'checklists' | 'logs';
 
@@ -42,7 +42,7 @@ export default function TPMPage() {
   // Filter states: Schedules
   const [scheduleSearch, setScheduleSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'DESIGN' | 'CELL_PART'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'DESIGN' | 'CHILD_PART'>('ALL');
   const [lineFilter, setLineFilter] = useState('All');
 
   // Filter states: Checklists
@@ -76,7 +76,7 @@ export default function TPMPage() {
   const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [checklistForm, setChecklistForm] = useState<CreateTpmChecklistPayload>({
     designId: '',
-    cellPartId: '',
+    childPartId: '',
     inspectorName: user?.name || '',
     shift: 'Shift 1',
     checkDate: new Date().toISOString().split('T')[0],
@@ -95,7 +95,7 @@ export default function TPMPage() {
   const [showLogModal, setShowLogModal] = useState(false);
   const [logForm, setLogForm] = useState<CreateTpmLogPayload>({
     designId: '',
-    cellPartId: '',
+    childPartId: '',
     actionType: 'PREVENTIVE',
     title: '',
     description: '',
@@ -167,8 +167,8 @@ export default function TPMPage() {
   const filteredSchedules = useMemo(() => {
     return schedules.filter((item) => {
       if (typeFilter !== 'ALL') {
-        if (typeFilter === 'DESIGN' && item.isCellPart) return false;
-        if (typeFilter === 'CELL_PART' && !item.isCellPart) return false;
+        if (typeFilter === 'DESIGN' && item.isChildPart) return false;
+        if (typeFilter === 'CHILD_PART' && !item.isChildPart) return false;
       }
       if (statusFilter !== 'ALL') {
         if (statusFilter === 'UNSCHEDULED') {
@@ -247,7 +247,7 @@ export default function TPMPage() {
     setSubmitting(true);
     try {
       await updateTpmSchedule(selectedScheduleItem.id, {
-        isCellPart: selectedScheduleItem.isCellPart,
+        isChildPart: selectedScheduleItem.isChildPart,
         lifetimeDays: scheduleForm.lifetimeDays,
         lifetimeType: scheduleForm.lifetimeType,
         maxUsage: scheduleForm.maxUsage,
@@ -270,8 +270,8 @@ export default function TPMPage() {
   const openChecklistForTarget = (item: TpmScheduleItem) => {
     setChecklistForm((prev) => ({
       ...prev,
-      designId: item.isCellPart ? item.parentId || item.id : item.id,
-      cellPartId: item.isCellPart ? item.id : '',
+      designId: item.isChildPart ? item.parentId || item.id : item.id,
+      childPartId: item.isChildPart ? item.id : '',
       overallResult: 'OK',
       cleaningStatus: 'OK',
       locatorPinStatus: 'OK',
@@ -288,8 +288,8 @@ export default function TPMPage() {
   const openLogForTarget = (item: TpmScheduleItem) => {
     setLogForm((prev) => ({
       ...prev,
-      designId: item.isCellPart ? item.parentId || item.id : item.id,
-      cellPartId: item.isCellPart ? item.id : '',
+      designId: item.isChildPart ? item.parentId || item.id : item.id,
+      childPartId: item.isChildPart ? item.id : '',
       title: `Preventive Maintenance ${item.noReg}`,
       actionType: item.lifetimeStatus === 'OVERDUE' ? 'CORRECTIVE' : 'PREVENTIVE',
       description: `Perawatan dan pengecekan fisik menyeluruh untuk ${item.name}`,
@@ -311,7 +311,7 @@ export default function TPMPage() {
     setSubmitting(true);
     try {
       await recordUsage(
-        usageTarget.isCellPart ? 'cell-part' : 'design',
+        usageTarget.isChildPart ? 'child-part' : 'design',
         usageTarget.id,
         usageAmountInput,
         usageMode,
@@ -386,8 +386,8 @@ export default function TPMPage() {
     if (!renewTarget) return;
     setSubmitting(true);
     try {
-      if (renewTarget.isCellPart) {
-        await renewCellPart(renewTarget.id, {
+      if (renewTarget.isChildPart) {
+        await renewChildPart(renewTarget.id, {
           resetDays: renewResetDays,
           resetUsage: renewResetUsage,
         });
@@ -435,8 +435,8 @@ export default function TPMPage() {
   const designOptions = useMemo(() => {
     const map = new Map<string, string>();
     schedules.forEach((s) => {
-      const id = s.isCellPart ? s.parentId || s.id : s.id;
-      const label = `${s.noReg} - ${s.isCellPart ? s.parentName || s.name : s.name}`;
+      const id = s.isChildPart ? s.parentId || s.id : s.id;
+      const label = `${s.noReg} - ${s.isChildPart ? s.parentName || s.name : s.name}`;
       if (!map.has(id)) map.set(id, label);
     });
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
@@ -477,7 +477,7 @@ export default function TPMPage() {
                     setChecklistForm((prev) => ({
                       ...prev,
                       designId: designOptions[0]?.id || '',
-                      cellPartId: '',
+                      childPartId: '',
                       notes: '',
                     }));
                     setShowChecklistModal(true);
@@ -495,7 +495,7 @@ export default function TPMPage() {
                     setLogForm((prev) => ({
                       ...prev,
                       designId: designOptions[0]?.id || '',
-                      cellPartId: '',
+                      childPartId: '',
                       title: 'Preventive Maintenance Rutin',
                       description: '',
                     }));
@@ -680,14 +680,14 @@ export default function TPMPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTypeFilter('CELL_PART')}
+                    onClick={() => setTypeFilter('CHILD_PART')}
                     className={`h-full flex items-center px-2.5 rounded-full transition-all cursor-pointer leading-none ${
-                      typeFilter === 'CELL_PART'
+                      typeFilter === 'CHILD_PART'
                         ? 'bg-[#0063ff] text-white font-semibold shadow-xs'
                         : 'text-gray-500 hover:text-gray-700 font-medium'
                     }`}
                   >
-                    Cell Part
+                    Child Part
                   </button>
                 </div>
 
@@ -763,7 +763,7 @@ export default function TPMPage() {
 
                     return (
                       <tr
-                        key={`${item.isCellPart ? 'cp' : 'd'}-${item.id}`}
+                        key={`${item.isChildPart ? 'cp' : 'd'}-${item.id}`}
                         className={`border-b border-gray-200 hover:bg-blue-50/40 transition-colors h-7 ${
                           isOverdue ? 'bg-rose-50/20' : ''
                         }`}
@@ -773,18 +773,18 @@ export default function TPMPage() {
                           <div className="flex items-center gap-1 truncate">
                             <span
                               className={`text-[7px] font-medium px-1 py-0.2 rounded shrink-0 uppercase ${
-                                item.isCellPart
+                                item.isChildPart
                                   ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                   : 'bg-blue-50 text-blue-700 border border-blue-200'
                               }`}
                             >
-                              {item.isCellPart ? 'PART' : item.type || 'JIG'}
+                              {item.isChildPart ? 'PART' : item.type || 'JIG'}
                             </span>
                             <span
                               className="font-semibold text-gray-800 text-[9.5px] truncate"
-                              title={item.isCellPart ? `${item.partNumber} (Induk: ${item.parentNoReg || '-'})` : item.noReg}
+                              title={item.isChildPart ? `${item.partNumber} (Induk: ${item.parentNoReg || '-'})` : item.noReg}
                             >
-                              {item.isCellPart ? item.partNumber : item.noReg}
+                              {item.isChildPart ? item.partNumber : item.noReg}
                             </span>
                           </div>
                         </td>
@@ -795,12 +795,12 @@ export default function TPMPage() {
                             <span className="font-medium text-gray-800 text-[9.5px] truncate">
                               {item.name}
                             </span>
-                            {!item.isCellPart && item.cellPartsCount > 0 && (
+                            {!item.isChildPart && item.childPartsCount > 0 && (
                               <span
                                 className="text-[7.5px] text-blue-600 font-normal shrink-0"
-                                title={`${item.cellPartsCount} Cell Part terdaftar`}
+                                title={`${item.childPartsCount} Child Part terdaftar`}
                               >
-                                ({item.cellPartsCount} CP)
+                                ({item.childPartsCount} CP)
                               </span>
                             )}
                           </div>
@@ -1067,12 +1067,12 @@ export default function TPMPage() {
                             <span className="font-semibold text-gray-800 text-[9.5px] font-mono shrink-0">
                               {check.design?.noReg}
                             </span>
-                            {check.cellPart ? (
+                            {check.childPart ? (
                               <span
                                 className="text-[7.5px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 truncate"
-                                title={`Part: ${check.cellPart.name} (${check.cellPart.partNumber})`}
+                                title={`Part: ${check.childPart.name} (${check.childPart.partNumber})`}
                               >
-                                {check.cellPart.name}
+                                {check.childPart.name}
                               </span>
                             ) : check.design?.assyPartName ? (
                               <span className="text-[8.5px] text-gray-400 truncate">
@@ -1277,12 +1277,12 @@ export default function TPMPage() {
                           <span className="font-semibold text-gray-800 text-[9.5px] font-mono shrink-0">
                             {item.design?.noReg}
                           </span>
-                          {item.cellPart ? (
+                          {item.childPart ? (
                             <span
                               className="text-[7.5px] text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200 truncate"
-                              title={`Part: ${item.cellPart.name} (${item.cellPart.partNumber})`}
+                              title={`Part: ${item.childPart.name} (${item.childPart.partNumber})`}
                             >
-                              {item.cellPart.name}
+                              {item.childPart.name}
                             </span>
                           ) : item.design?.assyPartName ? (
                             <span className="text-[8.5px] text-gray-400 truncate">
@@ -1530,10 +1530,10 @@ export default function TPMPage() {
               <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[8.5px] font-bold text-gray-500 uppercase">
-                    {usageTarget.isCellPart ? 'CellPart (Komponen)' : 'Jig & Fixture (Induk)'}
+                    {usageTarget.isChildPart ? 'ChildPart (Komponen)' : 'Jig & Fixture (Induk)'}
                   </span>
                   <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                    {usageTarget.isCellPart ? usageTarget.partNumber : usageTarget.noReg}
+                    {usageTarget.isChildPart ? usageTarget.partNumber : usageTarget.noReg}
                   </span>
                 </div>
                 <div className="font-bold text-xs text-gray-900 truncate" title={usageTarget.name}>
@@ -1666,7 +1666,7 @@ export default function TPMPage() {
                   required
                   value={checklistForm.designId}
                   onChange={(e) =>
-                    setChecklistForm((prev) => ({ ...prev, designId: e.target.value, cellPartId: '' }))
+                    setChecklistForm((prev) => ({ ...prev, designId: e.target.value, childPartId: '' }))
                   }
                   className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 >
@@ -1894,7 +1894,7 @@ export default function TPMPage() {
                 <select
                   required
                   value={logForm.designId}
-                  onChange={(e) => setLogForm((prev) => ({ ...prev, designId: e.target.value, cellPartId: '' }))}
+                  onChange={(e) => setLogForm((prev) => ({ ...prev, designId: e.target.value, childPartId: '' }))}
                   className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0063ff]"
                 >
                   <option value="">-- Pilih Jig / Fixture --</option>
@@ -2089,10 +2089,10 @@ export default function TPMPage() {
               <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[8.5px] font-bold text-gray-500 uppercase">
-                    {renewTarget.isCellPart ? 'CellPart (Komponen)' : 'Jig & Fixture (Induk)'}
+                    {renewTarget.isChildPart ? 'ChildPart (Komponen)' : 'Jig & Fixture (Induk)'}
                   </span>
                   <span className="font-mono text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                    {renewTarget.isCellPart ? renewTarget.partNumber : renewTarget.noReg}
+                    {renewTarget.isChildPart ? renewTarget.partNumber : renewTarget.noReg}
                   </span>
                 </div>
                 <div className="font-bold text-xs text-gray-900 truncate" title={renewTarget.name}>

@@ -1,15 +1,15 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { CreateCellPartDto } from './dto/create-cell-part.dto';
-import { UpdateCellPartDto } from './dto/update-cell-part.dto';
+import { CreateChildPartDto } from './dto/create-child-part.dto';
+import { UpdateChildPartDto } from './dto/update-child-part.dto';
 
 @Injectable()
-export class CellPartService {
+export class ChildPartService {
   constructor(private prisma: PrismaService) {}
 
-  /** List all CellParts for a given parent Design (Jig) */
+  /** List all ChildParts for a given parent Design (Jig) */
   async findByDesign(designId: string) {
-    const parts = await this.prisma.cellPart.findMany({
+    const parts = await this.prisma.childPart.findMany({
       where: { designId },
       orderBy: { partNumber: 'asc' },
     });
@@ -17,9 +17,9 @@ export class CellPartService {
     return parts.map((part) => this.enrichWithLifetime(part));
   }
 
-  /** Get all CellParts that are OVERDUE or WARNING (≤35 days to due date) */
+  /** Get all ChildParts that are OVERDUE or WARNING (≤35 days to due date) */
   async getReminders() {
-    const allParts = await this.prisma.cellPart.findMany({
+    const allParts = await this.prisma.childPart.findMany({
       include: {
         design: { select: { id: true, noReg: true, assyPartName: true } },
       },
@@ -39,8 +39,8 @@ export class CellPartService {
       .sort((a, b) => a.daysRemaining - b.daysRemaining);
   }
 
-  /** Create a new CellPart under a parent Design */
-  async create(dto: CreateCellPartDto) {
+  /** Create a new ChildPart under a parent Design */
+  async create(dto: CreateChildPartDto) {
     // Verify parent design exists
     const design = await this.prisma.design.findUnique({
       where: { id: dto.designId },
@@ -50,7 +50,7 @@ export class CellPartService {
     }
 
     // Check for duplicate partNumber under the same parent
-    const existing = await this.prisma.cellPart.findFirst({
+    const existing = await this.prisma.childPart.findFirst({
       where: { designId: dto.designId, partNumber: dto.partNumber },
     });
     if (existing) {
@@ -59,7 +59,7 @@ export class CellPartService {
       );
     }
 
-    const cellPart = await this.prisma.cellPart.create({
+    const childPart = await this.prisma.childPart.create({
       data: {
         designId: dto.designId,
         partNumber: dto.partNumber,
@@ -76,19 +76,19 @@ export class CellPartService {
       },
     });
 
-    return this.enrichWithLifetime(cellPart);
+    return this.enrichWithLifetime(childPart);
   }
 
-  /** Update an existing CellPart */
-  async update(id: string, dto: UpdateCellPartDto) {
-    const existing = await this.prisma.cellPart.findUnique({ where: { id } });
+  /** Update an existing ChildPart */
+  async update(id: string, dto: UpdateChildPartDto) {
+    const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException(`CellPart ${id} not found`);
+      throw new NotFoundException(`ChildPart ${id} not found`);
     }
 
     // If partNumber is being changed, check uniqueness under the same parent
     if (dto.partNumber && dto.partNumber !== existing.partNumber) {
-      const dup = await this.prisma.cellPart.findFirst({
+      const dup = await this.prisma.childPart.findFirst({
         where: {
           designId: existing.designId,
           partNumber: dto.partNumber,
@@ -102,7 +102,7 @@ export class CellPartService {
       }
     }
 
-    const updated = await this.prisma.cellPart.update({
+    const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
         partNumber: dto.partNumber,
@@ -122,17 +122,17 @@ export class CellPartService {
     return this.enrichWithLifetime(updated);
   }
 
-  /** Log or set usage for a CellPart */
+  /** Log or set usage for a ChildPart */
   async logUsage(id: string, amount: number, mode: 'ADD' | 'SET' = 'ADD') {
-    const existing = await this.prisma.cellPart.findUnique({ where: { id } });
+    const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException(`CellPart ${id} not found`);
+      throw new NotFoundException(`ChildPart ${id} not found`);
     }
 
     const current = (existing as any).currentUsage ?? 0;
     const newUsage = mode === 'ADD' ? Math.max(0, current + amount) : Math.max(0, amount);
 
-    const updated = await this.prisma.cellPart.update({
+    const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
         currentUsage: newUsage,
@@ -142,11 +142,11 @@ export class CellPartService {
     return this.enrichWithLifetime(updated);
   }
 
-  /** Renew a CellPart's lifetime — reset installDate and/or currentUsage to 0 */
+  /** Renew a ChildPart's lifetime — reset installDate and/or currentUsage to 0 */
   async renew(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
-    const existing = await this.prisma.cellPart.findUnique({ where: { id } });
+    const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException(`CellPart ${id} not found`);
+      throw new NotFoundException(`ChildPart ${id} not found`);
     }
 
     const resetDays = options.resetDays !== false; // default true
@@ -163,7 +163,7 @@ export class CellPartService {
       dataToUpdate.currentUsage = 0;
     }
 
-    const updated = await this.prisma.cellPart.update({
+    const updated = await this.prisma.childPart.update({
       where: { id },
       data: dataToUpdate,
     });
@@ -171,14 +171,14 @@ export class CellPartService {
     return this.enrichWithLifetime(updated);
   }
 
-  /** Delete a CellPart */
+  /** Delete a ChildPart */
   async remove(id: string) {
-    const existing = await this.prisma.cellPart.findUnique({ where: { id } });
+    const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException(`CellPart ${id} not found`);
+      throw new NotFoundException(`ChildPart ${id} not found`);
     }
 
-    return this.prisma.cellPart.delete({ where: { id } });
+    return this.prisma.childPart.delete({ where: { id } });
   }
 
   /** Record a part replacement with full historical logging */
@@ -192,11 +192,11 @@ export class CellPartService {
       resetUsage?: boolean;
     },
   ) {
-    const cp = await this.prisma.cellPart.findUnique({
+    const cp = await this.prisma.childPart.findUnique({
       where: { id },
       include: { design: true },
     });
-    if (!cp) throw new NotFoundException(`CellPart ${id} not found`);
+    if (!cp) throw new NotFoundException(`ChildPart ${id} not found`);
 
     const replacedAt = dto.replacedAt ? new Date(dto.replacedAt) : new Date();
     const baseDate = cp.lastRenewalDate || cp.installDate || cp.createdAt;
@@ -210,7 +210,7 @@ export class CellPartService {
     const replacementLog = await this.prisma.partReplacementLog.create({
       data: {
         designId: cp.designId,
-        cellPartId: cp.id,
+        childPartId: cp.id,
         partNumber: cp.partNumber,
         partName: cp.name,
         replacedAt,
@@ -230,7 +230,7 @@ export class CellPartService {
             process: { select: { name: true } },
           },
         },
-        cellPart: { select: { id: true, partNumber: true, name: true } },
+        childPart: { select: { id: true, partNumber: true, name: true } },
       },
     });
 
@@ -239,7 +239,7 @@ export class CellPartService {
       .create({
         data: {
           designId: cp.designId,
-          cellPartId: cp.id,
+          childPartId: cp.id,
           actionType: 'RENEWAL',
           title: `Penggantian Komponen ${cp.partNumber}`,
           description: `Penggantian part ${cp.name}. Alasan: ${dto.reason || 'Penggantian rutin'}. Catatan: ${dto.notes || '-'}`,
@@ -252,8 +252,8 @@ export class CellPartService {
       })
       .catch(() => {});
 
-    // 3. Update CellPart dates and reset counter
-    const updated = await this.prisma.cellPart.update({
+    // 3. Update ChildPart dates and reset counter
+    const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
         lastRenewalDate: replacedAt,
@@ -263,7 +263,7 @@ export class CellPartService {
     });
 
     return {
-      cellPart: this.enrichWithLifetime(updated),
+      childPart: this.enrichWithLifetime(updated),
       replacementLog,
     };
   }
@@ -271,12 +271,12 @@ export class CellPartService {
   /** Get replacement history logs with optional search & filters */
   async getReplacementHistory(query?: {
     designId?: string;
-    cellPartId?: string;
+    childPartId?: string;
     search?: string;
   }) {
     const where: any = {};
     if (query?.designId) where.designId = query.designId;
-    if (query?.cellPartId) where.cellPartId = query.cellPartId;
+    if (query?.childPartId) where.childPartId = query.childPartId;
 
     const logs = await this.prisma.partReplacementLog.findMany({
       where,
@@ -290,7 +290,7 @@ export class CellPartService {
             process: { select: { name: true } },
           },
         },
-        cellPart: {
+        childPart: {
           select: {
             id: true,
             partNumber: true,
@@ -325,7 +325,7 @@ export class CellPartService {
     return this.prisma.partReplacementLog.delete({ where: { id } });
   }
 
-  /** Enrich a CellPart record with computed 2-way lifetime fields */
+  /** Enrich a ChildPart record with computed 2-way lifetime fields */
   public enrichWithLifetime(part: any) {
     const baseDate = part.lastRenewalDate || part.installDate || new Date();
     const lifetimeDays = part.lifetimeDays ?? 180;

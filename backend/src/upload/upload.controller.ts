@@ -89,7 +89,7 @@ export class UploadController {
       console.warn('Drawing parsing error, returning fallback empty metadata:', parseErr);
       parsed = {
         jig: { partName: '', partNumber: '', title: '', model: '', qty: '1 Set' },
-        cellParts: [],
+        childParts: [],
         totalPages: 1,
       };
     }

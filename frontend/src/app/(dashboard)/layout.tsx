@@ -44,9 +44,28 @@ export default function DashboardLayout({
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#1a1c1f] h-full w-full text-white">
-        <span className="material-symbols-outlined animate-spin text-3xl text-primary">sync</span>
-        <p className="text-xs text-gray-400 mt-2 font-medium">Checking PE Session authorization...</p>
+      <div className="flex-1 flex h-full w-full bg-slate-50 animate-pulse">
+        {/* Sidebar skeleton */}
+        <div className="w-56 bg-slate-100 border-r border-slate-200 p-4 space-y-4 hidden md:block">
+          <div className="h-8 bg-slate-200 rounded-lg w-3/4 mb-6" />
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-8 bg-slate-200/70 rounded-lg w-full" />
+            ))}
+          </div>
+        </div>
+        {/* Main content skeleton */}
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="h-10 bg-slate-100 border border-slate-200 rounded-lg w-full" />
+          <div className="flex-1 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="h-6 bg-slate-100 rounded w-1/4" />
+            <div className="space-y-2 pt-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-8 bg-slate-50 border border-slate-100 rounded-lg w-full" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

@@ -1,5 +1,5 @@
 export class UpdateTpmScheduleDto {
-  isCellPart?: boolean;
+  isChildPart?: boolean;
   tpmScheduleStart?: string;
   tpmScheduleDeadline?: string;
   lifetimeDays?: number;

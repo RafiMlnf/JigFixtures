@@ -1,6 +1,6 @@
 export class CreateTpmLogDto {
   designId: string;
-  cellPartId?: string;
+  childPartId?: string;
   actionType: 'PREVENTIVE' | 'CORRECTIVE' | 'RENEWAL' | 'CALIBRATION' | 'OVERHAUL';
   title: string;
   description: string;
