@@ -66,7 +66,7 @@ export async function fetchApprovals(filters?: {
     if (filters?.status && filters.status !== 'ALL') queryParams.append('status', filters.status);
     if (filters?.type && filters.type !== 'ALL') queryParams.append('type', filters.type);
 
-    const res = await fetch(`${API_BASE_URL}/approvals?${queryParams.toString()}`, {
+    const res = await fetch(`${getApiBaseUrl()}/approvals?${queryParams.toString()}`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -94,7 +94,7 @@ export async function submitDecision(
   comment?: string
 ): Promise<ApprovalItem> {
   const endpoint = action === 'APPROVE' ? 'approve' : 'reject';
-  const res = await fetch(`${API_BASE_URL}/approvals/${id}/${endpoint}`, {
+  const res = await fetch(`${getApiBaseUrl()}/approvals/${id}/${endpoint}`, {
     method: 'PATCH',
     headers: getAuthHeaders(),
     body: JSON.stringify({ comment: comment || '' }),
@@ -139,7 +139,7 @@ export async function submitApprovalRequest(
   type: 'DESIGN_REVISION' | 'INVENTORY_UPDATE',
   revisionNote?: string
 ): Promise<ApprovalItem> {
-  const res = await fetch(`${API_BASE_URL}/approvals`, {
+  const res = await fetch(`${getApiBaseUrl()}/approvals`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({ itemId, type, revisionNote }),

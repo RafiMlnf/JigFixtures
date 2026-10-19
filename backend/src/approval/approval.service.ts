@@ -206,14 +206,18 @@ export class ApprovalService {
         }
 
         let annotatedDocPath: string | undefined = undefined;
-        if (dto.markupData && dto.markupData.startsWith('data:image')) {
-          try {
-            const base64Data = dto.markupData.replace(/^data:image\/\w+;base64,/, '');
-            const buffer = Buffer.from(base64Data, 'base64');
-            const filename = `markup_${id}_${Date.now()}.png`;
-            annotatedDocPath = await this.storageService.saveBuffer(buffer, filename, 'image/png');
-          } catch (e) {
-            console.warn('Failed to save markup image buffer:', e);
+        if (dto.markupData) {
+          if (dto.markupData.startsWith('data:image')) {
+            try {
+              const base64Data = dto.markupData.replace(/^data:image\/\w+;base64,/, '');
+              const buffer = Buffer.from(base64Data, 'base64');
+              const filename = `markup_${id}_${Date.now()}.png`;
+              annotatedDocPath = await this.storageService.saveBuffer(buffer, filename, 'image/png');
+            } catch (e) {
+              console.warn('Failed to save markup image buffer:', e);
+            }
+          } else {
+            annotatedDocPath = dto.markupData;
           }
         }
 
@@ -328,14 +332,18 @@ export class ApprovalService {
         }
 
         let annotatedDocPath: string | undefined = undefined;
-        if (dto.markupData && dto.markupData.startsWith('data:image')) {
-          try {
-            const base64Data = dto.markupData.replace(/^data:image\/\w+;base64,/, '');
-            const buffer = Buffer.from(base64Data, 'base64');
-            const filename = `markup_${id}_${Date.now()}.png`;
-            annotatedDocPath = await this.storageService.saveBuffer(buffer, filename, 'image/png');
-          } catch (e) {
-            console.warn('Failed to save markup image buffer:', e);
+        if (dto.markupData) {
+          if (dto.markupData.startsWith('data:image')) {
+            try {
+              const base64Data = dto.markupData.replace(/^data:image\/\w+;base64,/, '');
+              const buffer = Buffer.from(base64Data, 'base64');
+              const filename = `markup_${id}_${Date.now()}.png`;
+              annotatedDocPath = await this.storageService.saveBuffer(buffer, filename, 'image/png');
+            } catch (e) {
+              console.warn('Failed to save markup image buffer:', e);
+            }
+          } else {
+            annotatedDocPath = dto.markupData;
           }
         }
 
@@ -414,14 +422,17 @@ export class ApprovalService {
 
     // 1. Archive previous drawing into revisionHistory (strictly for Version History)
     const oldDoc = approval.design.documents.find((d) => d.loc2D) || approval.design.documents[0];
+    const old2D = oldDoc?.loc2D || approval.design.revisionHistories.find((r) => r.loc2D)?.loc2D || null;
+    const oldPath2D = oldDoc?.path2D || oldDoc?.loc2D || approval.design.revisionHistories.find((r) => r.path2D)?.path2D || null;
+
     await this.prisma.revisionHistory.create({
       data: {
         designId: approval.designId,
         revStatus: approval.design.revStatus || '0',
         description: `Arsip sebelum revisi: ${approval.finalComment || approval.revisionNote || 'Revisi sebelumnya'}`,
         changedById: userId,
-        loc2D: oldDoc?.loc2D || null,
-        path2D: oldDoc?.path2D || null,
+        loc2D: old2D,
+        path2D: oldPath2D,
         loc3D: approval.design.revisionHistories[0]?.loc3D || null,
         path3D: approval.design.revisionHistories[0]?.path3D || null,
       },

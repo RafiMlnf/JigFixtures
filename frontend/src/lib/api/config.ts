@@ -8,10 +8,10 @@ export function getApiBaseUrl(): string {
   if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
   }
-  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+  if (typeof window !== 'undefined' && window.location.hostname) {
     return `${window.location.protocol}//${window.location.hostname}:3002/api`;
   }
-  return 'http://192.168.100.222:3002/api';
+  return 'http://localhost:3002/api';
 }
 
 /**

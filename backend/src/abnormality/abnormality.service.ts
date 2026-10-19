@@ -187,41 +187,10 @@ export class AbnormalityService {
       const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
       const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
 
-      let dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
       if (daysRemaining <= 0) {
-        dayStatus = 'OVERDUE';
-      } else if (daysRemaining <= 35) {
-        dayStatus = 'WARNING';
-      } else {
-        dayStatus = 'SAFE';
-      }
-
-      const maxUsage = item.maxUsage ?? 500;
-      const currentUsage = item.currentUsage ?? 0;
-      const usageRemaining = Math.max(0, maxUsage - currentUsage);
-      const usagePercent = maxUsage > 0 ? (currentUsage / maxUsage) * 100 : 0;
-
-      let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-      if (currentUsage >= maxUsage) {
-        usageStatus = 'OVERDUE';
-      } else if (usagePercent >= 85 || usageRemaining <= 50) {
-        usageStatus = 'WARNING';
-      } else {
-        usageStatus = 'SAFE';
-      }
-
-      const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = item.lifetimeType || 'DUAL';
-      if (lifetimeType === 'DAYS') {
-        return dayStatus;
-      }
-      if (lifetimeType === 'USAGE') {
-        return usageStatus;
-      }
-      // DUAL
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
         return 'OVERDUE';
       }
-      if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
+      if (daysRemaining <= 35) {
         return 'WARNING';
       }
       return 'SAFE';
@@ -246,22 +215,20 @@ export class AbnormalityService {
     };
 
     // Function to calculate TPM Schedule Status (Green, Yellow, Red)
-    // Aturan: Hijau = sesuai, Kuning = memasuki H-2 minggu (14 hari) sebelum due date, Merah = lewat due date / NG
-    const calcTpmStatus = (design: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
-      if (!design) return 'SAFE';
-      // Check last checklist result
-      const lastCheck = design.tpmChecklists?.[0];
-      if (lastCheck && lastCheck.overallResult === 'NG') {
-        return 'OVERDUE'; // Red status if last check failed
-      }
+    // Aturan: Hijau = SAFE, Kuning = WARNING (H-14 hari atau CP warning), Merah = OVERDUE (lewat due date / NG)
+    const calcSingleItemTpmStatus = (item: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
+      if (!item) return 'SAFE';
+      // 1. Cek dari lifetimeStatus bawaan (2-Way Lifetime: Days & Usage)
+      const lifetime = getLifetimeStatus(item);
+      if (lifetime === 'OVERDUE') return 'OVERDUE';
 
-      // Check deadline / due date
-      const deadlineDate = design.tpmScheduleDeadline
-        ? new Date(design.tpmScheduleDeadline)
+      // 2. Cek deadline / due date jadwal TPM
+      const deadlineDate = item.tpmScheduleDeadline
+        ? new Date(item.tpmScheduleDeadline)
         : (() => {
-            const baseDate = design.lastRenewalDate || design.designDateNew || design.installDate || design.createdAt;
+            const baseDate = item.lastRenewalDate || item.designDateNew || item.installDate || item.createdAt;
             if (!baseDate) return null;
-            const lifetimeDays = design.lifetimeDays ?? 180;
+            const lifetimeDays = item.lifetimeDays ?? 180;
             return new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
           })();
 
@@ -269,35 +236,98 @@ export class AbnormalityService {
         const deadline = deadlineDate.getTime();
         const now = Date.now();
         const diffDays = Math.ceil((deadline - now) / 86400000);
-        if (diffDays < 0) return 'OVERDUE'; // Lewat due date schedule TPM
-        if (diffDays <= 14) return 'WARNING'; // Memasuki H-2 minggu (14 hari) sebelum due date
+        if (diffDays < 0) return 'OVERDUE'; // Lewat due date schedule TPM -> MERAH
+        if (diffDays <= 14) return 'WARNING'; // Memasuki H-14 hari -> KUNING
       }
 
-      return 'SAFE'; // Hijau = sesuai
+      return lifetime === 'WARNING' ? 'WARNING' : 'SAFE';
     };
 
+    const calcTpmStatus = (design: any): 'SAFE' | 'WARNING' | 'OVERDUE' => {
+      if (!design) return 'SAFE';
+
+      // Check last checklist result
+      const lastCheck = design.tpmChecklists?.[0];
+      if (lastCheck && lastCheck.overallResult === 'NG') {
+        return 'OVERDUE'; // Red status if last check failed
+      }
+
+      // Check induk jig status
+      const mainStatus = calcSingleItemTpmStatus(design);
+      if (mainStatus === 'OVERDUE') return 'OVERDUE';
+
+      let hasWarning = mainStatus === 'WARNING';
+
+      // Cek SEMUA Child Part (CP) milik Jig ini:
+      // Kalo ada CP yang overdue -> 1 Lane langsung MERAH
+      // Kalo ada CP yang warning (mendekati due date) -> 1 Lane jadi KUNING
+      if (design.childParts && design.childParts.length > 0) {
+        for (const cp of design.childParts) {
+          const cpTpm = calcSingleItemTpmStatus(cp);
+          if (cpTpm === 'OVERDUE') return 'OVERDUE';
+          if (cpTpm === 'WARNING') hasWarning = true;
+        }
+      }
+
+      return hasWarning ? 'WARNING' : 'SAFE';
+    };
+
+    // Pre-calculate status per Line/Lane (1 Jig applies to 1 Lane, all machines in the same lane share identical status)
+    const lineTpmStatusMap = new Map<string, 'SAFE' | 'WARNING' | 'OVERDUE'>();
+    const lineJigStatusMap = new Map<string, 'SAFE' | 'WARNING' | 'OVERDUE'>();
+    const lineDesignMap = new Map<string, any>();
+
+    for (const d of designs) {
+      if (!d.lineId) continue;
+      if (!lineDesignMap.has(d.lineId)) {
+        lineDesignMap.set(d.lineId, d);
+      }
+
+      // Aggregate TPM Schedule status for the Lane (OVERDUE > WARNING > SAFE)
+      const currentTpm = lineTpmStatusMap.get(d.lineId) || 'SAFE';
+      const itemTpm = calcTpmStatus(d);
+      if (itemTpm === 'OVERDUE' || currentTpm === 'OVERDUE') {
+        lineTpmStatusMap.set(d.lineId, 'OVERDUE');
+      } else if (itemTpm === 'WARNING' || currentTpm === 'WARNING') {
+        lineTpmStatusMap.set(d.lineId, 'WARNING');
+      } else if (!lineTpmStatusMap.has(d.lineId)) {
+        lineTpmStatusMap.set(d.lineId, 'SAFE');
+      }
+
+      // Aggregate Jig Condition status for the Lane
+      const currentJig = lineJigStatusMap.get(d.lineId) || 'SAFE';
+      const itemJig = calcJigStatus(d);
+      if (itemJig === 'OVERDUE' || currentJig === 'OVERDUE') {
+        lineJigStatusMap.set(d.lineId, 'OVERDUE');
+      } else if (itemJig === 'WARNING' || currentJig === 'WARNING') {
+        lineJigStatusMap.set(d.lineId, 'WARNING');
+      } else if (!lineJigStatusMap.has(d.lineId)) {
+        lineJigStatusMap.set(d.lineId, 'SAFE');
+      }
+    }
+
     const dashboardCards = machinesRaw.map((m) => {
-      // Find associated design or line designs
+      // Find associated design: prioritize direct design_id, otherwise fallback to Lane's design
       let matchedDesign: any = null;
       if (m.design_id) {
         matchedDesign = designs.find((d) => d.id === m.design_id);
       }
-      if (!matchedDesign) {
-        // Fallback match by line
-        matchedDesign = designs.find((d) => d.lineId === m.line_id);
+      if (!matchedDesign && m.line_id) {
+        matchedDesign = lineDesignMap.get(m.line_id);
       }
 
-      const calculatedJig = calcJigStatus(matchedDesign);
-      const calculatedTpm = calcTpmStatus(matchedDesign);
+      // 1 Jig for 1 Lane: lane status applies to all machines in that lane
+      const laneJigStatus = (m.line_id && lineJigStatusMap.get(m.line_id)) || (matchedDesign ? calcJigStatus(matchedDesign) : 'SAFE');
+      const laneTpmStatus = (m.line_id && lineTpmStatusMap.get(m.line_id)) || (matchedDesign ? calcTpmStatus(matchedDesign) : 'SAFE');
 
-      // Allow manual override if specified (RESET resets back to calculated status)
+      // Allow manual override if supervisor specified, otherwise use Lane status
       const jigCondition = (m.manual_jig_status && m.manual_jig_status !== 'AUTO') 
         ? m.manual_jig_status 
-        : calculatedJig;
+        : laneJigStatus;
 
       const tpmSchedule = (m.manual_tpm_status && m.manual_tpm_status !== 'AUTO') 
         ? m.manual_tpm_status 
-        : calculatedTpm;
+        : laneTpmStatus;
 
       return {
         id: m.id,
@@ -309,13 +339,13 @@ export class AbnormalityService {
         location: m.location || '',
         description: m.description || '',
         status: m.status || 'ACTIVE',
-        designId: m.design_id || null,
+        designId: m.design_id || (matchedDesign ? matchedDesign.id : null),
         designNoReg: matchedDesign ? matchedDesign.noReg : null,
         designName: matchedDesign ? matchedDesign.assyPartName : null,
         // Status indicators strictly:
-        // Top circle: Jig Condition
+        // Top circle: Jig Condition (Lane-based)
         jigCondition, // 'SAFE' | 'WARNING' | 'OVERDUE'
-        // Bottom circle: TPM Schedule
+        // Bottom circle: TPM Schedule (Lane-based)
         tpmSchedule,  // 'SAFE' | 'WARNING' | 'OVERDUE'
         manualJigStatus: m.manual_jig_status || null,
         manualTpmStatus: m.manual_tpm_status || null,
@@ -384,5 +414,31 @@ export class AbnormalityService {
   async deleteMachine(id: string) {
     await this.prisma.$executeRawUnsafe(`DELETE FROM "machine" WHERE "id" = $1`, id);
     return { success: true };
+  }
+
+  /** Set Jig to Lane (1 Jig applies to 1 Lane / Line) */
+  async assignJigToLane(lineId: string, designId: string) {
+    // 1. Update design to point to this lineId if not yet
+    if (designId) {
+      await this.prisma.design.update({
+        where: { id: designId },
+        data: { lineId },
+      });
+
+      // 2. Update all machines in this line to point to this design_id
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "machine" SET "design_id" = $1, "updated_at" = CURRENT_TIMESTAMP WHERE "line_id" = $2`,
+        designId,
+        lineId,
+      );
+    } else {
+      // Unlink jig from all machines in this line
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "machine" SET "design_id" = NULL, "updated_at" = CURRENT_TIMESTAMP WHERE "line_id" = $1`,
+        lineId,
+      );
+    }
+
+    return { success: true, lineId, designId };
   }
 }

@@ -8,68 +8,46 @@ import { UpdateTpmScheduleDto } from './dto/update-tpm-schedule.dto';
 export class TpmService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Helper to calculate 2-Way Lifetime status */
+  /** Helper to calculate Lifetime and Schedule status */
   private enrichLifetime(item: any, isChildPart: boolean = false) {
     const baseDate = item.lastRenewalDate || item.designDateNew || item.installDate || item.createdAt || new Date();
     const lifetimeDays = item.lifetimeDays ?? 180;
-    const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
-    const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+    const lifetimeDueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
+    const lifetimeDaysRemaining = Math.ceil((lifetimeDueDate.getTime() - Date.now()) / 86400000);
 
-    let dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    if (daysRemaining <= 0) {
-      dayStatus = 'OVERDUE';
-    } else if (daysRemaining <= 35) {
-      dayStatus = 'WARNING';
-    } else {
-      dayStatus = 'SAFE';
-    }
-
-    const maxUsage = item.maxUsage ?? 500;
-    const currentUsage = item.currentUsage ?? 0;
-    const usageRemaining = Math.max(0, maxUsage - currentUsage);
-    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-
-    let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    if (currentUsage >= maxUsage) {
-      usageStatus = 'OVERDUE';
-    } else if (usagePercent >= 85 || (maxUsage - currentUsage) <= 50) {
-      usageStatus = 'WARNING';
-    } else {
-      usageStatus = 'SAFE';
-    }
-
-    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = item.lifetimeType || 'DUAL';
-    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
-
-    if (lifetimeType === 'DAYS') {
-      lifetimeStatus = dayStatus;
-      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
-    } else if (lifetimeType === 'USAGE') {
-      lifetimeStatus = usageStatus;
-      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
-    } else {
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
-        lifetimeStatus = 'OVERDUE';
-        triggerReason =
-          dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE'
-            ? 'BOTH'
-            : dayStatus === 'OVERDUE'
-            ? 'DAYS'
-            : 'USAGE';
-      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
-        lifetimeStatus = 'WARNING';
-        triggerReason =
-          dayStatus === 'WARNING' && usageStatus === 'WARNING'
-            ? 'BOTH'
-            : dayStatus === 'WARNING'
-            ? 'DAYS'
-            : 'USAGE';
-      } else {
-        lifetimeStatus = 'SAFE';
-        triggerReason = 'NONE';
+    // If a specific TPM schedule deadline is set, calculate its days remaining
+    let scheduleDaysRemaining: number | null = null;
+    if (item.tpmScheduleDeadline) {
+      const deadDate = new Date(item.tpmScheduleDeadline);
+      if (!isNaN(deadDate.getTime())) {
+        scheduleDaysRemaining = Math.ceil((deadDate.getTime() - Date.now()) / 86400000);
       }
     }
+
+    // Days remaining takes the closer/most urgent between lifetime and scheduled deadline
+    const daysRemaining = scheduleDaysRemaining !== null
+      ? Math.min(lifetimeDaysRemaining, scheduleDaysRemaining)
+      : lifetimeDaysRemaining;
+
+    const dueDate = scheduleDaysRemaining !== null && scheduleDaysRemaining < lifetimeDaysRemaining
+      ? new Date(item.tpmScheduleDeadline)
+      : lifetimeDueDate;
+
+    // Status:
+    // OVERDUE (Merah): <= 0 hari
+    // WARNING (Kuning): masuk H-2 minggu (<= 14 hari)
+    // SAFE (Hijau): > 14 hari
+    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
+    if (daysRemaining <= 0) {
+      lifetimeStatus = 'OVERDUE';
+    } else if (daysRemaining <= 14) {
+      lifetimeStatus = 'WARNING';
+    } else {
+      lifetimeStatus = 'SAFE';
+    }
+
+    const dayStatus = lifetimeStatus;
+    const triggerReason = lifetimeStatus !== 'SAFE' ? 'DAYS' : 'NONE';
 
     return {
       ...item,
@@ -78,9 +56,6 @@ export class TpmService {
       dueDate,
       daysRemaining,
       dayStatus,
-      usageRemaining,
-      usagePercent,
-      usageStatus,
       lifetimeStatus,
       triggerReason,
     };
@@ -109,6 +84,19 @@ export class TpmService {
     }
   }
 
+  /** Pastikan childPart (jika diisi) benar-benar milik design yang sama */
+  private async assertChildPartInDesign(designId: string, childPartId?: string | null) {
+    if (!childPartId) return;
+    const cp = await this.prisma.childPart.findUnique({
+      where: { id: childPartId },
+      select: { designId: true },
+    });
+    if (!cp) throw new NotFoundException(`ChildPart ${childPartId} not found`);
+    if (cp.designId !== designId) {
+      throw new BadRequestException('ChildPart tidak termasuk dalam Jig/Fixture yang dipilih.');
+    }
+  }
+
   /** Get Overall TPM KPI summary */
   async getSummary() {
     const allDesigns = await this.prisma.design.findMany({
@@ -116,9 +104,6 @@ export class TpmService {
         id: true,
         documents: { select: { approvalStatus: true }, orderBy: { createdAt: 'asc' } },
         lifetimeDays: true,
-        lifetimeType: true,
-        maxUsage: true,
-        currentUsage: true,
         designDateNew: true,
         createdAt: true,
         tpmScheduleStart: true,
@@ -136,9 +121,6 @@ export class TpmService {
           },
         },
         lifetimeDays: true,
-        lifetimeType: true,
-        maxUsage: true,
-        currentUsage: true,
         installDate: true,
         lastRenewalDate: true,
         createdAt: true,
@@ -271,9 +253,6 @@ export class TpmService {
           lineId: d.lineId,
           processId: d.processId,
           lifetimeDays: d.lifetimeDays,
-          lifetimeType: d.lifetimeType,
-          maxUsage: d.maxUsage,
-          currentUsage: d.currentUsage,
           daysRemaining: d.daysRemaining,
           dueDate: d.dueDate,
           lifetimeStatus: d.lifetimeStatus,
@@ -302,9 +281,6 @@ export class TpmService {
             lineId: d.lineId,
             processId: d.processId,
             lifetimeDays: cp.lifetimeDays,
-            lifetimeType: cp.lifetimeType,
-            maxUsage: cp.maxUsage,
-            currentUsage: cp.currentUsage,
             daysRemaining: cp.daysRemaining,
             dueDate: cp.dueDate,
             lifetimeStatus: cp.lifetimeStatus,
@@ -359,15 +335,6 @@ export class TpmService {
     }
     if (dto.lifetimeDays !== undefined) {
       dataToUpdate.lifetimeDays = Number(dto.lifetimeDays);
-    }
-    if (dto.lifetimeType !== undefined) {
-      dataToUpdate.lifetimeType = dto.lifetimeType;
-    }
-    if (dto.maxUsage !== undefined) {
-      dataToUpdate.maxUsage = Number(dto.maxUsage);
-    }
-    if (dto.currentUsage !== undefined) {
-      dataToUpdate.currentUsage = Number(dto.currentUsage);
     }
 
     if (isChildPart) {
@@ -445,6 +412,7 @@ export class TpmService {
   /** Create Checklist inspection report */
   async createChecklist(dto: CreateTpmChecklistDto, userId?: string) {
     await this.assertDesignApproved(dto.designId);
+    await this.assertChildPartInDesign(dto.designId, dto.childPartId);
 
     const checkDate = dto.checkDate ? new Date(dto.checkDate) : new Date();
 
@@ -581,8 +549,15 @@ export class TpmService {
   /** Create Maintenance Log entry */
   async createLog(dto: CreateTpmLogDto) {
     await this.assertDesignApproved(dto.designId);
+    await this.assertChildPartInDesign(dto.designId, dto.childPartId);
 
     const performedAt = dto.performedAt ? new Date(dto.performedAt) : new Date();
+
+    // Hubungkan ACT dengan PLAN: ambil deadline jadwal item (childpart atau jig) saat ini
+    const target: any = dto.childPartId
+      ? await this.prisma.childPart.findUnique({ where: { id: dto.childPartId } })
+      : await this.prisma.design.findUnique({ where: { id: dto.designId } });
+    const plannedFor = target?.tpmScheduleDeadline ?? null;
 
     const log = await this.prisma.tpmMaintenanceLog.create({
       data: {
@@ -597,6 +572,7 @@ export class TpmService {
         partsReplaced: dto.partsReplaced || null,
         status: dto.status || 'COMPLETED',
         resetLifetime: dto.resetLifetime || false,
+        plannedFor,
       },
       include: {
         design: {
@@ -617,21 +593,36 @@ export class TpmService {
     // If resetLifetime is checked, reset the lifetime counters!
     if (dto.resetLifetime) {
       if (dto.childPartId) {
+        const cp = await this.prisma.childPart.findUnique({ where: { id: dto.childPartId } });
         await this.prisma.childPart.update({
           where: { id: dto.childPartId },
           data: {
             installDate: new Date(),
             lastRenewalDate: new Date(),
-            currentUsage: 0,
             reminderSent: false,
           },
         });
+        // Jejak penggantian part agar riwayat TPM tidak putus dari riwayat part
+        if (cp) {
+          const base = cp.lastRenewalDate || cp.installDate;
+          await this.prisma.partReplacementLog.create({
+            data: {
+              designId: cp.designId,
+              childPartId: cp.id,
+              partNumber: cp.partNumber,
+              partName: cp.name,
+              replacedAt: performedAt,
+              replacedBy: dto.performedBy,
+              reason: `TPM: ${dto.title}`,
+              daysUsed: base ? Math.max(0, Math.round((performedAt.getTime() - new Date(base).getTime()) / 86400000)) : null,
+            },
+          });
+        }
       } else if (dto.designId) {
         await this.prisma.design.update({
           where: { id: dto.designId },
           data: {
             designDateNew: new Date(),
-            currentUsage: 0,
           },
         });
       }

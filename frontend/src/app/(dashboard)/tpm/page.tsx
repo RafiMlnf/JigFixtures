@@ -22,8 +22,9 @@ import {
   CreateTpmLogPayload,
 } from '@/lib/api/tpm';
 import { renewDesign, renewChildPart, recordUsage } from '@/lib/api/phase3';
+import TpmMatrix from '@/components/tpm/TpmMatrix';
 
-type ActiveTab = 'schedules' | 'checklists' | 'logs';
+type ActiveTab = 'schedules' | 'checklists' | 'logs' | 'matrix';
 
 export default function TPMPage() {
   const { user, isLoading } = useApp();
@@ -59,9 +60,6 @@ export default function TPMPage() {
   const [selectedScheduleItem, setSelectedScheduleItem] = useState<TpmScheduleItem | null>(null);
   const [scheduleForm, setScheduleForm] = useState({
     lifetimeDays: 180,
-    lifetimeType: 'DUAL' as 'DUAL' | 'USAGE' | 'DAYS',
-    maxUsage: 500,
-    currentUsage: 0,
     tpmScheduleStart: '',
     tpmScheduleDeadline: '',
   });
@@ -173,8 +171,21 @@ export default function TPMPage() {
       if (statusFilter !== 'ALL') {
         if (statusFilter === 'UNSCHEDULED') {
           if (item.tpmScheduleDeadline || item.tpmLifetimeSetAt) return false;
-        } else if (item.lifetimeStatus !== statusFilter) {
-          return false;
+        } else {
+          // Calculate item's effective days remaining
+          let effDays = item.daysRemaining;
+          if (item.tpmScheduleDeadline) {
+            const deadDate = new Date(item.tpmScheduleDeadline);
+            if (!isNaN(deadDate.getTime())) {
+              const sDays = Math.ceil((deadDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              effDays = Math.min(effDays, sDays);
+            }
+          }
+
+          const computedStatus = effDays <= 0 ? 'OVERDUE' : effDays <= 14 ? 'WARNING' : 'SAFE';
+          if (computedStatus !== statusFilter) {
+            return false;
+          }
         }
       }
       if (lineFilter !== 'All' && item.lineName !== lineFilter) {
@@ -232,9 +243,6 @@ export default function TPMPage() {
     setSelectedScheduleItem(item);
     setScheduleForm({
       lifetimeDays: item.lifetimeDays || 180,
-      lifetimeType: item.lifetimeType || 'DUAL',
-      maxUsage: item.maxUsage || 500,
-      currentUsage: item.currentUsage || 0,
       tpmScheduleStart: item.tpmScheduleStart ? item.tpmScheduleStart.split('T')[0] : '',
       tpmScheduleDeadline: item.tpmScheduleDeadline ? item.tpmScheduleDeadline.split('T')[0] : '',
     });
@@ -249,9 +257,6 @@ export default function TPMPage() {
       await updateTpmSchedule(selectedScheduleItem.id, {
         isChildPart: selectedScheduleItem.isChildPart,
         lifetimeDays: scheduleForm.lifetimeDays,
-        lifetimeType: scheduleForm.lifetimeType,
-        maxUsage: scheduleForm.maxUsage,
-        currentUsage: scheduleForm.currentUsage,
         tpmScheduleStart: scheduleForm.tpmScheduleStart || undefined,
         tpmScheduleDeadline: scheduleForm.tpmScheduleDeadline || undefined,
       });
@@ -454,75 +459,6 @@ export default function TPMPage() {
         </div>
       )}
 
-      {/* Header controls matching standard dashboard layout */}
-      <header className="h-12 flex justify-between items-center border-b border-gray-150 mb-3 shrink-0">
-        <div className="flex items-center gap-4">
-          {/* Title: changed to TPM only */}
-          <h2 className="text-base font-bold text-gray-800 flex items-center gap-1.5 shrink-0">
-            <span className="material-symbols-outlined text-[#0063ff] text-lg">build_circle</span>
-            TPM
-          </h2>
-
-        </div>
-
-        {/* Right Header Controls */}
-        <div className="flex items-center gap-2">
-          {/* Quick Action Button for PIC */}
-          {isPic && (
-            <div className="flex items-center gap-1.5">
-
-              {activeTab === 'checklists' && (
-                <button
-                  onClick={() => {
-                    setChecklistForm((prev) => ({
-                      ...prev,
-                      designId: designOptions[0]?.id || '',
-                      childPartId: '',
-                      notes: '',
-                    }));
-                    setShowChecklistModal(true);
-                  }}
-                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <span className="material-symbols-outlined text-xs">add_task</span>
-                  Form Checklist
-                </button>
-              )}
-
-              {activeTab === 'logs' && (
-                <button
-                  onClick={() => {
-                    setLogForm((prev) => ({
-                      ...prev,
-                      designId: designOptions[0]?.id || '',
-                      childPartId: '',
-                      title: 'Preventive Maintenance Rutin',
-                      description: '',
-                    }));
-                    setShowLogModal(true);
-                  }}
-                  className="bg-[#0063ff] text-white px-3 py-1.5 rounded-lg text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <span className="material-symbols-outlined text-xs">handyman</span>
-                  Catat Servis
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Reload button */}
-          <button
-            onClick={loadData}
-            title="Muat Ulang Data"
-            className="px-2.5 py-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors cursor-pointer flex items-center justify-center shadow-xs"
-          >
-            <span className={`material-symbols-outlined text-xs ${loadingData ? 'animate-spin' : ''}`}>
-              refresh
-            </span>
-          </button>
-        </div>
-      </header>
-
       {/* Info: desain yang belum di-approve belum masuk TPM */}
       {(summary?.pendingApprovalCount ?? 0) > 0 && (
         <div className="flex items-center gap-2 mb-2.5 shrink-0 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-[10px] text-amber-800">
@@ -540,30 +476,30 @@ export default function TPMPage() {
         </div>
       )}
 
-      {/* Button Switch Tabs */}
-      <div className="flex gap-2.5 mb-2.5 shrink-0">
+      {/* Button Switch Tabs & Action Controls Baris Sejajar */}
+      <div className="flex items-center gap-2 mb-2.5 shrink-0">
         <button
           onClick={() => setActiveTab('schedules')}
-          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'schedules'
+          className={`flex-1 rounded-xl px-2.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'schedules'
             ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
             }`}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
-              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'schedules' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              className={`w-5.5 h-5.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'schedules' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
                 }`}
             >
-              <span className="material-symbols-outlined text-sm">calendar_month</span>
+              <span className="material-symbols-outlined text-[13px]">calendar_month</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'schedules' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-[10.5px] font-semibold leading-none ${activeTab === 'schedules' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Jadwal Preventif &amp; Lifetime
               </h3>
             </div>
           </div>
           <span
-            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'schedules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            className={`text-[9px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'schedules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
               }`}
           >
             {filteredSchedules.length}
@@ -572,26 +508,26 @@ export default function TPMPage() {
 
         <button
           onClick={() => setActiveTab('checklists')}
-          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'checklists'
+          className={`flex-1 rounded-xl px-2.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'checklists'
             ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
             }`}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
-              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'checklists' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              className={`w-5.5 h-5.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'checklists' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
                 }`}
             >
-              <span className="material-symbols-outlined text-sm">fact_check</span>
+              <span className="material-symbols-outlined text-[13px]">fact_check</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'checklists' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-[10.5px] font-semibold leading-none ${activeTab === 'checklists' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Daily Checklist Inspeksi
               </h3>
             </div>
           </div>
           <span
-            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'checklists' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            className={`text-[9px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'checklists' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
               }`}
           >
             {filteredChecklists.length}
@@ -600,29 +536,107 @@ export default function TPMPage() {
 
         <button
           onClick={() => setActiveTab('logs')}
-          className={`flex-1 rounded-xl px-3.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'logs'
+          className={`flex-1 rounded-xl px-2.5 py-1.5 flex items-center justify-between border transition-all cursor-pointer shadow-xs ${activeTab === 'logs'
             ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
             }`}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
-              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'logs' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
+              className={`w-5.5 h-5.5 rounded-lg flex items-center justify-center transition-colors ${activeTab === 'logs' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'
                 }`}
             >
-              <span className="material-symbols-outlined text-sm">history_toggle_off</span>
+              <span className="material-symbols-outlined text-[13px]">history_toggle_off</span>
             </div>
             <div className="text-left">
-              <h3 className={`text-xs font-semibold leading-none ${activeTab === 'logs' ? 'text-blue-900' : 'text-gray-800'}`}>
+              <h3 className={`text-[10.5px] font-semibold leading-none ${activeTab === 'logs' ? 'text-blue-900' : 'text-gray-800'}`}>
                 Riwayat Servis &amp; Maintenance
               </h3>
             </div>
           </div>
           <span
-            className={`text-[9.5px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'logs' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+            className={`text-[9px] font-medium px-1.5 py-0.2 rounded-full ${activeTab === 'logs' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
               }`}
           >
             {filteredLogs.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('matrix')}
+          className={`flex-1 rounded-xl px-2.5 py-1.5 flex items-center gap-1.5 border transition-all cursor-pointer shadow-xs ${activeTab === 'matrix'
+            ? 'bg-blue-50/70 border-[#0063ff] ring-1 ring-[#0063ff]'
+            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+            }`}
+        >
+          <div className={`w-5.5 h-5.5 rounded-lg flex items-center justify-center ${activeTab === 'matrix' ? 'bg-[#0063ff] text-white' : 'bg-gray-100 text-gray-500'}`}>
+            <span className="material-symbols-outlined text-[13px]">grid_view</span>
+          </div>
+          <h3 className={`text-[10.5px] font-semibold leading-none ${activeTab === 'matrix' ? 'text-blue-900' : 'text-gray-800'}`}>
+            Schedule Plan vs Actual
+          </h3>
+        </button>
+
+        {/* Action Buttons for PIC (Contextual) */}
+        {isPic && (
+          <>
+            {activeTab === 'checklists' && (
+              <button
+                onClick={() => {
+                  setChecklistForm((prev) => ({
+                    ...prev,
+                    designId: designOptions[0]?.id || '',
+                    childPartId: '',
+                    notes: '',
+                  }));
+                  setShowChecklistModal(true);
+                }}
+                className="bg-[#0063ff] text-white px-3 py-2 rounded-xl text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs shrink-0 h-full"
+              >
+                <span className="material-symbols-outlined text-xs">add_task</span>
+                Form Checklist
+              </button>
+            )}
+
+            {activeTab === 'logs' && (
+              <button
+                onClick={() => {
+                  setLogForm((prev) => ({
+                    ...prev,
+                    designId: designOptions[0]?.id || '',
+                    childPartId: '',
+                    title: 'Preventive Maintenance Rutin',
+                    description: '',
+                  }));
+                  setShowLogModal(true);
+                }}
+                className="bg-[#0063ff] text-white px-3 py-2 rounded-xl text-[10px] font-medium hover:bg-[#0052d4] transition-colors flex items-center gap-1 cursor-pointer shadow-xs shrink-0 h-full"
+              >
+                <span className="material-symbols-outlined text-xs">handyman</span>
+                Catat Servis
+              </button>
+            )}
+          </>
+        )}
+
+        {/* Quick Link to Monitoring Lane & Mesin */}
+        <Link
+          href="/monitoring"
+          title="Buka Monitoring Lane & Mesin"
+          className="px-3 py-1.5 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0 text-[10.5px] font-bold"
+        >
+          <span className="material-symbols-outlined text-[15px]">monitoring</span>
+          <span>Monitoring Lane</span>
+        </Link>
+
+        {/* Reload button sejajar dengan card */}
+        <button
+          onClick={loadData}
+          title="Muat Ulang Data"
+          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors cursor-pointer flex items-center justify-center shadow-xs shrink-0"
+        >
+          <span className={`material-symbols-outlined text-sm ${loadingData ? 'animate-spin' : ''}`}>
+            refresh
           </span>
         </button>
       </div>
@@ -632,6 +646,8 @@ export default function TPMPage() {
         {/* ============================================================== */}
         {/* TAB 1: JADWAL PREVENTIF & LIFETIME MONITORING                 */}
         {/* ============================================================== */}
+        {activeTab === 'matrix' && <TpmMatrix schedules={schedules} logs={logs} />}
+
         {activeTab === 'schedules' && (
           <div className="flex-1 flex flex-col min-h-0">
             {/* Filter toolbar with right-aligned search bar */}
@@ -737,6 +753,7 @@ export default function TPMPage() {
               <table className="w-full text-left border-collapse text-[10px]">
                 <thead>
                   <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[9px] uppercase tracking-wider whitespace-nowrap select-none h-7">
+                    <th className="w-6 px-1.5 py-1 text-center" title="Status Pengingat: Hijau (Aman), Kuning (Warning H-14 hari), Merah (Terlewat / Overdue)"></th>
                     <th className="w-[140px] px-2 py-1">No. Reg / Part</th>
                     <th className="w-[170px] max-w-[200px] px-2 py-1">Item Name</th>
                     <th className="px-2 py-1">Line &amp; OP</th>
@@ -747,19 +764,47 @@ export default function TPMPage() {
                 </thead>
                 <tbody className="text-gray-700">
                   {filteredSchedules.map((item) => {
-                    const isOverdue = item.lifetimeStatus === 'OVERDUE';
-                    const isWarning = item.lifetimeStatus === 'WARNING';
-                    const days = item.daysRemaining;
-                    const maxUsage = item.maxUsage || 500;
-                    const curUsage = item.currentUsage || 0;
-                    const usagePct = Math.min(100, Math.round((curUsage / maxUsage) * 100));
+                    // Hitung sisa hari dari lifetime
+                    const lifetimeDays = item.daysRemaining;
 
-                    // Status border strip indicator
-                    const statusBorderClass = isOverdue
-                      ? 'border-l-[3.5px] border-l-rose-500'
+                    // Hitung sisa hari dari jadwal servis (jika telah di-set tanggal jadwalnya)
+                    let scheduleDays: number | null = null;
+                    if (item.tpmScheduleDeadline) {
+                      const deadDate = new Date(item.tpmScheduleDeadline);
+                      if (!isNaN(deadDate.getTime())) {
+                        scheduleDays = Math.ceil((deadDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                      }
+                    }
+
+                    // Ambil yang paling mendesak / terdekat antara lifetime dan jadwal deadline
+                    const days = scheduleDays !== null
+                      ? Math.min(lifetimeDays, scheduleDays)
+                      : lifetimeDays;
+
+                    // Status Pengingat:
+                    // Merah (Terlewat): days <= 0
+                    // Kuning (Warning H-2 minggu): days <= 14 dan days > 0
+                    // Hijau (Aman): days > 14
+                    const isOverdue = days <= 0;
+                    const isWarning = !isOverdue && days <= 14;
+                    const isSafe = !isOverdue && !isWarning;
+
+                    const totalDays = item.lifetimeDays || 180;
+                    const elapsedDays = Math.max(0, totalDays - days);
+                    const daysPct = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
+
+                    // Status box color (1:1 square)
+                    const statusColorClass = isOverdue
+                      ? 'bg-rose-500 shadow-rose-200'
                       : isWarning
-                        ? 'border-l-[3.5px] border-l-amber-400'
-                        : 'border-l-[3.5px] border-l-emerald-500';
+                        ? 'bg-amber-400 shadow-amber-200'
+                        : 'bg-emerald-500 shadow-emerald-200';
+
+                    const statusTitle = isOverdue
+                      ? `Terlewat (Overdue): Telah lewat ${Math.abs(days)} hari`
+                      : isWarning
+                        ? `Warning: Mendekati jadwal (${days} hari lagi, masuk H-2 minggu)`
+                        : `Aman: Masih ${days} hari lagi`;
 
                     return (
                       <tr
@@ -768,8 +813,18 @@ export default function TPMPage() {
                           isOverdue ? 'bg-rose-50/20' : ''
                         }`}
                       >
-                        {/* No Reg / Part with status left-border */}
-                        <td className={`px-2 py-0.5 font-mono ${statusBorderClass} truncate`}>
+                        {/* Status Kotak 1:1 Pengingat (Aman: Hijau, Warning H-2minggu: Kuning, Terlewat: Merah) */}
+                        <td className="w-6 px-1.5 py-0.5 text-center">
+                          <div className="flex items-center justify-center">
+                            <span
+                              className={`w-3.5 h-3.5 aspect-square rounded-sm shrink-0 block transition-transform shadow-2xs hover:scale-110 ${statusColorClass}`}
+                              title={statusTitle}
+                            />
+                          </div>
+                        </td>
+
+                        {/* No Reg / Part */}
+                        <td className="px-2 py-0.5 font-mono truncate">
                           <div className="flex items-center gap-1 truncate">
                             <span
                               className={`text-[7px] font-medium px-1 py-0.2 rounded shrink-0 uppercase ${
@@ -817,7 +872,7 @@ export default function TPMPage() {
                           </span>
                         </td>
 
-                        {/* Lifetime (Compact & Informative) */}
+                        {/* Lifetime (Days only) */}
                         <td className="px-2 py-0.5 text-center">
                           <div className="inline-flex flex-col items-center justify-center">
                             <span
@@ -828,13 +883,9 @@ export default function TPMPage() {
                                     ? 'bg-amber-50 text-amber-700 font-medium'
                                     : 'bg-emerald-50 text-emerald-700 font-medium'
                               }`}
-                              title={`Lifetime Status: ${item.lifetimeStatus}`}
+                              title={`Lifetime: ${days <= 0 ? 'Habis' : `Sisa ${days} hari`}`}
                             >
-                              {item.lifetimeType === 'DAYS'
-                                ? `${days}d rem`
-                                : item.lifetimeType === 'USAGE'
-                                  ? `${curUsage}/${maxUsage}x`
-                                  : `${curUsage}/${maxUsage}x · ${days}d`}
+                              {days <= 0 ? 'OVERDUE' : `${days}d rem`}
                             </span>
                             {/* Micro progress meter */}
                             <div className="w-16 bg-gray-200 rounded-full h-[2px] mt-0.5 overflow-hidden">
@@ -842,7 +893,7 @@ export default function TPMPage() {
                                 className={`h-full ${
                                   isOverdue ? 'bg-rose-500' : isWarning ? 'bg-amber-400' : 'bg-emerald-500'
                                 }`}
-                                style={{ width: `${usagePct}%` }}
+                                style={{ width: `${daysPct}%` }}
                               />
                             </div>
                           </div>
@@ -884,16 +935,6 @@ export default function TPMPage() {
                         {isPic && (
                           <td className="px-2 py-0.5 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              {/* Quick Usage Counter */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenUsageModal(item)}
-                                className="text-[8px] font-medium text-blue-600 hover:text-blue-800 bg-blue-50/70 hover:bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200/60 cursor-pointer"
-                                title="Catat Pemakaian Siklus"
-                              >
-                                + Catat
-                              </button>
-
                               {/* Quick Renew */}
                               <button
                                 type="button"
@@ -935,7 +976,7 @@ export default function TPMPage() {
 
                   {filteredSchedules.length === 0 && (
                     <tr>
-                      <td colSpan={isPic ? 6 : 5} className="text-center py-12 text-gray-400 text-xs">
+                      <td colSpan={isPic ? 7 : 6} className="text-center py-12 text-gray-400 text-xs">
                         Tidak ada data jadwal TPM yang sesuai filter pencarian.
                       </td>
                     </tr>
@@ -1413,69 +1454,26 @@ export default function TPMPage() {
 
               <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/60 space-y-2.5">
                 <span className="text-[9px] font-bold text-blue-900 uppercase tracking-wider block">
-                  Konfigurasi 2-Way Lifetime
+                  Target Lifetime (Hari)
                 </span>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
-                      Mode Evaluasi
-                    </label>
-                    <select
-                      value={scheduleForm.lifetimeType}
-                      onChange={(e) =>
-                        setScheduleForm((prev) => ({ ...prev, lifetimeType: e.target.value as any }))
-                      }
-                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
-                    >
-                      <option value="DUAL">DUAL (2-Way)</option>
-                      <option value="DAYS">Hanya Hari</option>
-                      <option value="USAGE">Hanya Siklus</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
-                      Batas Hari
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={scheduleForm.lifetimeDays}
-                      onChange={(e) =>
-                        setScheduleForm((prev) => ({ ...prev, lifetimeDays: parseInt(e.target.value) || 1 }))
-                      }
-                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-medium text-gray-600 mb-1">
-                      Maks Siklus (x)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={scheduleForm.maxUsage}
-                      onChange={(e) =>
-                        setScheduleForm((prev) => ({ ...prev, maxUsage: parseInt(e.target.value) || 1 }))
-                      }
-                      className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
-                    />
-                  </div>
-                </div>
 
                 <div>
                   <label className="block text-[9px] font-medium text-gray-600 mb-1">
-                    Counter Pemakaian Saat Ini
+                    Batas Lifetime Servis (Hari)
                   </label>
                   <input
                     type="number"
-                    min={0}
-                    value={scheduleForm.currentUsage}
+                    min={1}
+                    value={scheduleForm.lifetimeDays}
                     onChange={(e) =>
-                      setScheduleForm((prev) => ({ ...prev, currentUsage: parseInt(e.target.value) || 0 }))
+                      setScheduleForm((prev) => ({ ...prev, lifetimeDays: parseInt(e.target.value) || 1 }))
                     }
                     className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs outline-none"
+                    placeholder="Contoh: 180"
                   />
+                  <p className="text-[8px] text-gray-500 mt-1">
+                    Target siklus overhaul / kalibrasi dihitung otomatis berdasarkan kalender hari dari tanggal pemasangan/renewal terakhir.
+                  </p>
                 </div>
               </div>
 
@@ -1542,7 +1540,7 @@ export default function TPMPage() {
                 <div className="flex items-center justify-between pt-1 text-[10px] text-gray-600">
                   <span>Pemakaian Saat Ini:</span>
                   <span className="font-mono font-bold text-gray-800">
-                    {usageTarget.currentUsage || 0} / {usageTarget.maxUsage || 500}x
+                    {(usageTarget as any).currentUsage || 0} / {(usageTarget as any).maxUsage || 500}x
                   </span>
                 </div>
               </div>

@@ -52,6 +52,7 @@ model Line {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   designs   Design[]
+  machines  Machine[]
 
   @@map("line")
 }
@@ -110,9 +111,6 @@ model Design {
   designDateNew     DateTime?      @map("design_date_new")
   newVisualDesign   String?        @map("new_visual_design")
   lifetimeDays      Int            @default(180) @map("lifetime_days")
-  lifetimeType      String         @default("DUAL") @map("lifetime_type") // DUAL / USAGE / DAYS
-  maxUsage          Int            @default(500) @map("max_usage") // Batas aus siklus pemakaian (default 500x)
-  currentUsage      Int            @default(0) @map("current_usage") // Counter pemakaian aktual
 
   // TPM Scheduling — kapan lifetime jig ini akan diatur di modul TPM
   tpmScheduleStart  DateTime? @map("tpm_schedule_start")   // Tanggal mulai masuk jadwal TPM
@@ -132,6 +130,7 @@ model Design {
   tpmChecklists     TpmChecklist[]
   tpmLogs           TpmMaintenanceLog[]
   replacementLogs   PartReplacementLog[]
+  machines          Machine[]
 
   @@map("design")
 }
@@ -200,6 +199,8 @@ model Abnormality {
   resolvedAt       DateTime?         @map("resolved_at")
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  tpmChecklists    TpmChecklist[]
 
   @@map("abnormality")
 }
@@ -311,11 +312,8 @@ model ChildPart {
   material        String?
   qty             String?   @default("1")
 
-  // Lifetime tracking
+  // Lifetime tracking (by days only)
   lifetimeDays    Int       @default(180) @map("lifetime_days")
-  lifetimeType    String    @default("DUAL") @map("lifetime_type") // DUAL / USAGE / DAYS
-  maxUsage        Int       @default(500) @map("max_usage") // Batas aus siklus pemakaian (default 500x)
-  currentUsage    Int       @default(0) @map("current_usage") // Counter pemakaian aktual
   installDate     DateTime  @default(now()) @map("install_date")
   lastRenewalDate DateTime? @map("last_renewal_date")
   reminderSent    Boolean   @default(false) @map("reminder_sent")
@@ -367,6 +365,7 @@ model TpmChecklist {
   notes             String?
   linkToAbnormality Boolean      @default(false) @map("link_to_abnormality")
   abnormalityId     String?      @map("abnormality_id")
+  abnormality       Abnormality? @relation(fields: [abnormalityId], references: [id], onDelete: SetNull)
 
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
@@ -390,6 +389,8 @@ model TpmMaintenanceLog {
   partsReplaced     String?      @map("parts_replaced")
   status            String       @default("COMPLETED") // COMPLETED, IN_PROGRESS, SCHEDULED
   resetLifetime     Boolean      @default(false) @map("reset_lifetime")
+  // Deadline jadwal (PLAN) yang dipenuhi oleh log ini -> menghubungkan PLAN dengan ACT
+  plannedFor        DateTime?    @map("planned_for")
 
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
@@ -410,11 +411,30 @@ model PartReplacementLog {
   replacedBy      String    @map("replaced_by")
   reason          String
   notes           String?
-  usageAtReplace  Int?      @map("usage_at_replace")
   daysUsed        Int?      @map("days_used")
 
   createdAt       DateTime  @default(now()) @map("created_at")
 
   @@map("part_replacement_log")
+}
+
+model Machine {
+  id              String    @id @db.VarChar(64)
+  name            String    @db.VarChar(255)
+  code            String    @db.VarChar(100)
+  lineId          String    @map("line_id")
+  designId        String?   @map("design_id")
+  location        String?   @db.VarChar(255)
+  description     String?
+  status          String?   @default("ACTIVE") @db.VarChar(50)
+  manualJigStatus String?   @map("manual_jig_status") @db.VarChar(20)
+  manualTpmStatus String?   @map("manual_tpm_status") @db.VarChar(20)
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  line            Line      @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  design          Design?   @relation(fields: [designId], references: [id], onDelete: SetNull)
+
+  @@map("machine")
 }
 

@@ -23,50 +23,14 @@ export class InventoryService {
     const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
       daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
 
-    const maxUsage = cp.maxUsage ?? 500;
-    const currentUsage = cp.currentUsage ?? 0;
-    const usageRemaining = Math.max(0, maxUsage - currentUsage);
-    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-    const usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
-      currentUsage >= maxUsage ? 'OVERDUE' : usagePercent >= 85 || (maxUsage - currentUsage) <= 50 ? 'WARNING' : 'SAFE';
-
-    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = cp.lifetimeType || 'DUAL';
-    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
-
-    if (lifetimeType === 'DAYS') {
-      lifetimeStatus = dayStatus;
-      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
-    } else if (lifetimeType === 'USAGE') {
-      lifetimeStatus = usageStatus;
-      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
-    } else {
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
-        lifetimeStatus = 'OVERDUE';
-        triggerReason = dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE' ? 'BOTH' : dayStatus === 'OVERDUE' ? 'DAYS' : 'USAGE';
-      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
-        lifetimeStatus = 'WARNING';
-        triggerReason = dayStatus === 'WARNING' && usageStatus === 'WARNING' ? 'BOTH' : dayStatus === 'WARNING' ? 'DAYS' : 'USAGE';
-      } else {
-        lifetimeStatus = 'SAFE';
-        triggerReason = 'NONE';
-      }
-    }
-
     return {
       ...cp,
       indicator: this.getIndicator(cp.actualStock, cp.minimumStock),
-      lifetimeType,
-      maxUsage,
-      currentUsage,
-      usageRemaining,
-      usagePercent,
       dueDate: dueDate.toISOString(),
       daysRemaining,
       dayStatus,
-      usageStatus,
-      lifetimeStatus,
-      triggerReason,
+      lifetimeStatus: dayStatus,
+      triggerReason: dayStatus !== 'SAFE' ? 'DAYS' : 'NONE',
     };
   }
 
@@ -78,48 +42,12 @@ export class InventoryService {
     const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
       daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
 
-    const maxUsage = item.maxUsage ?? 500;
-    const currentUsage = item.currentUsage ?? 0;
-    const usageRemaining = Math.max(0, maxUsage - currentUsage);
-    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-    const usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
-      currentUsage >= maxUsage ? 'OVERDUE' : usagePercent >= 85 || (maxUsage - currentUsage) <= 50 ? 'WARNING' : 'SAFE';
-
-    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = item.lifetimeType || 'DUAL';
-    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
-
-    if (lifetimeType === 'DAYS') {
-      lifetimeStatus = dayStatus;
-      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
-    } else if (lifetimeType === 'USAGE') {
-      lifetimeStatus = usageStatus;
-      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
-    } else {
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
-        lifetimeStatus = 'OVERDUE';
-        triggerReason = dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE' ? 'BOTH' : dayStatus === 'OVERDUE' ? 'DAYS' : 'USAGE';
-      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
-        lifetimeStatus = 'WARNING';
-        triggerReason = dayStatus === 'WARNING' && usageStatus === 'WARNING' ? 'BOTH' : dayStatus === 'WARNING' ? 'DAYS' : 'USAGE';
-      } else {
-        lifetimeStatus = 'SAFE';
-        triggerReason = 'NONE';
-      }
-    }
-
     return {
-      lifetimeType,
-      maxUsage,
-      currentUsage,
-      usageRemaining,
-      usagePercent,
       dueDate: dueDate.toISOString(),
       daysRemaining,
       dayStatus,
-      usageStatus,
-      lifetimeStatus,
-      triggerReason,
+      lifetimeStatus: dayStatus,
+      triggerReason: dayStatus !== 'SAFE' ? 'DAYS' : 'NONE',
     };
   }
 
@@ -230,9 +158,6 @@ export class InventoryService {
       lifecycleStatus: dto.lifecycleStatus,
     };
     if (dto.lifetimeDays !== undefined) dataToUpdate.lifetimeDays = dto.lifetimeDays;
-    if (dto.lifetimeType !== undefined) dataToUpdate.lifetimeType = dto.lifetimeType;
-    if (dto.maxUsage !== undefined) dataToUpdate.maxUsage = dto.maxUsage;
-    if (dto.currentUsage !== undefined) dataToUpdate.currentUsage = dto.currentUsage;
 
     const updated = await this.prisma.design.update({
       where: { id },
@@ -263,7 +188,7 @@ export class InventoryService {
   }
 
   async getSummary() {
-    const rawItems = await this.prisma.design.findMany();
+    const rawItems = await this.prisma.childPart.findMany();
     let red = 0;
     let yellow = 0;
     let green = 0;
@@ -284,11 +209,22 @@ export class InventoryService {
   }
 
   async getAlerts() {
-    // 1. Red items (actual stock is 0)
-    const redItems = await this.prisma.design.findMany({
-      where: { actualStock: 0 },
-      select: { id: true, noReg: true, assyPartName: true },
+    // 1. Red items (childpart actual stock is 0, grouped per Jig)
+    const redChildParts = await this.prisma.childPart.findMany({
+      where: { actualStock: 0, minimumStock: { gt: 0 } },
+      select: { design: { select: { id: true, noReg: true, assyPartName: true } }, partNumber: true, name: true },
     });
+    const redMap = new Map<string, { id: string; noReg: string; assyPartName: string }>();
+    redChildParts.forEach((cp: any) => {
+      if (cp.design) {
+        redMap.set(cp.design.id, {
+          id: cp.design.id,
+          noReg: cp.design.noReg,
+          assyPartName: `${cp.design.assyPartName} - ${cp.partNumber} ${cp.name || ''}`.trim(),
+        });
+      }
+    });
+    const redItems = Array.from(redMap.values());
 
     // 2. Abnormality Open > 2 days (48 hours ago)
     const twoDaysAgo = new Date();

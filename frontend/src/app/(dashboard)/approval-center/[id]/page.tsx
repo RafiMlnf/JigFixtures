@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { canApprove } from '@/lib/rbac';
 import { getFileUrl, approveRevision, rejectRevision, uploadFile, resubmitRevision, fetchApprovalDetail } from '@/lib/api/phase3';
+import SnapshotEditorModal from '@/components/approval/SnapshotEditorModal';
 
 const StepViewer = lazy(() => import('@/components/design/StepViewer'));
 
@@ -54,18 +55,12 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [approvalDetail, setApprovalDetail] = useState<any>(null);
   const [loadingApproval, setLoadingApproval] = useState(true);
 
-  // Markup Canvas States
-  const viewerContainerRef = useRef<HTMLDivElement | null>(null);
-  const markupCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isMarkupMode, setIsMarkupMode] = useState(false);
-  const [inkColor, setInkColor] = useState<'#dc2626' | '#eab308' | '#2563eb'>('#dc2626');
-  const [brushSize, setBrushSize] = useState<number>(3);
-  const [hasDrawnMarkup, setHasDrawnMarkup] = useState(false);
-  const [localMarkupData, setLocalMarkupData] = useState<string | null>(null);
-  const [showSavedMarkup, setShowSavedMarkup] = useState(true);
-  const [strokesHistory, setStrokesHistory] = useState<ImageData[]>([]);
-  const isDrawingRef = useRef(false);
-  const prevPointRef = useRef<{ x: number; y: number } | null>(null);
+  // Snapshot & Revision Editor States
+  const [snapshotImage, setSnapshotImage] = useState<string | null>(null);
+  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+  const [showSnapshotEditor, setShowSnapshotEditor] = useState(false);
+  const [viewingSavedSnapshot, setViewingSavedSnapshot] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   // Resubmit Revision Modal Form States (for Drawer)
   const [revFile2D, setRevFile2D] = useState<File | null>(null);
@@ -131,139 +126,70 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     loadApprovalData();
   }, [id]);
 
-  // Adjust canvas dimensions accurately to match viewer container without wiping strokes
-  const syncCanvasSize = () => {
-    const canvas = markupCanvasRef.current;
-    const container = viewerContainerRef.current;
-    if (!canvas || !container) return;
+  // Snapshot Capture & Revision Submission Handlers
+  const handleTakeSnapshot = async () => {
+    if (!pdf2DUrl) {
+      alert('File PDF 2D Drawing belum tersedia untuk diambil snapshot.');
+      return;
+    }
+    setIsCapturingSnapshot(true);
+    try {
+      // Load standalone PDF.js in the browser (avoids Turbopack / Webpack canvas module resolution)
+      let pdfjs: any = (window as any).pdfjsLib;
+      if (!pdfjs) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/pdf.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Gagal memuat engine PDF reader'));
+          document.head.appendChild(script);
+        });
+        pdfjs = (window as any).pdfjsLib;
+      }
 
-    const rect = container.getBoundingClientRect();
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
-    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
-      let existingImg: ImageData | null = null;
+      if (!pdfjs) {
+        throw new Error('PDF Engine tidak dapat diinisialisasi.');
+      }
+
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+      const loadingTask = pdfjs.getDocument(pdf2DUrl);
+      const pdfDoc = await loadingTask.promise;
+      const page = await pdfDoc.getPage(1);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
       const ctx = canvas.getContext('2d');
-      if (ctx && canvas.width > 0 && canvas.height > 0) {
-        try {
-          existingImg = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        } catch {}
-      }
-      canvas.width = w;
-      canvas.height = h;
-      if (existingImg && ctx) {
-        try {
-          ctx.putImageData(existingImg, 0, 0);
-        } catch {}
-      }
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(syncCanvasSize, 250);
-    window.addEventListener('resize', syncCanvasSize);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', syncCanvasSize);
-    };
-  }, [previewMode, isMarkupMode]);
-
-  // Canvas Drawing Handlers
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isMarkupMode) return;
-    e.preventDefault();
-    syncCanvasSize();
-    const canvas = markupCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    isDrawingRef.current = true;
-    prevPointRef.current = { x, y };
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    try {
-      const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      setStrokesHistory((prev) => [...prev.slice(-15), snapshot]);
-    } catch {}
-
-    ctx.strokeStyle = inkColor;
-    ctx.fillStyle = inkColor;
-    ctx.lineWidth = brushSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    ctx.beginPath();
-    ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
-    ctx.fill();
-    setHasDrawnMarkup(true);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isMarkupMode || !isDrawingRef.current || !prevPointRef.current) return;
-    e.preventDefault();
-    const canvas = markupCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.strokeStyle = inkColor;
-    ctx.lineWidth = brushSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    ctx.beginPath();
-    ctx.moveTo(prevPointRef.current.x, prevPointRef.current.y);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-
-    prevPointRef.current = { x, y };
-  };
-
-  const handlePointerUp = () => {
-    isDrawingRef.current = false;
-    prevPointRef.current = null;
-    const canvas = markupCanvasRef.current;
-    if (canvas) {
-      try {
-        const dataUrl = canvas.toDataURL('image/png');
-        setLocalMarkupData(dataUrl);
-        setHasDrawnMarkup(true);
-      } catch (e) {
-        console.warn('Canvas export toDataURL failed:', e);
-      }
-    }
-  };
-
-  const handleUndo = () => {
-    const canvas = markupCanvasRef.current;
-    if (!canvas || strokesHistory.length === 0) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const last = strokesHistory[strokesHistory.length - 1];
-    ctx.putImageData(last, 0, 0);
-    setStrokesHistory((prev) => prev.slice(0, -1));
-    try {
+      if (!ctx) throw new Error('Context canvas tidak tersedia');
+      await page.render({ canvasContext: ctx, viewport }).promise;
       const dataUrl = canvas.toDataURL('image/png');
-      setLocalMarkupData(dataUrl);
-    } catch {}
+      setSnapshotImage(dataUrl);
+      setShowSnapshotEditor(true);
+    } catch (err: any) {
+      console.error('Failed to capture PDF snapshot:', err);
+      alert(`Gagal mengambil snapshot PDF otomatis: ${err.message || 'Error server'}.`);
+    } finally {
+      setIsCapturingSnapshot(false);
+    }
   };
 
-  const handleClearCanvas = () => {
-    const canvas = markupCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setStrokesHistory([]);
-    setHasDrawnMarkup(false);
-    setLocalMarkupData(null);
+  const handleSnapshotRevisionSubmit = async ({
+    comment: revComment,
+    markupData: revMarkup,
+  }: {
+    comment: string;
+    markupData: string;
+  }) => {
+    await rejectRevision(approval.id, {
+      comment: revComment,
+      markupData: revMarkup,
+    });
+    setToastMessage('Permintaan revisi beserta snapshot coretan berhasil dikirim ke Drawer.');
+    setShowSnapshotEditor(false);
+    await loadApprovalData();
+    setTimeout(() => {
+      router.push('/approval-center');
+    }, 1200);
   };
 
   // Decision 1: Setujui (Approve)
@@ -284,7 +210,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     }
   };
 
-  // Decision 2: Revisi (Return with Notes & PDF Coretan)
+  // Decision 2: Revisi (Return with Notes)
   const handleReviseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!comment.trim()) {
@@ -292,21 +218,12 @@ export default function ReviewApprovalPage({ params }: PageProps) {
       return;
     }
     try {
-      let markupDataUrl: string | undefined = localMarkupData || undefined;
-      if (!markupDataUrl && markupCanvasRef.current && hasDrawnMarkup) {
-        try {
-          markupDataUrl = markupCanvasRef.current.toDataURL('image/png');
-        } catch {}
-      }
-
       await rejectRevision(approval.id, {
         comment: comment.trim(),
-        markupData: markupDataUrl,
       });
 
-      setToastMessage('Permintaan revisi beserta catatan & coretan berhasil dikembalikan ke drawer.');
+      setToastMessage('Permintaan revisi berhasil dikembalikan ke drawer.');
       setShowReviseModal(false);
-      setIsMarkupMode(false);
       setComment('');
       await loadApprovalData();
       setTimeout(() => { router.push('/approval-center'); }, 1200);
@@ -489,159 +406,102 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             {previewMode === '2D' && (
               <div className="flex items-center gap-1.5">
                 {/* Saved Markup Toggle for Drawer or Reviewer */}
-                {markupImgUrl && !isMarkupMode && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSavedMarkup(!showSavedMarkup)}
-                    className={`px-2 py-1 rounded text-[9.5px] font-bold flex items-center gap-1 transition-all ${
-                      showSavedMarkup
-                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                    title="Toggle tampilkan coretan revisi approver"
-                  >
-                    <span className="material-symbols-outlined text-[12px]">
-                      {showSavedMarkup ? 'visibility' : 'visibility_off'}
-                    </span>
-                    <span>{showSavedMarkup ? 'Coretan Revisi' : 'Lihat Asli'}</span>
-                  </button>
+                {markupImgUrl && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewingSavedSnapshot(!viewingSavedSnapshot)}
+                      className={`px-2.5 py-1 rounded-lg text-[9.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                        viewingSavedSnapshot
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
+                      }`}
+                      title="Lihat snapshot gambar yang telah diberi coretan & pin tanda oleh approver"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">
+                        {viewingSavedSnapshot ? 'picture_as_pdf' : 'draw'}
+                      </span>
+                      <span>{viewingSavedSnapshot ? 'Buka PDF Asli' : 'Lihat Coretan Revisi'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLightboxImg(markupImgUrl)}
+                      className="px-2 py-1 rounded-lg text-[9.5px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 cursor-pointer"
+                      title="Buka gambar coretan resolusi penuh (Lightbox)"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">fullscreen</span>
+                      <span>Perbesar</span>
+                    </button>
+                  </div>
                 )}
 
-                {/* Markup Drawing Tool Toggle (For Approvers during review) */}
+                {/* Snapshot & Pin Editor Action (For Approver during review) */}
                 {canDecide && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsMarkupMode(!isMarkupMode);
-                      if (!isMarkupMode) {
-                        setShowSavedMarkup(false);
-                      }
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-[9.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                      isMarkupMode
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300'
-                    }`}
-                    title="Aktifkan pena coretan untuk menandai bagian yang harus direvisi"
+                    onClick={handleTakeSnapshot}
+                    disabled={isCapturingSnapshot || !pdf2DUrl}
+                    className="px-3 py-1 rounded-lg text-[9.5px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                    title="Ambil snapshot drawing dan buka editor pin penanda (📍) & coretan"
                   >
-                    <span className="material-symbols-outlined text-[13px]">draw</span>
-                    <span>{isMarkupMode ? 'Mode Coretan Aktif' : 'Beri Coretan Revisi'}</span>
+                    <span className="material-symbols-outlined text-[14px]">
+                      {isCapturingSnapshot ? 'sync' : 'screenshot_monitor'}
+                    </span>
+                    <span>{isCapturingSnapshot ? 'Mengambil Snapshot...' : '📸 Snapshot & Beri Tanda'}</span>
                   </button>
                 )}
               </div>
             )}
           </div>
 
-          {/* Floating Markup Drawing Toolbar (when markup mode is ON) */}
-          {isMarkupMode && (
-            <div className="h-8 bg-slate-900 text-white px-3 flex items-center justify-between text-[10px] shrink-0 z-30">
-              <div className="flex items-center gap-3">
-                <span className="text-gray-400 text-[9.5px] font-semibold flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[13px] text-rose-400">gesture</span>
-                  Alat Coretan:
-                </span>
-
-                {/* Color swatches */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setInkColor('#dc2626')}
-                    className={`w-4 h-4 rounded-full bg-rose-600 ${inkColor === '#dc2626' ? 'ring-2 ring-white scale-110' : 'opacity-70'}`}
-                    title="Merah (Coretan Utama)"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setInkColor('#eab308')}
-                    className={`w-4 h-4 rounded-full bg-amber-400 ${inkColor === '#eab308' ? 'ring-2 ring-white scale-110' : 'opacity-70'}`}
-                    title="Kuning (Penanda)"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setInkColor('#2563eb')}
-                    className={`w-4 h-4 rounded-full bg-blue-600 ${inkColor === '#2563eb' ? 'ring-2 ring-white scale-110' : 'opacity-70'}`}
-                    title="Biru"
-                  />
-                </div>
-
-                {/* Brush size */}
-                <div className="flex items-center gap-1 ml-2 border-l border-gray-700 pl-3">
-                  <button
-                    type="button"
-                    onClick={() => setBrushSize(2)}
-                    className={`px-1.5 py-0.5 rounded text-[8.5px] ${brushSize === 2 ? 'bg-white text-slate-900 font-bold' : 'text-gray-400'}`}
-                  >
-                    Tipis
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBrushSize(4)}
-                    className={`px-1.5 py-0.5 rounded text-[8.5px] ${brushSize === 4 ? 'bg-white text-slate-900 font-bold' : 'text-gray-400'}`}
-                  >
-                    Sedang
-                  </button>
-                </div>
-              </div>
-
-              {/* Actions: Undo / Clear / Selesai */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  className="text-gray-300 hover:text-white flex items-center gap-0.5 text-[9.5px] cursor-pointer"
-                  title="Undo coretan terakhir"
-                >
-                  <span className="material-symbols-outlined text-[13px]">undo</span>
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearCanvas}
-                  className="text-rose-400 hover:text-rose-300 flex items-center gap-0.5 text-[9.5px] cursor-pointer ml-1"
-                  title="Hapus semua coretan"
-                >
-                  <span className="material-symbols-outlined text-[13px]">delete</span>
-                  Bersihkan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowReviseModal(true)}
-                  className="ml-2 px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-[9.5px] cursor-pointer"
-                >
-                  Lanjut ke Catatan Revisi →
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Viewer Canvas Stage */}
-          <div ref={viewerContainerRef} className="flex-1 relative min-h-0 bg-slate-200 flex items-center justify-center overflow-hidden">
+          <div className="flex-1 relative min-h-0 bg-slate-200 flex items-center justify-center overflow-hidden">
             {previewMode === '2D' ? (
-              pdf2DUrl ? (
+              viewingSavedSnapshot && markupImgUrl ? (
+                /* Viewing Saved Annotated Snapshot */
+                <div className="relative w-full h-full flex flex-col items-center justify-between p-3 bg-slate-900/95 overflow-auto">
+                  <div className="w-full flex items-center justify-between pb-2 border-b border-slate-700 text-white shrink-0">
+                    <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm text-rose-400">draw</span>
+                      Snapshot Coretan &amp; Pin Penanda Revisi
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLightboxImg(markupImgUrl)}
+                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-xs">fullscreen</span>
+                        <span>Ukuran Penuh</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewingSavedSnapshot(false)}
+                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span>Tutup &amp; Lihat PDF</span>
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 flex items-center justify-center p-2 min-h-0 w-full">
+                    <img
+                      src={markupImgUrl}
+                      alt="Coretan Revisi"
+                      onClick={() => setLightboxImg(markupImgUrl)}
+                      className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl border border-slate-700 bg-white cursor-zoom-in"
+                      title="Klik untuk melihat ukuran penuh"
+                    />
+                  </div>
+                </div>
+              ) : pdf2DUrl ? (
+                /* Standard Clean PDF Iframe */
                 <div className="relative w-full h-full">
                   <iframe
                     src={`${pdf2DUrl}#navpanes=0&pagemode=none&view=FitH`}
                     className="w-full h-full border-0"
                     title="2D Drawing PDF"
-                  />
-                  {/* Saved Coretan Image Overlay: visible to drawer & approver */}
-                  {markupImgUrl && showSavedMarkup && !isMarkupMode && (
-                    <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center">
-                      <img
-                        src={markupImgUrl}
-                        alt="Coretan Revisi"
-                        className="w-full h-full object-fill pointer-events-none select-none"
-                      />
-                    </div>
-                  )}
-                  {/* Interactive Coretan Canvas Overlay */}
-                  <canvas
-                    ref={markupCanvasRef}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    className={`absolute inset-0 w-full h-full z-20 ${
-                      isMarkupMode ? 'cursor-crosshair pointer-events-auto' : 'pointer-events-none hidden'
-                    }`}
                   />
                 </div>
               ) : markupImgUrl ? (
@@ -653,7 +513,8 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                   <img
                     src={markupImgUrl}
                     alt="Coretan Revisi"
-                    className="max-w-full max-h-[85%] object-contain border border-slate-300 rounded shadow-sm bg-white"
+                    onClick={() => setLightboxImg(markupImgUrl)}
+                    className="max-w-full max-h-[85%] object-contain border border-slate-300 rounded shadow-sm bg-white cursor-zoom-in"
                   />
                 </div>
               ) : (
@@ -848,7 +709,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                   Keputusan Verifikasi ({user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'})
                 </p>
 
-                {/* HANYA 2 PILIHAN: SETUJUI / REVISI */}
+                {/* HANYA 2 PILIHAN: SETUJUI / REVISI (SNAPSHOT & PIN) */}
                 <div className="grid grid-cols-2 gap-2">
                   {/* Pilihan 1: Setujui */}
                   <button
@@ -860,16 +721,36 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                     <span>Setujui</span>
                   </button>
 
-                  {/* Pilihan 2: Revisi */}
+                  {/* Pilihan 2: Revisi (Snapshot & Pin) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pdf2DUrl) {
+                        handleTakeSnapshot();
+                      } else {
+                        setComment('');
+                        setShowReviseModal(true);
+                      }
+                    }}
+                    disabled={isCapturingSnapshot}
+                    className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10.5px] font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">
+                      {isCapturingSnapshot ? 'sync' : 'screenshot_monitor'}
+                    </span>
+                    <span>{isCapturingSnapshot ? 'Mengambil...' : 'Revisi (Snapshot)'}</span>
+                  </button>
+                </div>
+
+                {pdf2DUrl && (
                   <button
                     type="button"
                     onClick={() => { setComment(''); setShowReviseModal(true); }}
-                    className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10.5px] font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full text-center text-[9px] text-gray-400 hover:text-amber-700 hover:underline pt-0.5 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[15px]">history_edu</span>
-                    <span>Revisi</span>
+                    Atau beri revisi berupa catatan teks saja...
                   </button>
-                </div>
+                )}
               </div>
             ) : isRevised && isDrawer ? (
               /* DRAWER ACTION: UPLOAD REVISIAN BARU */
@@ -963,32 +844,25 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               Permintaan Revisi Dokumen
             </h3>
             <p className="text-[9.5px] text-gray-600 my-2 leading-relaxed">
-              Tuliskan poin-poin yang harus diperbaiki oleh Drawer. Coretan markup yang Anda buat pada drawing akan otomatis dikirimkan ke Drawer.
+              Tuliskan catatan perbaikan atau ambil snapshot drawing untuk menandai bagian yang perlu direvisi secara visual dengan pin (📍) dan coretan.
             </p>
 
-            {localMarkupData ? (
-              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg mb-2 text-[9px] text-rose-800 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="material-symbols-outlined text-[15px] text-rose-600 shrink-0">check_circle</span>
-                  <span className="font-semibold truncate">Coretan revisi tersimpan &amp; akan dilampirkan ke Drawer.</span>
-                </div>
-                <img src={localMarkupData} alt="Preview Coretan" className="w-12 h-8 object-contain bg-white rounded border border-rose-300 shrink-0 shadow-2xs" />
-              </div>
-            ) : (
+            {pdf2DUrl && (
               <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg mb-2 text-[9px] text-amber-900 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[15px] text-amber-600 shrink-0">draw</span>
-                  <span>Belum ada coretan pada gambar PDF.</span>
+                  <span className="material-symbols-outlined text-[15px] text-amber-600 shrink-0">screenshot_monitor</span>
+                  <span className="font-medium">Ingin menandai langsung pada gambar drawing?</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setShowReviseModal(false);
-                    setIsMarkupMode(true);
+                    handleTakeSnapshot();
                   }}
-                  className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[8.5px] font-bold cursor-pointer shrink-0"
+                  className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[8.5px] font-bold cursor-pointer shrink-0 flex items-center gap-1 shadow-2xs"
                 >
-                  Beri Coretan Dulu
+                  <span className="material-symbols-outlined text-[12px]">draw</span>
+                  <span>Snapshot &amp; Pin</span>
                 </button>
               </div>
             )}
@@ -1123,6 +997,51 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ─── MODAL 4: SNAPSHOT EDITOR (PIN & DRAWING MARKUP) ─── */}
+      {showSnapshotEditor && snapshotImage && (
+        <SnapshotEditorModal
+          isOpen={showSnapshotEditor}
+          snapshotImage={snapshotImage}
+          designNoReg={item?.noReg || approval.noReg || 'Drawing'}
+          initialComment={comment}
+          onClose={() => setShowSnapshotEditor(false)}
+          onSubmitRevision={handleSnapshotRevisionSubmit}
+        />
+      )}
+
+      {/* ─── LIGHTBOX ZOOM VIEW (FOR ANNOTATED SNAPSHOT) ─── */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div className="w-full max-w-6xl flex items-center justify-between pb-3 text-white">
+            <span className="text-xs font-bold flex items-center gap-2 text-rose-300">
+              <span className="material-symbols-outlined text-sm text-rose-400">draw</span>
+              Detail Coretan &amp; Pin Penanda Revisi
+            </span>
+            <button
+              type="button"
+              onClick={() => setLightboxImg(null)}
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <span>Tutup</span>
+              <span className="text-[10px] text-gray-300">(ESC)</span>
+            </button>
+          </div>
+          <div
+            className="relative max-w-6xl max-h-[85vh] overflow-auto rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImg}
+              alt="Perbesaran Coretan Revisi"
+              className="max-w-full max-h-[80vh] object-contain mx-auto rounded"
+            />
+          </div>
         </div>
       )}
 

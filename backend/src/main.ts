@@ -5,10 +5,16 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
+import { json, urlencoded } from 'express';
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix('api');
   app.enableCors();
+
+  // Allow larger payload for annotated drawing snapshots (base64 images)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // Serve the extracted CAD images from excel
   app.useStaticAssets(join(__dirname, '..', '..', 'xlsx_images'), {

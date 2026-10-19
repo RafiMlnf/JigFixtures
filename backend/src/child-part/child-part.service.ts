@@ -66,9 +66,6 @@ export class ChildPartService {
         name: dto.name,
         description: dto.description || null,
         lifetimeDays: dto.lifetimeDays || 180,
-        lifetimeType: dto.lifetimeType || 'DUAL',
-        maxUsage: dto.maxUsage ?? 500,
-        currentUsage: dto.currentUsage ?? 0,
         installDate: dto.installDate ? new Date(dto.installDate) : new Date(),
         minimumStock: dto.minimumStock ?? 0,
         actualStock: dto.actualStock ?? 0,
@@ -109,9 +106,6 @@ export class ChildPartService {
         name: dto.name,
         description: dto.description,
         lifetimeDays: dto.lifetimeDays,
-        lifetimeType: dto.lifetimeType,
-        maxUsage: dto.maxUsage,
-        currentUsage: dto.currentUsage,
         installDate: dto.installDate ? new Date(dto.installDate) : undefined,
         minimumStock: dto.minimumStock,
         actualStock: dto.actualStock,
@@ -122,35 +116,23 @@ export class ChildPartService {
     return this.enrichWithLifetime(updated);
   }
 
-  /** Log or set usage for a ChildPart */
+  /** Log or set usage for a ChildPart (stubbed or no-op) */
   async logUsage(id: string, amount: number, mode: 'ADD' | 'SET' = 'ADD') {
     const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException(`ChildPart ${id} not found`);
     }
-
-    const current = (existing as any).currentUsage ?? 0;
-    const newUsage = mode === 'ADD' ? Math.max(0, current + amount) : Math.max(0, amount);
-
-    const updated = await this.prisma.childPart.update({
-      where: { id },
-      data: {
-        currentUsage: newUsage,
-      },
-    });
-
-    return this.enrichWithLifetime(updated);
+    return this.enrichWithLifetime(existing);
   }
 
-  /** Renew a ChildPart's lifetime — reset installDate and/or currentUsage to 0 */
-  async renew(id: string, options: { resetDays?: boolean; resetUsage?: boolean } = {}) {
+  /** Renew a ChildPart's lifetime — reset installDate/lastRenewalDate */
+  async renew(id: string, options: { resetDays?: boolean } = {}) {
     const existing = await this.prisma.childPart.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException(`ChildPart ${id} not found`);
     }
 
     const resetDays = options.resetDays !== false; // default true
-    const resetUsage = options.resetUsage !== false; // default true
 
     const dataToUpdate: any = {
       reminderSent: false,
@@ -158,9 +140,6 @@ export class ChildPartService {
 
     if (resetDays) {
       dataToUpdate.lastRenewalDate = new Date();
-    }
-    if (resetUsage) {
-      dataToUpdate.currentUsage = 0;
     }
 
     const updated = await this.prisma.childPart.update({
@@ -204,7 +183,6 @@ export class ChildPartService {
       0,
       Math.ceil((replacedAt.getTime() - new Date(baseDate).getTime()) / 86400000),
     );
-    const usageAtReplace = cp.currentUsage;
 
     // 1. Create entry in PartReplacementLog
     const replacementLog = await this.prisma.partReplacementLog.create({
@@ -217,7 +195,6 @@ export class ChildPartService {
         replacedBy: dto.replacedBy || 'PIC Jig Fixture',
         reason: dto.reason || 'Pencegahan / Aus Rutin',
         notes: dto.notes || null,
-        usageAtReplace,
         daysUsed,
       },
       include: {
@@ -252,12 +229,11 @@ export class ChildPartService {
       })
       .catch(() => {});
 
-    // 3. Update ChildPart dates and reset counter
+    // 3. Update ChildPart dates
     const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
         lastRenewalDate: replacedAt,
-        currentUsage: dto.resetUsage !== false ? 0 : cp.currentUsage,
         reminderSent: false,
       },
     });
@@ -325,7 +301,7 @@ export class ChildPartService {
     return this.prisma.partReplacementLog.delete({ where: { id } });
   }
 
-  /** Enrich a ChildPart record with computed 2-way lifetime fields */
+  /** Enrich a ChildPart record with computed lifetime fields by days */
   public enrichWithLifetime(part: any) {
     const baseDate = part.lastRenewalDate || part.installDate || new Date();
     const lifetimeDays = part.lifetimeDays ?? 180;
@@ -336,79 +312,22 @@ export class ChildPartService {
       (dueDate.getTime() - Date.now()) / 86400000,
     );
 
-    // Day status
-    let dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    if (daysRemaining <= 0) {
-      dayStatus = 'OVERDUE';
-    } else if (daysRemaining <= 35) {
-      dayStatus = 'WARNING';
-    } else {
-      dayStatus = 'SAFE';
-    }
-
-    // Usage status
-    const maxUsage = part.maxUsage ?? 500;
-    const currentUsage = part.currentUsage ?? 0;
-    const usageRemaining = Math.max(0, maxUsage - currentUsage);
-    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-
-    let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    if (currentUsage >= maxUsage) {
-      usageStatus = 'OVERDUE';
-    } else if (usagePercent >= 85 || (maxUsage - currentUsage) <= 50) {
-      usageStatus = 'WARNING';
-    } else {
-      usageStatus = 'SAFE';
-    }
-
-    // Combined 2-Way Evaluation
-    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = part.lifetimeType || 'DUAL';
     let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
-
-    if (lifetimeType === 'DAYS') {
-      lifetimeStatus = dayStatus;
-      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
-    } else if (lifetimeType === 'USAGE') {
-      lifetimeStatus = usageStatus;
-      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
+    if (daysRemaining <= 0) {
+      lifetimeStatus = 'OVERDUE';
+    } else if (daysRemaining <= 35) {
+      lifetimeStatus = 'WARNING';
     } else {
-      // DUAL (2-Way: whichever limit is reached first)
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
-        lifetimeStatus = 'OVERDUE';
-        triggerReason =
-          dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE'
-            ? 'BOTH'
-            : dayStatus === 'OVERDUE'
-            ? 'DAYS'
-            : 'USAGE';
-      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
-        lifetimeStatus = 'WARNING';
-        triggerReason =
-          dayStatus === 'WARNING' && usageStatus === 'WARNING'
-            ? 'BOTH'
-            : dayStatus === 'WARNING'
-            ? 'DAYS'
-            : 'USAGE';
-      } else {
-        lifetimeStatus = 'SAFE';
-        triggerReason = 'NONE';
-      }
+      lifetimeStatus = 'SAFE';
     }
 
     return {
       ...part,
-      lifetimeType,
-      maxUsage,
-      currentUsage,
-      usageRemaining,
-      usagePercent,
       dueDate: dueDate.toISOString(),
       daysRemaining,
-      dayStatus,
-      usageStatus,
+      dayStatus: lifetimeStatus,
       lifetimeStatus,
-      triggerReason,
+      triggerReason: lifetimeStatus !== 'SAFE' ? 'DAYS' : 'NONE',
     };
   }
 }

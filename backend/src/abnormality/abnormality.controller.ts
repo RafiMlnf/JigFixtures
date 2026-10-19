@@ -69,4 +69,16 @@ export class AbnormalityController {
   deleteMachine(@Param('id') id: string) {
     return this.abnormalityService.deleteMachine(id);
   }
+
+  /** Set Jig to Lane (assign 1 Jig to all machines in a Lane / Line) */
+  @Post('lane/set-jig')
+  setJigToLane(
+    @Body()
+    dto: {
+      lineId: string;
+      designId: string;
+    },
+  ) {
+    return this.abnormalityService.assignJigToLane(dto.lineId, dto.designId);
+  }
 }

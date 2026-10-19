@@ -144,30 +144,14 @@ export default function DashboardPage() {
       const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
       // Calculate percentage consumed (0% = new, 100% = due)
-      const elapsedDays = cycleDays - daysRemaining;
+      const elapsedDays = Math.max(0, cycleDays - daysRemaining);
       const lifetimePercent = Math.min(100, Math.max(0, Math.round((elapsedDays / cycleDays) * 100)));
-
-      const maxUsage = (item as any).maxUsage ?? 500;
-      const currentUsage = (item as any).currentUsage ?? 0;
-      const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-      const lifetimeType = (item as any).lifetimeType || 'DUAL';
 
       let status: 'SAFE' | 'WARNING' | 'OVERDUE' = 'SAFE';
       if ((item as any).lifetimeStatus) {
         status = (item as any).lifetimeStatus;
       } else {
-        const isDayOverdue = daysRemaining <= 0;
-        const isDayWarning = daysRemaining <= 35;
-        const isUsageOverdue = currentUsage >= maxUsage;
-        const isUsageWarning = usagePercent >= 85 || (maxUsage - currentUsage) <= 50;
-
-        if (lifetimeType === 'DAYS') {
-          status = isDayOverdue ? 'OVERDUE' : isDayWarning ? 'WARNING' : 'SAFE';
-        } else if (lifetimeType === 'USAGE') {
-          status = isUsageOverdue ? 'OVERDUE' : isUsageWarning ? 'WARNING' : 'SAFE';
-        } else {
-          status = isDayOverdue || isUsageOverdue ? 'OVERDUE' : isDayWarning || isUsageWarning ? 'WARNING' : 'SAFE';
-        }
+        status = daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
       }
 
       return {
@@ -180,14 +164,11 @@ export default function DashboardPage() {
         designDate: baseDateStr ? new Date(baseDateStr).toLocaleDateString('id-ID') : null,
         dueDate: dueDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }),
         daysRemaining,
-        lifetimePercent: lifetimeType === 'USAGE' ? usagePercent : lifetimeType === 'DAYS' ? lifetimePercent : Math.max(lifetimePercent, usagePercent),
+        lifetimePercent,
         status,
         actualStock: item.actualStock,
         minimumStock: item.minimumStock,
-        lifetimeType,
-        maxUsage,
-        currentUsage,
-        usagePercent,
+        lifetimeDays: cycleDays,
       };
     }).sort((a, b) => {
       const priority = { OVERDUE: 0, WARNING: 1, SAFE: 2 };
@@ -399,29 +380,8 @@ export default function DashboardPage() {
       ratioPercent: number;
     }> = [];
 
-    // 1. Jig Fixture Stock
-    displayItems.forEach((item) => {
-      const actual = item.actualStock ?? 0;
-      const min = item.minimumStock ?? 1;
-      let stockStatus: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'SAFE' = 'SAFE';
-      if (actual === 0) stockStatus = 'OUT_OF_STOCK';
-      else if (actual < min) stockStatus = 'LOW_STOCK';
-
-      const ratioPercent = min > 0 ? Math.round((actual / min) * 100) : 100;
-      list.push({
-        id: `jig-${item.id}`,
-        itemType: 'JIG',
-        noReg: item.noReg,
-        name: item.assyPartName,
-        lineProduct: item.lineProduct,
-        actualStock: actual,
-        minimumStock: min,
-        stockStatus,
-        ratioPercent,
-      });
-    });
-
-    // 2. ChildPart Stock (from masterList)
+    // Stok hanya untuk ChildPart (Jig = folder, ChildPart = isi di dalamnya)
+    // ChildPart Stock (from masterList)
     masterList.forEach((m) => {
       if (Array.isArray(m.childParts)) {
         m.childParts.forEach((cp: any) => {
@@ -767,15 +727,11 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* Row 4: Lifetime Usage */}
+                        {/* Row 4: Lifetime Days Cycle */}
                         <div className="flex items-center justify-between pt-0.5 border-t border-slate-100 text-[9px]">
                           <div className="flex items-center gap-1 text-slate-500 text-[8px] font-mono">
-                            <span className="material-symbols-outlined text-[10px] text-slate-400">speed</span>
-                            <span>
-                              {item.lifetimeType === 'DAYS'
-                                ? `${item.lifetimeDays}d cycle`
-                                : `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x`}
-                            </span>
+                            <span className="material-symbols-outlined text-[10px] text-slate-400">schedule</span>
+                            <span>{item.lifetimeDays} hari siklus</span>
                           </div>
                         </div>
                       </Link>
@@ -1130,22 +1086,16 @@ export default function DashboardPage() {
                                 : 'bg-slate-100 text-slate-600 border border-slate-200'
                             }`}
                           >
-                            {isOverdue
-                              ? 'OVERDUE'
-                              : item.lifetimeType === 'DAYS'
-                              ? `${item.daysRemaining}d`
-                              : item.lifetimeType === 'USAGE'
-                              ? `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x`
-                              : `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x · ${item.daysRemaining}d`}
+                            {isOverdue ? 'OVERDUE' : `${item.daysRemaining}d`}
                           </span>
                         </div>
 
-                        {/* Baris 2: Jatuh Tempo / Siklus Pemakaian & Visual Persentase */}
+                        {/* Baris 2: Jatuh Tempo & Visual Persentase */}
                         <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5 border-t border-slate-200/60">
                           <div className="flex items-center gap-1">
                             <span className="material-symbols-outlined text-[11px] text-slate-400">schedule</span>
-                            <span className="text-[8px] font-mono text-slate-600 truncate" title={item.lifetimeType === 'USAGE' ? 'Batas Siklus Pakai' : `Jatuh tempo: ${item.dueDate}`}>
-                              {item.lifetimeType === 'USAGE' ? `${item.currentUsage ?? 0}/${item.maxUsage ?? 500}x siklus` : `Due: ${item.dueDate}`}
+                            <span className="text-[8px] font-mono text-slate-600 truncate" title={`Jatuh tempo: ${item.dueDate}`}>
+                              Due: {item.dueDate}
                             </span>
                           </div>
 
@@ -1288,15 +1238,6 @@ export default function DashboardPage() {
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1">
-                              <span
-                                className={`text-[7px] font-bold px-1 py-0.2 rounded font-mono uppercase ${
-                                  item.itemType === 'JIG'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'bg-purple-100 text-purple-700'
-                                }`}
-                              >
-                                {item.itemType}
-                              </span>
                               <span className="text-[8px] font-bold text-slate-800 font-mono truncate">
                                 {item.noReg}
                               </span>

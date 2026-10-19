@@ -21,15 +21,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     await this.$connect();
     try {
       await this.$executeRawUnsafe(`
-        ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "lifetime_type" VARCHAR(20) DEFAULT 'DUAL';
-        ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "max_usage" INTEGER DEFAULT 500;
-        ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "current_usage" INTEGER DEFAULT 0;
         ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "tpm_schedule_start" TIMESTAMPTZ;
         ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "tpm_schedule_deadline" TIMESTAMPTZ;
         ALTER TABLE "design" ADD COLUMN IF NOT EXISTS "tpm_lifetime_set_at" TIMESTAMPTZ;
-        ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "lifetime_type" VARCHAR(20) DEFAULT 'DUAL';
-        ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "max_usage" INTEGER DEFAULT 500;
-        ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "current_usage" INTEGER DEFAULT 0;
         ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "tpm_schedule_start" TIMESTAMPTZ;
         ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "tpm_schedule_deadline" TIMESTAMPTZ;
         ALTER TABLE "child_part" ADD COLUMN IF NOT EXISTS "tpm_lifetime_set_at" TIMESTAMPTZ;

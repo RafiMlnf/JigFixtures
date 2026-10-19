@@ -1,8 +1,6 @@
 import Cookies from 'js-cookie';
 import { getApiBaseUrl } from './config';
 
-const API_BASE_URL = getApiBaseUrl();
-
 export interface NotificationItem {
   id: string;
   type: 'INVENTORY_RED' | 'INVENTORY_YELLOW' | 'WAITING_APPROVAL' | 'REVISION_REQUESTED' | 'ABNORMALITY_OPEN' | string;
@@ -43,7 +41,7 @@ function saveLocalNotifications(notifs: NotificationItem[]) {
 
 export async function fetchNotifications(): Promise<NotificationItem[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/notifications`, {
+    const res = await fetch(`${getApiBaseUrl()}/notifications`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -57,7 +55,7 @@ export async function fetchNotifications(): Promise<NotificationItem[]> {
 
 export async function markNotificationAsRead(id: string): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+    const res = await fetch(`${getApiBaseUrl()}/notifications/${id}/read`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });
@@ -72,7 +70,7 @@ export async function markNotificationAsRead(id: string): Promise<void> {
 
 export async function markAllNotificationsAsRead(): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+    const res = await fetch(`${getApiBaseUrl()}/notifications/read-all`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
     });

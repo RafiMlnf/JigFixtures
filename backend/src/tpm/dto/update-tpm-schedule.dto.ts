@@ -3,7 +3,4 @@ export class UpdateTpmScheduleDto {
   tpmScheduleStart?: string;
   tpmScheduleDeadline?: string;
   lifetimeDays?: number;
-  lifetimeType?: 'DUAL' | 'USAGE' | 'DAYS';
-  maxUsage?: number;
-  currentUsage?: number;
 }

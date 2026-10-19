@@ -45,7 +45,7 @@ export async function fetchInventoryItems(filters?: {
     // We request a high limit to get all items since front-end does client-side search/filters in some subviews
     queryParams.append('limit', '100');
 
-    const res = await fetch(`${API_BASE_URL}/inventory?${queryParams.toString()}`, {
+    const res = await fetch(`${getApiBaseUrl()}/inventory?${queryParams.toString()}`, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
@@ -111,7 +111,7 @@ export async function updateInventoryStock(
     if (maxUsage !== undefined) payload.maxUsage = maxUsage;
     if (currentUsage !== undefined) payload.currentUsage = currentUsage;
 
-    const res = await fetch(`${API_BASE_URL}/inventory/${id}`, {
+    const res = await fetch(`${getApiBaseUrl()}/inventory/${id}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify(payload),

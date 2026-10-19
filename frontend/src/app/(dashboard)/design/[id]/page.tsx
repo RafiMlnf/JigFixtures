@@ -241,6 +241,7 @@ function DesignDetailPageContent({ params }: PageProps) {
 
   const [downloadingPage, setDownloadingPage] = useState<number | null>(null);
   const [downloadingFull, setDownloadingFull] = useState(false);
+  const [viewingRevDoc, setViewingRevDoc] = useState<{ loc2D: string; revStatus: string } | null>(null);
 
   const handleDownloadSinglePage = async (pageNum: number, filename?: string) => {
     if (!item) return;
@@ -638,18 +639,36 @@ function DesignDetailPageContent({ params }: PageProps) {
               </div>
             </div>
 
+            {/* Viewing Revision Archive Banner */}
+            {viewingRevDoc && (
+              <div className="bg-amber-500 text-white px-3 py-1.5 flex items-center justify-between text-xs shrink-0 select-none shadow-sm z-20">
+                <div className="flex items-center gap-2 font-semibold text-[11px]">
+                  <span className="material-symbols-outlined text-[15px]">history</span>
+                  <span>Melihat Arsip Drawing: <strong>Rev {viewingRevDoc.revStatus}</strong> (Drawing lama sebelum revisi)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingRevDoc(null)}
+                  className="px-2 py-0.5 rounded bg-white text-amber-900 hover:bg-amber-100 text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                >
+                  <span>Kembali ke Drawing Aktif (Rev {item.revStatus})</span>
+                  <span className="material-symbols-outlined text-[13px]">close</span>
+                </button>
+              </div>
+            )}
+
             {/* Canvas content */}
             <div className="flex-1 flex items-stretch min-h-0 bg-gray-100 relative">
-              {previewMode === '2D' ? (
-                activeDoc?.loc2D ? (() => {
-                  const targetDocPath = activeDoc.loc2D;
+              {previewMode === '2D' ? (() => {
+                const targetDocPath = viewingRevDoc ? viewingRevDoc.loc2D : activeDoc?.loc2D;
+                return targetDocPath ? (() => {
                   const pdfUrl = getFileUrl(targetDocPath);
                   const fullUrl = pdfUrl
                     ? `${pdfUrl}#page=${activePdfPage}&navpanes=0&pagemode=none&view=FitH`
                     : null;
                   return fullUrl ? (
                     <iframe
-                      key={`pdf-frame-page-${activePdfPage}`}
+                      key={`pdf-frame-page-${activePdfPage}-${targetDocPath}`}
                       src={fullUrl}
                       className="flex-1 w-full h-full border-0"
                       title="2D Drawing PDF"
@@ -661,7 +680,7 @@ function DesignDetailPageContent({ params }: PageProps) {
                         Drawing PDF tidak dapat dimuat (path tidak valid)
                       </p>
                       <div className="bg-white border border-gray-200 rounded px-2.5 py-1 text-[9px] font-mono text-gray-600 max-w-sm truncate shadow-2xs">
-                        {activeDoc.loc2D}
+                        {targetDocPath}
                       </div>
                     </div>
                   );
@@ -676,8 +695,8 @@ function DesignDetailPageContent({ params }: PageProps) {
                       Unggah Drawing Sekarang →
                     </Link>
                   </div>
-                )
-              ) : (() => {
+                );
+              })() : (() => {
                 const active3DUrl = viewer3DUrl || getFileUrl(item.revisionHistories.find((rev) => rev.loc3D)?.loc3D || '');
                 const active3DName = viewer3DName || item.revisionHistories.find((rev) => rev.loc3D)?.path3D || undefined;
 
@@ -1000,39 +1019,50 @@ function DesignDetailPageContent({ params }: PageProps) {
                             </div>
                           )}
                           {(rev.loc2D || rev.loc3D) && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-gray-100 flex gap-2">
+                            <div className="mt-2 pt-2 border-t border-dashed border-gray-100 flex flex-wrap gap-1.5">
                               {rev.loc2D && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!isDrawingApproved) {
-                                      alert('Drawing belum disetujui (Approved) secara resmi oleh Section Head dan Dept Head.');
-                                      return;
-                                    }
-                                    handleDownloadFullPdf(`${item.noReg}_Rev_${rev.revStatus}_Drawing_Resmi.pdf`);
-                                  }}
-                                  disabled={!isDrawingApproved || downloadingFull}
-                                  className={`flex-1 py-1 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 ${
-                                    isDrawingApproved
-                                      ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 cursor-pointer'
-                                      : 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                  }`}
-                                  title={isDrawingApproved ? 'Unduh 2D Drawing Resmi' : 'Drawing belum disetujui (Menunggu approval resmi)'}
-                                >
-                                  <span className="material-symbols-outlined text-[10px]">
-                                    {isDrawingApproved ? 'download' : 'lock'}
-                                  </span>
-                                  2D Drawing
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setViewingRevDoc({ loc2D: rev.loc2D!, revStatus: rev.revStatus });
+                                      setPreviewMode('2D');
+                                    }}
+                                    className={`flex-1 min-w-[70px] py-1 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
+                                      viewingRevDoc?.loc2D === rev.loc2D
+                                        ? 'bg-amber-500 text-white shadow-2xs'
+                                        : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
+                                    }`}
+                                    title="Tampilkan drawing arsip versi ini di canvas 2D"
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">
+                                      {viewingRevDoc?.loc2D === rev.loc2D ? 'check' : 'visibility'}
+                                    </span>
+                                    {viewingRevDoc?.loc2D === rev.loc2D ? 'Aktif di Canvas' : 'Lihat 2D'}
+                                  </button>
+
+                                  <a
+                                    href={getFileUrl(rev.loc2D)!}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={`${item.noReg}_Rev_${rev.revStatus}.pdf`}
+                                    className="flex-1 min-w-[70px] py-1 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer"
+                                    title="Unduh file drawing versi revisi ini"
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">download</span>
+                                    Unduh 2D
+                                  </a>
+                                </>
                               )}
                               {rev.loc3D && (
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setViewer3DUrl(getFileUrl(rev.loc3D!));
                                     setViewer3DName(rev.path3D || undefined);
                                     setPreviewMode('3D');
                                   }}
-                                  className="flex-1 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1"
+                                  className="flex-1 min-w-[70px] py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer"
                                 >
                                   <span className="material-symbols-outlined text-[10px]">deployed_code</span>
                                   View 3D

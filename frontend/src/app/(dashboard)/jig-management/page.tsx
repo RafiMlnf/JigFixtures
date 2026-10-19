@@ -295,12 +295,13 @@ function JigManagementContent() {
       const matchLine = lineFilter === 'All' || item.lineProduct === lineFilter;
 
       let matchStock = true;
-      if (stockStatusFilter === 'GREEN') {
-        matchStock = item.actualStock >= item.minimumStock && item.actualStock > 0;
+      const cps = item.childParts || [];
+      if (stockStatusFilter === 'RED') {
+        matchStock = cps.some((cp) => cp.actualStock === 0);
       } else if (stockStatusFilter === 'YELLOW') {
-        matchStock = item.actualStock > 0 && item.actualStock < item.minimumStock;
-      } else if (stockStatusFilter === 'RED') {
-        matchStock = item.actualStock === 0;
+        matchStock = cps.some((cp) => cp.actualStock > 0 && cp.actualStock < cp.minimumStock);
+      } else if (stockStatusFilter === 'GREEN') {
+        matchStock = cps.length > 0 && cps.every((cp) => cp.actualStock >= cp.minimumStock && cp.actualStock > 0);
       }
 
       let matchLifetime = true;
@@ -453,7 +454,7 @@ function JigManagementContent() {
               >
                 <option value="ALL">Semua Kondisi</option>
                 <option value="SAFE">Aman</option>
-                <option value="WARNING">Waspada (&gt;85% / &lt;35 hari)</option>
+                <option value="WARNING">Waspada (&le;35 hari)</option>
                 <option value="OVERDUE">Jatuh Tempo (Perlu Ganti)</option>
               </select>
             </div>
@@ -498,9 +499,7 @@ function JigManagementContent() {
                     <th className="px-3 py-2 min-w-[180px]">Nama Jig &amp; Fixture</th>
                     <th className="px-2.5 py-2 w-[100px]">Line</th>
                     <th className="px-2.5 py-2 w-[90px]">OP</th>
-                    <th className="px-2 py-2 text-right whitespace-nowrap">Min</th>
-                    <th className="px-2 py-2 text-right whitespace-nowrap">Actual</th>
-                    <th className="px-3 py-2 text-center w-[120px]">Lifetime / Siklus</th>
+                    <th className="px-3 py-2 text-center w-[120px]">Lifetime (Hari)</th>
                     <th className="px-3 py-2 text-center w-[100px]">Last Replace</th>
                     {isPic && <th className="px-2 py-2 text-center w-[70px]">Aksi</th>}
                   </tr>
@@ -509,8 +508,8 @@ function JigManagementContent() {
                   {filteredItems.map((item, idx) => {
                     const childParts = item.childParts || [];
                     const isExpanded = expandedRows.has(item.id);
-                    const isRed = item.actualStock === 0;
-                    const isYellow = item.actualStock > 0 && item.actualStock < item.minimumStock;
+                    const isRed = childParts.some((cp) => cp.actualStock === 0 && cp.minimumStock > 0);
+                    const isYellow = !isRed && childParts.some((cp) => cp.actualStock > 0 && cp.actualStock < cp.minimumStock);
 
                     // Latest part renewal among its cellparts
                     let latestPartRenewal: string | null = null;
@@ -567,23 +566,9 @@ function JigManagementContent() {
                             {item.process || '-'}
                           </td>
 
-                          {/* Min Stock */}
-                          <td className="px-2 py-2 text-right font-mono font-semibold text-gray-500 whitespace-nowrap">
-                            {item.minimumStock}
-                          </td>
-
-                          {/* Actual Stock */}
-                          <td
-                            className={`px-2 py-2 text-right font-mono font-bold whitespace-nowrap ${
-                              isRed ? 'text-rose-600' : isYellow ? 'text-amber-600' : 'text-gray-800'
-                            }`}
-                          >
-                            {item.actualStock}
-                          </td>
-
                           {/* Lifetime Induk */}
                           <td className="px-3 py-2 text-center whitespace-nowrap font-mono text-[9px]">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-1.5">
                               <span
                                 className={`w-1.5 h-1.5 rounded-full ${
                                   item.lifetimeStatus === 'OVERDUE'
@@ -593,8 +578,18 @@ function JigManagementContent() {
                                     : 'bg-emerald-500'
                                 }`}
                               />
-                              <span>
-                                {item.currentUsage || 0}/{item.maxUsage || 500}x
+                              <span className={`font-bold ${
+                                item.lifetimeStatus === 'OVERDUE'
+                                  ? 'text-rose-600'
+                                  : item.lifetimeStatus === 'WARNING'
+                                  ? 'text-amber-600'
+                                  : 'text-gray-700'
+                              }`}>
+                                {item.daysRemaining !== undefined
+                                  ? item.daysRemaining <= 0
+                                    ? 'OVERDUE'
+                                    : `${item.daysRemaining} hr lagi`
+                                  : '-'}
                               </span>
                               <span className="text-gray-400">({item.lifetimeDays || 180} hr)</span>
                             </div>
@@ -623,7 +618,7 @@ function JigManagementContent() {
                         {/* Expandable Sub-Row: Komponen ChildParts */}
                         {isExpanded && childParts.length > 0 && (
                           <tr className="bg-slate-50/80">
-                            <td colSpan={isPic ? 10 : 9} className="px-4 py-2.5">
+                            <td colSpan={isPic ? 8 : 7} className="px-4 py-2.5">
                               <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                                 <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
                                   <div className="flex items-center gap-1.5">
@@ -643,7 +638,7 @@ function JigManagementContent() {
                                       <th className="px-3 py-1.5 text-left">Nama Komponen</th>
                                       <th className="px-2 py-1.5 text-right whitespace-nowrap">Min</th>
                                       <th className="px-2 py-1.5 text-right whitespace-nowrap">Actual</th>
-                                      <th className="px-3 py-1.5 text-center w-[120px]">Masa Pakai</th>
+                                      <th className="px-3 py-1.5 text-center w-[120px]">Lifetime (Hari)</th>
                                       <th className="px-3 py-1.5 text-left w-[110px]">Last Replace</th>
                                       {isPic && <th className="px-3 py-1.5 text-center w-[120px]">Aksi</th>}
                                     </tr>
@@ -672,7 +667,7 @@ function JigManagementContent() {
                                             {cp.actualStock}
                                           </td>
                                           <td className="px-3 py-1.5 text-center font-mono text-[9px]">
-                                            <div className="flex items-center justify-center gap-1">
+                                            <div className="flex items-center justify-center gap-1.5">
                                               <span
                                                 className={`w-1.5 h-1.5 rounded-full ${
                                                   cp.lifetimeStatus === 'OVERDUE'
@@ -682,8 +677,18 @@ function JigManagementContent() {
                                                     : 'bg-emerald-500'
                                                 }`}
                                               />
-                                              <span>
-                                                {cp.currentUsage || 0}/{cp.maxUsage || 500}x
+                                              <span className={`font-bold ${
+                                                cp.lifetimeStatus === 'OVERDUE'
+                                                  ? 'text-rose-600'
+                                                  : cp.lifetimeStatus === 'WARNING'
+                                                  ? 'text-amber-600'
+                                                  : 'text-gray-700'
+                                              }`}>
+                                                {cp.daysRemaining !== undefined
+                                                  ? cp.daysRemaining <= 0
+                                                    ? 'OVERDUE'
+                                                    : `${cp.daysRemaining} hr lagi`
+                                                  : '-'}
                                               </span>
                                               <span className="text-gray-400">({cp.lifetimeDays || 180} hr)</span>
                                             </div>
@@ -698,7 +703,7 @@ function JigManagementContent() {
                                                   type="button"
                                                   onClick={() => handleOpenReplace(item.noReg, cp)}
                                                   className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[8.5px] flex items-center gap-0.5 cursor-pointer"
-                                                  title="Ganti Part Baru &amp; Reset Siklus"
+                                                  title="Ganti Part Baru &amp; Reset Lifetime"
                                                 >
                                                   <span className="material-symbols-outlined text-[10px]">autorenew</span>
                                                   <span>Ganti Part</span>
@@ -817,7 +822,7 @@ function JigManagementContent() {
             <div className="p-3.5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
               <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-blue-600 text-sm">tune</span>
-                Atur Stok &amp; Lifetime Jig ({editingJig.noReg})
+                Atur Lifetime Jig ({editingJig.noReg})
               </h3>
               <button
                 type="button"
@@ -829,50 +834,19 @@ function JigManagementContent() {
             </div>
 
             <form onSubmit={handleSaveJigEdit} className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Min Stock Limit</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={jigMinStock}
-                    onChange={(e) => setJigMinStock(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Actual Stock</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={jigActStock}
-                    onChange={(e) => setJigActStock(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
+              <p className="text-[10px] text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-2">
+                Stok diatur per ChildPart (komponen di dalam Jig), bukan di level Jig.
+              </p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Batas Siklus (Max Usage)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={jigMaxUsage}
-                    onChange={(e) => setJigMaxUsage(parseInt(e.target.value) || 500)}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Target Lifetime (Hari)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={jigLifetimeDays}
-                    onChange={(e) => setJigLifetimeDays(parseInt(e.target.value) || 180)}
-                  />
-                </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-600 uppercase">Target Lifetime (Hari)</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
+                  value={jigLifetimeDays}
+                  onChange={(e) => setJigLifetimeDays(parseInt(e.target.value) || 180)}
+                />
               </div>
 
               <div>
@@ -953,27 +927,15 @@ function JigManagementContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Batas Siklus (Max Usage)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={cpMaxUsage}
-                    onChange={(e) => setCpMaxUsage(parseInt(e.target.value) || 500)}
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 uppercase">Target Lifetime (Hari)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
-                    value={cpLifetimeDays}
-                    onChange={(e) => setCpLifetimeDays(parseInt(e.target.value) || 180)}
-                  />
-                </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-600 uppercase">Target Lifetime (Hari)</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500"
+                  value={cpLifetimeDays}
+                  onChange={(e) => setCpLifetimeDays(parseInt(e.target.value) || 180)}
+                />
               </div>
 
               <div className="flex gap-2 pt-2 border-t border-gray-150">
@@ -1019,7 +981,10 @@ function JigManagementContent() {
               <div className="p-2.5 bg-blue-50/60 border border-blue-200 rounded-lg text-xs">
                 <div className="font-bold text-blue-900">{replacingCp.cp.name}</div>
                 <div className="text-[10px] text-blue-700 mt-0.5">
-                  Induk: <strong>{replacingCp.parentNoReg}</strong> · Siklus pemakaian saat ini: <strong>{replacingCp.cp.currentUsage || 0}x</strong>
+                  Induk: <strong>{replacingCp.parentNoReg}</strong> · Target Lifetime: <strong>{replacingCp.cp.lifetimeDays || 180} Hari</strong>
+                  {replacingCp.cp.daysRemaining !== undefined && (
+                    <span> ({replacingCp.cp.daysRemaining <= 0 ? 'Overdue' : `Sisa ${replacingCp.cp.daysRemaining} hari`})</span>
+                  )}
                 </div>
               </div>
 

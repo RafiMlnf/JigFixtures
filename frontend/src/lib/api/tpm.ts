@@ -46,13 +46,10 @@ export interface TpmScheduleItem {
   lineId: string;
   processId: string;
   lifetimeDays: number;
-  lifetimeType: 'DUAL' | 'USAGE' | 'DAYS';
-  maxUsage: number;
-  currentUsage: number;
   daysRemaining: number;
   dueDate: string;
   lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-  triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE';
+  triggerReason?: string;
   tpmScheduleStart?: string | null;
   tpmScheduleDeadline?: string | null;
   tpmLifetimeSetAt?: string | null;
@@ -155,9 +152,6 @@ export interface UpdateTpmSchedulePayload {
   tpmScheduleStart?: string;
   tpmScheduleDeadline?: string;
   lifetimeDays?: number;
-  lifetimeType?: 'DUAL' | 'USAGE' | 'DAYS';
-  maxUsage?: number;
-  currentUsage?: number;
 }
 
 /** Fetch Summary KPI stats for TPM */

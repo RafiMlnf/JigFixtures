@@ -69,28 +69,46 @@ export class DesignService {
    * Also automatically creates an Approval record of type DESIGN_REVISION.
    */
   async updateDesignRevision(itemId: string, dto: UpdateDesignDto, userId: string) {
-    // Check item exists
+    // Check item exists with relations
     const item = await this.prisma.design.findUnique({
       where: { id: itemId },
-      include: { line: true },
+      include: {
+        line: true,
+        documents: true,
+        revisionHistories: { orderBy: { createdAt: 'desc' } },
+      },
     });
     if (!item) throw new NotFoundException(`Item ${itemId} not found`);
 
-    // Update the item design fields (excluding document locations)
-    const updated = await this.prisma.design.update({
-      where: { id: itemId },
-      data: {
-        ...(dto.revStatus !== undefined && { revStatus: dto.revStatus }),
-        designDateNew: dto.designDateNew ? new Date(dto.designDateNew) : undefined,
-        lifetimeDays: dto.lifetimeDays !== undefined ? parseInt(String(dto.lifetimeDays), 10) : undefined,
-        lifetimeType: dto.lifetimeType,
-        maxUsage: dto.maxUsage !== undefined ? parseInt(String(dto.maxUsage), 10) : undefined,
-        currentUsage: dto.currentUsage !== undefined ? parseInt(String(dto.currentUsage), 10) : undefined,
-      },
-    });
+    const nextRev = dto.revStatus || String(parseInt(item.revStatus || '0', 10) + 1);
 
-    // Handle document creation/update if location is updated
+    // 1. Archive previous drawing into revisionHistory if a new 2D drawing is uploaded
     if (dto.docLocation2D) {
+      const oldDoc = item.documents.find((d) => d.loc2D) || item.documents[0];
+      const old2D = oldDoc?.loc2D || item.revisionHistories.find((r) => r.loc2D)?.loc2D || null;
+      const oldPath2D = oldDoc?.path2D || oldDoc?.loc2D || item.revisionHistories.find((r) => r.path2D)?.path2D || null;
+
+      if (old2D && old2D !== dto.docLocation2D) {
+        await this.prisma.revisionHistory.create({
+          data: {
+            designId: item.id,
+            revStatus: item.revStatus || '0',
+            description: `Arsip drawing sebelum revisi ke Rev ${nextRev}`,
+            changedById: userId,
+            loc2D: old2D,
+            path2D: oldPath2D,
+            loc3D: item.revisionHistories[0]?.loc3D || null,
+            path3D: item.revisionHistories[0]?.path3D || null,
+          },
+        });
+      }
+
+      // 2. Overwrite / delete old documents for this design so master drawing is replaced cleanly
+      await this.prisma.document.deleteMany({
+        where: { designId: itemId },
+      });
+
+      // 3. Create the new active document (WAITING approval)
       await this.prisma.document.create({
         data: {
           designId: itemId,
@@ -100,6 +118,16 @@ export class DesignService {
         },
       });
     }
+
+    // Update the item design fields
+    const updated = await this.prisma.design.update({
+      where: { id: itemId },
+      data: {
+        revStatus: nextRev,
+        designDateNew: dto.designDateNew ? new Date(dto.designDateNew) : new Date(),
+        lifetimeDays: dto.lifetimeDays !== undefined ? parseInt(String(dto.lifetimeDays), 10) : undefined,
+      },
+    });
 
     // Find approver users based on Role model name
     const sectionHead = await this.prisma.user.findFirst({
@@ -115,7 +143,7 @@ export class DesignService {
         type: 'DESIGN_REVISION',
         status: 'WAITING',
         designId: item.id,
-        revisionNote: dto.revisionNote || `Revisi desain ${item.noReg} — Rev ${dto.revStatus || item.revStatus}`,
+        revisionNote: dto.revisionNote || `Revisi desain ${item.noReg} — Rev ${nextRev}`,
         submittedById: userId,
         sectionHeadId: sectionHead?.id,
         deptHeadId: deptHead?.id,
@@ -125,18 +153,18 @@ export class DesignService {
       },
     });
 
-    // Log revision history
+    // Log new revision entry in history
     await this.prisma.revisionHistory.create({
       data: {
         designId: item.id,
-        revStatus: dto.revStatus || item.revStatus || '0',
-        description: dto.revisionNote || `Update Rev ${dto.revStatus || item.revStatus}`,
+        revStatus: nextRev,
+        description: dto.revisionNote || `Update Rev ${nextRev}`,
         changedById: userId,
         vendorId: dto.vendorId || undefined,
         poNumber: dto.poNumber || undefined,
         leadTime: dto.leadTime ? parseInt(String(dto.leadTime)) : undefined,
-        loc3D: dto.docLocation3D || undefined,
-        path3D: dto.docLocation3D || undefined,
+        loc3D: dto.docLocation3D || item.revisionHistories[0]?.loc3D || undefined,
+        path3D: dto.docLocation3D || item.revisionHistories[0]?.path3D || undefined,
         loc2D: dto.docLocation2D || undefined,
         path2D: dto.docLocation2D || undefined,
       },
@@ -201,9 +229,6 @@ export class DesignService {
       ...this.calculateLifetime({
         installDate: d.designDateNew || d.createdAt,
         lifetimeDays: d.lifetimeDays,
-        lifetimeType: d.lifetimeType,
-        maxUsage: d.maxUsage,
-        currentUsage: d.currentUsage,
       }),
       tpmScheduleStart: (d as any).tpmScheduleStart ? (d as any).tpmScheduleStart.toISOString() : null,
       tpmScheduleDeadline: (d as any).tpmScheduleDeadline ? (d as any).tpmScheduleDeadline.toISOString() : null,
@@ -252,9 +277,6 @@ export class DesignService {
           installDate: cp.installDate,
           lastRenewalDate: cp.lastRenewalDate,
           lifetimeDays: cp.lifetimeDays,
-          lifetimeType: cp.lifetimeType,
-          maxUsage: cp.maxUsage,
-          currentUsage: cp.currentUsage,
         });
         return {
           id: cp.id,
@@ -351,9 +373,6 @@ export class DesignService {
         minimumStock: dto.minimumStock ? parseInt(String(dto.minimumStock), 10) : 0,
         actualStock: dto.actualStock ? parseInt(String(dto.actualStock), 10) : 0,
         lifetimeDays: dto.lifetimeDays ? parseInt(String(dto.lifetimeDays), 10) : 180,
-        lifetimeType: dto.lifetimeType || 'DUAL',
-        maxUsage: dto.maxUsage !== undefined ? parseInt(String(dto.maxUsage), 10) : 500,
-        currentUsage: dto.currentUsage !== undefined ? parseInt(String(dto.currentUsage), 10) : 0,
         revStatus: dto.revStatus || '0',
         lifecycleStatus: dto.lifecycleStatus || 'ACTIVE',
         vendorId: dto.vendorId || undefined,
@@ -432,9 +451,6 @@ export class DesignService {
               material: cp.material || null,
               qty: String(cp.qty || '1'),
               lifetimeDays: cp.lifetimeDays ? parseInt(String(cp.lifetimeDays), 10) : 180,
-              lifetimeType: cp.lifetimeType || 'DUAL',
-              maxUsage: cp.maxUsage !== undefined ? parseInt(String(cp.maxUsage), 10) : 500,
-              currentUsage: cp.currentUsage !== undefined ? parseInt(String(cp.currentUsage), 10) : 0,
               installDate: cp.installDate ? new Date(cp.installDate) : new Date(),
               minimumStock: cp.minimumStock ? parseInt(String(cp.minimumStock), 10) : 0,
               actualStock: cp.actualStock ? parseInt(String(cp.actualStock), 10) : (cp.qty ? parseInt(String(cp.qty), 10) || 1 : 1),
@@ -663,29 +679,18 @@ export class DesignService {
     };
   }
 
-  /** Log or set usage for a Design (Jig) item */
+  /** Log or set usage for a Design (Jig) item (stubbed) */
   async logUsage(itemId: string, amount: number, mode: 'ADD' | 'SET' = 'ADD') {
     const existing = await this.prisma.design.findUnique({ where: { id: itemId } });
     if (!existing) {
       throw new NotFoundException(`Item ${itemId} not found`);
     }
 
-    const current = (existing as any).currentUsage ?? 0;
-    const newUsage = mode === 'ADD' ? Math.max(0, current + amount) : Math.max(0, amount);
-
-    const updated = await this.prisma.design.update({
-      where: { id: itemId },
-      data: { currentUsage: newUsage },
-    });
-
     return {
-      ...updated,
+      ...existing,
       ...this.calculateLifetime({
-        installDate: updated.designDateNew || (updated as any).createdAt,
-        lifetimeDays: updated.lifetimeDays,
-        lifetimeType: (updated as any).lifetimeType,
-        maxUsage: (updated as any).maxUsage,
-        currentUsage: (updated as any).currentUsage,
+        installDate: existing.designDateNew || (existing as any).createdAt,
+        lifetimeDays: existing.lifetimeDays,
       }),
     };
   }
@@ -698,14 +703,10 @@ export class DesignService {
     }
 
     const resetDays = options.resetDays !== false;
-    const resetUsage = options.resetUsage !== false;
 
     const dataToUpdate: any = {};
     if (resetDays) {
       dataToUpdate.designDateNew = new Date();
-    }
-    if (resetUsage) {
-      dataToUpdate.currentUsage = 0;
     }
 
     const updated = await this.prisma.design.update({
@@ -718,90 +719,31 @@ export class DesignService {
       ...this.calculateLifetime({
         installDate: updated.designDateNew || (updated as any).createdAt,
         lifetimeDays: updated.lifetimeDays,
-        lifetimeType: (updated as any).lifetimeType,
-        maxUsage: (updated as any).maxUsage,
-        currentUsage: (updated as any).currentUsage,
       }),
     };
   }
 
-  /** Compute 2-way lifetime metrics */
+  /** Compute lifetime metrics by days */
   private calculateLifetime(item: {
     installDate?: Date | string | null;
     lastRenewalDate?: Date | string | null;
     lifetimeDays?: number | null;
-    lifetimeType?: string | null;
-    maxUsage?: number | null;
-    currentUsage?: number | null;
   }) {
     const baseDate = item.lastRenewalDate || item.installDate || new Date();
     const lifetimeDays = item.lifetimeDays ?? 180;
     const dueDate = new Date(new Date(baseDate).getTime() + lifetimeDays * 86400000);
     const daysRemaining = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
 
-    const dayStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
+    const lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE' =
       daysRemaining <= 0 ? 'OVERDUE' : daysRemaining <= 35 ? 'WARNING' : 'SAFE';
-
-    const maxUsage = item.maxUsage ?? 500;
-    const currentUsage = item.currentUsage ?? 0;
-    const usageRemaining = Math.max(0, maxUsage - currentUsage);
-    const usagePercent = maxUsage > 0 ? Math.round((currentUsage / maxUsage) * 100) : 0;
-
-    let usageStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    if (currentUsage >= maxUsage) {
-      usageStatus = 'OVERDUE';
-    } else if (usagePercent >= 85 || (maxUsage - currentUsage) <= 50) {
-      usageStatus = 'WARNING';
-    } else {
-      usageStatus = 'SAFE';
-    }
-
-    const lifetimeType: 'DUAL' | 'USAGE' | 'DAYS' = (item.lifetimeType as any) || 'DUAL';
-    let lifetimeStatus: 'OVERDUE' | 'WARNING' | 'SAFE';
-    let triggerReason: 'DAYS' | 'USAGE' | 'BOTH' | 'NONE' = 'NONE';
-
-    if (lifetimeType === 'DAYS') {
-      lifetimeStatus = dayStatus;
-      triggerReason = dayStatus !== 'SAFE' ? 'DAYS' : 'NONE';
-    } else if (lifetimeType === 'USAGE') {
-      lifetimeStatus = usageStatus;
-      triggerReason = usageStatus !== 'SAFE' ? 'USAGE' : 'NONE';
-    } else {
-      if (dayStatus === 'OVERDUE' || usageStatus === 'OVERDUE') {
-        lifetimeStatus = 'OVERDUE';
-        triggerReason =
-          dayStatus === 'OVERDUE' && usageStatus === 'OVERDUE'
-            ? 'BOTH'
-            : dayStatus === 'OVERDUE'
-            ? 'DAYS'
-            : 'USAGE';
-      } else if (dayStatus === 'WARNING' || usageStatus === 'WARNING') {
-        lifetimeStatus = 'WARNING';
-        triggerReason =
-          dayStatus === 'WARNING' && usageStatus === 'WARNING'
-            ? 'BOTH'
-            : dayStatus === 'WARNING'
-            ? 'DAYS'
-            : 'USAGE';
-      } else {
-        lifetimeStatus = 'SAFE';
-        triggerReason = 'NONE';
-      }
-    }
 
     return {
       lifetimeDays,
-      lifetimeType,
-      maxUsage,
-      currentUsage,
-      usageRemaining,
-      usagePercent,
       dueDate: dueDate.toISOString(),
       daysRemaining,
-      dayStatus,
-      usageStatus,
+      dayStatus: lifetimeStatus,
       lifetimeStatus,
-      triggerReason,
+      triggerReason: lifetimeStatus !== 'SAFE' ? 'DAYS' : 'NONE',
     };
   }
 }
