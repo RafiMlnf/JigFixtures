@@ -230,7 +230,7 @@ export function DesignPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const action = searchParams.get('action');
-  const { user, logout, approvals } = useApp();
+  const { user, logout, approvals, reloadData } = useApp();
   const isPic = canEdit(user?.role);
   const [items, setItems] = useState<MasterItem[]>([]);
   const [vendors, setVendors] = useState<Array<{ id: string; name: string; code: string }>>([]);
@@ -372,8 +372,25 @@ export function DesignPageContent() {
       await deleteDesignItem(itemToDelete.id);
       setToast({ type: 'success', msg: `Desain ${itemToDelete.noReg} berhasil dihapus!` });
       setShowDeleteConfirmModal(false);
+      const deletedId = itemToDelete.id;
       setItemToDelete(null);
+
+      // Bersihkan juga dari cache fallback localStorage jika ada
+      if (typeof window !== 'undefined') {
+        try {
+          const cached = localStorage.getItem('jigfixture_items');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            const filtered = parsed.filter((it: any) => it.id !== deletedId);
+            localStorage.setItem('jigfixture_items', JSON.stringify(filtered));
+          }
+        } catch (_) {}
+      }
+
       await loadData();
+      if (reloadData) {
+        await reloadData();
+      }
     } catch (err: any) {
       setToast({ type: 'error', msg: err.message || 'Gagal menghapus desain' });
     }

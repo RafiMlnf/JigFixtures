@@ -789,3 +789,39 @@ export const renewCellPart = renewChildPart;
 export const deleteCellPart = deleteChildPart;
 export const recordCellPartReplacement = recordChildPartReplacement;
 export type ParsedCellPartItem = ParsedChildPartItem;
+
+/** Fetch Master Parts Catalog (Parts shared across multiple Jigs) */
+export async function fetchMasterParts(search?: string) {
+  const q = search ? `?search=${encodeURIComponent(search)}` : '';
+  const res = await fetch(`${BASE}/api/child-part/master${q}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new HttpError('Failed to fetch master parts catalog', res.status);
+  return res.json();
+}
+
+/** Update Master Part (Global Stock and Name) */
+export async function updateMasterPart(
+  id: string,
+  data: {
+    name?: string;
+    description?: string;
+    material?: string;
+    minimumStock?: number;
+    actualStock?: number;
+  },
+) {
+  const res = await fetch(`${BASE}/api/child-part/master/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new HttpError(err.message || 'Failed to update master part', res.status);
+  }
+  return res.json();
+}

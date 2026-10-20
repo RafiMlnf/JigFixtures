@@ -25,6 +25,22 @@ export class ChildPartController {
     return this.childPartService.findByDesign(designId);
   }
 
+  /** Katalog master part (dipakai banyak Jig) */
+  @Get('master')
+  findMasterParts(@Query('search') search?: string) {
+    return this.childPartService.findMasterParts(search);
+  }
+
+  /** Update master part (stok terpusat, berlaku semua Jig) */
+  @Patch('master/:id')
+  updateMasterPart(
+    @Param('id') id: string,
+    @Body()
+    body: { name?: string; description?: string; material?: string; minimumStock?: number; actualStock?: number },
+  ) {
+    return this.childPartService.updateMasterPart(id, body);
+  }
+
   /** Get all ChildParts approaching or past due date (reminders) */
   @Get('reminders')
   getReminders() {

@@ -12,9 +12,96 @@ export class ChildPartService {
     const parts = await this.prisma.childPart.findMany({
       where: { designId },
       orderBy: { partNumber: 'asc' },
+      include: { masterPart: { include: { _count: { select: { usages: true } } } } },
     });
 
-    return parts.map((part) => this.enrichWithLifetime(part));
+    return parts.map((part) => this.enrichWithLifetime(this.mergeMaster(part)));
+  }
+
+  /** Stok & identitas diambil dari MasterPart (terpusat) bila ada */
+  private mergeMaster(part: any) {
+    const { masterPart, ...rest } = part;
+    if (!masterPart) return rest;
+    return {
+      ...rest,
+      name: masterPart.name,
+      material: masterPart.material ?? rest.material,
+      minimumStock: masterPart.minimumStock,
+      actualStock: masterPart.actualStock,
+      sharedJigCount: masterPart._count?.usages ?? 1,
+    };
+  }
+
+  /** Katalog master part (untuk dipilih saat menambah child part ke Jig) */
+  async findMasterParts(search?: string) {
+    const q = search?.trim();
+    const masters = await this.prisma.masterPart.findMany({
+      where: q
+        ? {
+            OR: [
+              { partNumber: { contains: q, mode: 'insensitive' } },
+              { name: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      orderBy: { partNumber: 'asc' },
+      include: {
+        usages: {
+          select: {
+            id: true,
+            qty: true,
+            design: { select: { id: true, noReg: true, assyPartName: true } },
+          },
+        },
+      },
+    });
+    return masters.map((m) => ({
+      ...m,
+      usedInJigs: m.usages.map((u) => ({ childPartId: u.id, qty: u.qty, ...u.design })),
+      usageCount: m.usages.length,
+      stockStatus:
+        m.actualStock <= 0 ? 'RED' : m.actualStock <= m.minimumStock ? 'YELLOW' : 'GREEN',
+    }));
+  }
+
+  /** Update data/stok master (berlaku untuk semua Jig yang memakainya) */
+  async updateMasterPart(
+    id: string,
+    dto: { name?: string; description?: string; material?: string; minimumStock?: number; actualStock?: number },
+  ) {
+    const existing = await this.prisma.masterPart.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`MasterPart ${id} not found`);
+    return this.prisma.masterPart.update({ where: { id }, data: dto });
+  }
+
+  /** Cari master berdasarkan partNumber, buat jika belum ada */
+  private async resolveMaster(dto: {
+    partNumber: string;
+    name: string;
+    description?: string | null;
+    minimumStock?: number;
+    actualStock?: number;
+  }) {
+    const found = await this.prisma.masterPart.findUnique({ where: { partNumber: dto.partNumber } });
+    if (found) {
+      // Part sudah ada di katalog: stok hanya diubah bila diisi eksplisit
+      if (dto.minimumStock !== undefined || dto.actualStock !== undefined) {
+        return this.prisma.masterPart.update({
+          where: { id: found.id },
+          data: { minimumStock: dto.minimumStock, actualStock: dto.actualStock },
+        });
+      }
+      return found;
+    }
+    return this.prisma.masterPart.create({
+      data: {
+        partNumber: dto.partNumber,
+        name: dto.name,
+        description: dto.description || null,
+        minimumStock: dto.minimumStock ?? 0,
+        actualStock: dto.actualStock ?? 0,
+      },
+    });
   }
 
   /** Get all ChildParts that are OVERDUE or WARNING (≤35 days to due date) */
@@ -59,21 +146,26 @@ export class ChildPartService {
       );
     }
 
+    const master = await this.resolveMaster(dto);
+
     const childPart = await this.prisma.childPart.create({
       data: {
         designId: dto.designId,
-        partNumber: dto.partNumber,
-        name: dto.name,
-        description: dto.description || null,
+        masterPartId: master.id,
+        partNumber: master.partNumber,
+        name: master.name,
+        description: dto.description || master.description || null,
+        qty: (dto as any).qty ? String((dto as any).qty) : undefined,
         lifetimeDays: dto.lifetimeDays || 180,
         installDate: dto.installDate ? new Date(dto.installDate) : new Date(),
-        minimumStock: dto.minimumStock ?? 0,
-        actualStock: dto.actualStock ?? 0,
+        minimumStock: master.minimumStock,
+        actualStock: master.actualStock,
         pdfPageIndex: dto.pdfPageIndex ?? null,
       },
+      include: { masterPart: { include: { _count: { select: { usages: true } } } } },
     });
 
-    return this.enrichWithLifetime(childPart);
+    return this.enrichWithLifetime(this.mergeMaster(childPart));
   }
 
   /** Update an existing ChildPart */
@@ -99,6 +191,21 @@ export class ChildPartService {
       }
     }
 
+    // Stok & nama bersifat terpusat -> tulis ke MasterPart (berlaku untuk semua Jig)
+    if (
+      existing.masterPartId &&
+      (dto.minimumStock !== undefined || dto.actualStock !== undefined || dto.name !== undefined)
+    ) {
+      await this.prisma.masterPart.update({
+        where: { id: existing.masterPartId },
+        data: {
+          name: dto.name,
+          minimumStock: dto.minimumStock,
+          actualStock: dto.actualStock,
+        },
+      });
+    }
+
     const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
@@ -107,13 +214,12 @@ export class ChildPartService {
         description: dto.description,
         lifetimeDays: dto.lifetimeDays,
         installDate: dto.installDate ? new Date(dto.installDate) : undefined,
-        minimumStock: dto.minimumStock,
-        actualStock: dto.actualStock,
         pdfPageIndex: dto.pdfPageIndex,
       },
+      include: { masterPart: { include: { _count: { select: { usages: true } } } } },
     });
 
-    return this.enrichWithLifetime(updated);
+    return this.enrichWithLifetime(this.mergeMaster(updated));
   }
 
   /** Log or set usage for a ChildPart (stubbed or no-op) */
@@ -229,7 +335,7 @@ export class ChildPartService {
       })
       .catch(() => {});
 
-    // 3. Update ChildPart dates
+    // 3. Update ChildPart dates + kurangi stok master (1 unit terpakai, min 0)
     const updated = await this.prisma.childPart.update({
       where: { id },
       data: {
@@ -237,6 +343,14 @@ export class ChildPartService {
         reminderSent: false,
       },
     });
+    if (cp.masterPartId) {
+      await this.prisma.masterPart
+        .updateMany({
+          where: { id: cp.masterPartId, actualStock: { gt: 0 } },
+          data: { actualStock: { decrement: 1 } },
+        })
+        .catch(() => {});
+    }
 
     return {
       childPart: this.enrichWithLifetime(updated),

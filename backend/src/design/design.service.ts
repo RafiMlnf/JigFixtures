@@ -492,6 +492,11 @@ export class DesignService {
       this.prisma.inventoryLog.deleteMany({ where: { designId: id } }),
       this.prisma.approval.deleteMany({ where: { designId: id } }),
       this.prisma.notification.deleteMany({ where: { designId: id } }),
+      this.prisma.tpmChecklist.deleteMany({ where: { designId: id } }),
+      this.prisma.tpmMaintenanceLog.deleteMany({ where: { designId: id } }),
+      this.prisma.partReplacementLog.deleteMany({ where: { designId: id } }),
+      this.prisma.machine.updateMany({ where: { designId: id }, data: { designId: null } }),
+      this.prisma.childPart.deleteMany({ where: { designId: id } }),
       this.prisma.design.delete({ where: { id } }),
     ]);
   }

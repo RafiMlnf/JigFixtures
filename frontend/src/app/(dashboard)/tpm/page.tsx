@@ -619,16 +619,6 @@ export default function TPMPage() {
           </>
         )}
 
-        {/* Quick Link to Monitoring Lane & Mesin */}
-        <Link
-          href="/monitoring"
-          title="Buka Monitoring Lane & Mesin"
-          className="px-3 py-1.5 bg-[#0063ff] hover:bg-[#0052d4] text-white rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0 text-[10.5px] font-bold"
-        >
-          <span className="material-symbols-outlined text-[15px]">monitoring</span>
-          <span>Monitoring Lane</span>
-        </Link>
-
         {/* Reload button sejajar dengan card */}
         <button
           onClick={loadData}
@@ -753,9 +743,9 @@ export default function TPMPage() {
               <table className="w-full text-left border-collapse text-[10px]">
                 <thead>
                   <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[9px] uppercase tracking-wider whitespace-nowrap select-none h-7">
-                    <th className="w-6 px-1.5 py-1 text-center" title="Status Pengingat: Hijau (Aman), Kuning (Warning H-14 hari), Merah (Terlewat / Overdue)"></th>
+                    <th className="w-3.5 min-w-[14px] max-w-[14px] p-0 text-center" title="Status Pengingat: Hijau (Aman), Kuning (Warning H-14 hari), Merah (Terlewat / Overdue)"></th>
                     <th className="w-[140px] px-2 py-1">No. Reg / Part</th>
-                    <th className="w-[170px] max-w-[200px] px-2 py-1">Item Name</th>
+                    <th className="w-[230px] max-w-[280px] px-2 py-1">Item Name</th>
                     <th className="px-2 py-1">Line &amp; OP</th>
                     <th className="w-[130px] px-2 py-1 text-center">Lifetime</th>
                     <th className="w-[105px] px-2 py-1 text-center">Jadwal Servis</th>
@@ -793,12 +783,12 @@ export default function TPMPage() {
                     const elapsedDays = Math.max(0, totalDays - days);
                     const daysPct = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
 
-                    // Status box color (1:1 square)
-                    const statusColorClass = isOverdue
-                      ? 'bg-rose-500 shadow-rose-200'
+                    // Status full fill color
+                    const statusBgClass = isOverdue
+                      ? 'bg-rose-500'
                       : isWarning
-                        ? 'bg-amber-400 shadow-amber-200'
-                        : 'bg-emerald-500 shadow-emerald-200';
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-500';
 
                     const statusTitle = isOverdue
                       ? `Terlewat (Overdue): Telah lewat ${Math.abs(days)} hari`
@@ -813,15 +803,11 @@ export default function TPMPage() {
                           isOverdue ? 'bg-rose-50/20' : ''
                         }`}
                       >
-                        {/* Status Kotak 1:1 Pengingat (Aman: Hijau, Warning H-2minggu: Kuning, Terlewat: Merah) */}
-                        <td className="w-6 px-1.5 py-0.5 text-center">
-                          <div className="flex items-center justify-center">
-                            <span
-                              className={`w-3.5 h-3.5 aspect-square rounded-sm shrink-0 block transition-transform shadow-2xs hover:scale-110 ${statusColorClass}`}
-                              title={statusTitle}
-                            />
-                          </div>
-                        </td>
+                        {/* Status Full Fill Kolom Paling Kiri */}
+                        <td
+                          className={`w-3.5 min-w-[14px] max-w-[14px] p-0 text-center ${statusBgClass}`}
+                          title={statusTitle}
+                        />
 
                         {/* No Reg / Part */}
                         <td className="px-2 py-0.5 font-mono truncate">
@@ -845,7 +831,7 @@ export default function TPMPage() {
                         </td>
 
                         {/* Item Name */}
-                        <td className="px-2 py-0.5 truncate max-w-[200px]" title={item.name}>
+                        <td className="px-2 py-0.5 truncate max-w-[280px]" title={item.name}>
                           <div className="flex items-center gap-1 truncate">
                             <span className="font-medium text-gray-800 text-[9.5px] truncate">
                               {item.name}

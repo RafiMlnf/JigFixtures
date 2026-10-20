@@ -301,10 +301,30 @@ enum LifecycleStatus {
 // CHILD PART (Child of Design/Jig)
 // ==========================================
 
+// Katalog part tunggal (stok terpusat). Satu MasterPart bisa dipakai banyak Jig.
+model MasterPart {
+  id           String   @id @default(cuid())
+  partNumber   String   @unique @map("part_number")
+  name         String
+  description  String?
+  material     String?
+  minimumStock Int      @default(0) @map("minimum_stock")
+  actualStock  Int      @default(0) @map("actual_stock")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  usages       ChildPart[]
+
+  @@map("master_part")
+}
+
+// Pemakaian MasterPart pada sebuah Jig (BOM): qty, install date, lifetime & TPM per Jig.
 model ChildPart {
   id              String    @id @default(cuid())
   designId        String    @map("design_id")
   design          Design    @relation(fields: [designId], references: [id], onDelete: Cascade)
+  masterPartId    String?   @map("master_part_id")
+  masterPart      MasterPart? @relation(fields: [masterPartId], references: [id], onDelete: SetNull)
 
   partNumber      String    @map("part_number")
   name            String

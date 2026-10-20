@@ -37,6 +37,10 @@ interface SnapshotEditorModalProps {
   snapshotImage: string;
   designNoReg: string;
   initialComment?: string;
+  currentPage?: number;
+  totalPages?: number;
+  onChangePage?: (page: number) => void;
+  isChangingPage?: boolean;
   onSubmitRevision: (data: { comment: string; markupData: string }) => Promise<void>;
 }
 
@@ -46,6 +50,10 @@ export default function SnapshotEditorModal({
   snapshotImage,
   designNoReg,
   initialComment = '',
+  currentPage = 1,
+  totalPages = 1,
+  onChangePage,
+  isChangingPage = false,
   onSubmitRevision,
 }: SnapshotEditorModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -333,24 +341,24 @@ export default function SnapshotEditorModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="w-full max-w-6xl max-h-[96vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden text-slate-800">
-        {/* Header */}
-        <div className="px-4 py-3 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between shrink-0">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="w-full max-w-6xl max-h-[96vh] bg-white rounded-2xl shadow-2xl border border-blue-200/80 flex flex-col overflow-hidden text-slate-800">
+        {/* Header - Standard App Brand Bar */}
+        <div className="h-10 px-4 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[18px]">screenshot_monitor</span>
-            </div>
+            <span className="material-symbols-outlined text-[18px]">draw</span>
             <div>
-              <h3 className="font-bold text-xs sm:text-sm flex items-center gap-2 leading-tight">
-                Editor Snapshot &amp; Catatan Revisi
-                <span className="bg-white/10 text-slate-200 text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/10">
+              <h3 className="font-bold text-xs flex items-center gap-2 leading-tight">
+                Editor Coretan &amp; Pin Penanda Revisi
+                <span className="bg-white/20 text-white text-[9.5px] font-mono px-2 py-0.5 rounded font-bold border border-white/20">
                   {designNoReg}
                 </span>
+                {totalPages > 1 && (
+                  <span className="bg-amber-400 text-slate-950 font-bold text-[9px] px-2 py-0.5 rounded shadow-3xs">
+                    Halaman {currentPage} dari {totalPages}
+                  </span>
+                )}
               </h3>
-              <p className="text-[10px] text-slate-300">
-                Beri pin tanda (📍), coretan garis, atau kotak penjelas pada area drawing yang perlu direvisi.
-              </p>
             </div>
           </div>
 
@@ -358,7 +366,7 @@ export default function SnapshotEditorModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="w-8 h-8 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg w-7 h-7 flex items-center justify-center transition-colors cursor-pointer"
             title="Tutup Modal"
           >
             <span className="material-symbols-outlined text-[18px]">close</span>
@@ -366,25 +374,53 @@ export default function SnapshotEditorModal({
         </div>
 
         {/* Toolbar */}
-        <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
-          {/* Tool Modes */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-bold text-slate-500 mr-1 uppercase">Pilih Alat:</span>
+        <div className="px-3.5 py-1.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
+          {/* Tool Modes & Page Switcher */}
+          <div className="flex items-center gap-2">
+            {/* Page Switcher (when PDF has multiple pages) */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg p-0.5 shadow-3xs mr-1">
+                <button
+                  type="button"
+                  disabled={isChangingPage || !currentPage || currentPage <= 1}
+                  onClick={() => onChangePage && onChangePage(currentPage - 1)}
+                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-slate-100 disabled:opacity-30 cursor-pointer text-slate-700"
+                  title="Halaman Sebelumnya"
+                >
+                  <span className="material-symbols-outlined text-[15px]">chevron_left</span>
+                </button>
+                <span className="text-[10px] font-bold text-slate-700 px-1 select-none flex items-center gap-1 font-mono">
+                  <span>Hal</span>
+                  <span className="text-[#0063ff] font-black">{currentPage}</span>
+                  <span className="text-slate-400">/</span>
+                  <span>{totalPages}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={isChangingPage || !currentPage || currentPage >= totalPages}
+                  onClick={() => onChangePage && onChangePage(currentPage + 1)}
+                  className="w-6 h-6 rounded flex items-center justify-center hover:bg-slate-100 disabled:opacity-30 cursor-pointer text-slate-700"
+                  title="Halaman Berikutnya"
+                >
+                  <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+                </button>
+              </div>
+            )}
 
             <button
               type="button"
               onClick={() => setTool('PIN')}
-              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 tool === 'PIN'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'bg-white text-slate-700 hover:bg-slate-200/70 border border-slate-200'
+                  ? 'bg-rose-600 text-white shadow-3xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
               title="Klik di mana saja pada gambar untuk menaruh Pin penanda berurutan"
             >
-              <span className="material-symbols-outlined text-[15px]">location_on</span>
+              <span className="material-symbols-outlined text-[14px]">location_on</span>
               <span>Pin Tanda (📍)</span>
               {pins.length > 0 && (
-                <span className="bg-white/20 text-white text-[9.5px] px-1.5 rounded-full font-black">
+                <span className="bg-white/25 text-white text-[9px] px-1.5 rounded-full font-black">
                   {pins.length}
                 </span>
               )}
@@ -393,48 +429,47 @@ export default function SnapshotEditorModal({
             <button
               type="button"
               onClick={() => setTool('PEN')}
-              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 tool === 'PEN'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-white text-slate-700 hover:bg-slate-200/70 border border-slate-200'
+                  ? 'bg-[#0063ff] text-white shadow-3xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
               title="Coret bebas untuk melingkari atau menandai gambar teknik"
             >
-              <span className="material-symbols-outlined text-[15px]">edit</span>
+              <span className="material-symbols-outlined text-[14px]">edit</span>
               <span>Coretan Bebas</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTool('BOX')}
-              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 tool === 'BOX'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white text-slate-700 hover:bg-slate-200/70 border border-slate-200'
+                  ? 'bg-[#0063ff] text-white shadow-3xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
               title="Tarik kotak persegi untuk menandai area dimensi atau tabel tertentu"
             >
-              <span className="material-symbols-outlined text-[15px]">crop_square</span>
+              <span className="material-symbols-outlined text-[14px]">crop_square</span>
               <span>Kotak Area</span>
             </button>
           </div>
 
           {/* Color & Size & Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Color Swatches */}
-            <div className="flex items-center gap-1 border-r border-slate-300 pr-3">
-              <span className="text-[10px] text-slate-400 font-semibold mr-1">Warna:</span>
+            <div className="flex items-center gap-1 border-r border-slate-200 pr-2.5">
               {[
                 { hex: '#dc2626', label: 'Merah' },
                 { hex: '#f59e0b', label: 'Kuning' },
-                { hex: '#2563eb', label: 'Biru' },
+                { hex: '#0063ff', label: 'Biru' },
               ].map((c) => (
                 <button
                   key={c.hex}
                   type="button"
                   onClick={() => setColor(c.hex)}
-                  className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${
-                    color === c.hex ? 'ring-2 ring-slate-900 scale-110 shadow-xs' : 'opacity-80 hover:opacity-100'
+                  className={`w-4.5 h-4.5 rounded-full transition-transform cursor-pointer ${
+                    color === c.hex ? 'ring-2 ring-slate-900 scale-110 shadow-3xs' : 'opacity-80 hover:opacity-100'
                   }`}
                   style={{ backgroundColor: c.hex }}
                   title={c.label}
@@ -444,11 +479,11 @@ export default function SnapshotEditorModal({
 
             {/* Thickness (for pen/box) */}
             {tool !== 'PIN' && (
-              <div className="flex items-center gap-1 border-r border-slate-300 pr-3">
+              <div className="flex items-center gap-1 border-r border-slate-200 pr-2.5">
                 <button
                   type="button"
                   onClick={() => setStrokeSize(2)}
-                  className={`px-2 py-1 rounded text-[9.5px] font-bold ${
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
                     strokeSize === 2 ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'
                   }`}
                 >
@@ -457,7 +492,7 @@ export default function SnapshotEditorModal({
                 <button
                   type="button"
                   onClick={() => setStrokeSize(4)}
-                  className={`px-2 py-1 rounded text-[9.5px] font-bold ${
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
                     strokeSize === 4 ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200'
                   }`}
                 >
@@ -467,15 +502,15 @@ export default function SnapshotEditorModal({
             )}
 
             {/* Undo / Clear */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={handleUndo}
                 disabled={historyStack.length === 0}
-                className="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer text-[10px]"
+                className="px-2 py-0.5 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer text-[9.5px]"
                 title="Batalkan coretan atau pin terakhir"
               >
-                <span className="material-symbols-outlined text-[14px]">undo</span>
+                <span className="material-symbols-outlined text-[13px]">undo</span>
                 <span>Undo</span>
               </button>
 
@@ -483,10 +518,10 @@ export default function SnapshotEditorModal({
                 type="button"
                 onClick={handleClearAll}
                 disabled={pins.length === 0 && strokes.length === 0 && boxes.length === 0}
-                className="px-2.5 py-1 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer text-[10px]"
+                className="px-2 py-0.5 rounded-md text-rose-600 hover:text-rose-800 hover:bg-rose-50 font-semibold flex items-center gap-1 disabled:opacity-40 cursor-pointer text-[9.5px]"
                 title="Hapus semua coretan dan pin"
               >
-                <span className="material-symbols-outlined text-[14px]">delete</span>
+                <span className="material-symbols-outlined text-[13px]">delete</span>
                 <span>Bersihkan</span>
               </button>
             </div>
@@ -496,13 +531,21 @@ export default function SnapshotEditorModal({
         {/* Main Content Area: Left Canvas, Right Notes */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden bg-slate-100">
           {/* Left: Snapshot Drawing Canvas */}
-          <div className="flex-1 relative flex items-center justify-center p-3 overflow-auto bg-slate-900/90 select-none">
+          <div className="flex-1 relative flex items-center justify-center p-3 overflow-auto bg-slate-200/80 select-none">
+            {isChangingPage && (
+              <div className="absolute inset-0 bg-white/70 backdrop-blur-xs flex items-center justify-center z-40">
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-md text-slate-700 text-xs font-bold">
+                  <span className="material-symbols-outlined animate-spin text-sm text-[#0063ff]">sync</span>
+                  <span>Memuat Halaman {currentPage}...</span>
+                </div>
+              </div>
+            )}
             <div
               ref={imageContainerRef}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              className={`relative max-w-full max-h-[70vh] shadow-2xl rounded-lg overflow-hidden border border-slate-700 bg-white ${
+              className={`relative max-w-full max-h-[72vh] shadow-xl rounded-lg overflow-hidden border border-slate-300 bg-white ${
                 tool === 'PIN' ? 'cursor-crosshair' : tool === 'PEN' ? 'cursor-crosshair' : 'cursor-crosshair'
               }`}
             >

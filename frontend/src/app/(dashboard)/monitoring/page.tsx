@@ -16,6 +16,7 @@ import {
   fetchLinesAndProcesses,
   MachineDashboardItem,
 } from '@/lib/api/phase3';
+import { getApiHost } from '@/lib/api/config';
 import { CardSkeleton } from '@/components/ui/SkeletonLoading';
 
 const ABNORMALITY_TYPES = ['RUSAK', 'AUS', 'DEFORMASI', 'LAINNYA'];
@@ -269,10 +270,7 @@ export default function MonitoringPage() {
         .find((r) => r.startsWith('auth_token='))
         ?.split('=')[1] || '';
 
-      // Use dynamic host resolution instead of relative port 3000 path
-      const apiHost = typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost'
-        ? `${window.location.protocol}//${window.location.hostname}:3002`
-        : 'http://192.168.100.222:3002';
+      const apiHost = getApiHost();
 
       const res = await fetch(`${apiHost}/api/abnormality/lane/set-jig`, {
         method: 'POST',
@@ -282,7 +280,7 @@ export default function MonitoringPage() {
         },
         body: JSON.stringify({
           lineId: selectedLaneId,
-          designId: selectedJigId || '',
+          designId: selectedJigId ? selectedJigId.trim() : null,
         }),
       });
 
@@ -509,7 +507,7 @@ export default function MonitoringPage() {
                   }
                   setShowSetJigModal(true);
                 }}
-                className="h-7 px-2.5 bg-blue-50 hover:bg-blue-100 text-[#0063ff] border border-blue-200/80 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs font-bold text-[10px]"
+                className="h-7 px-2.5 bg-[#0063ff] hover:bg-blue-700 text-white rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs font-bold text-[10px]"
                 title="Hubungkan 1 Jig untuk 1 Lane Produksi"
               >
                 <span className="material-symbols-outlined text-[14px]">link</span>
@@ -600,93 +598,126 @@ export default function MonitoringPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-                {Object.entries(groupedMachines).map(([laneName, laneMachines]) => (
-                  <div key={laneName} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-2xs">
-                    {/* Lane Header Bar (Gaya Tabel Header) */}
-                    <div className="flex items-center justify-between px-2.5 py-1 bg-slate-50 border-b border-gray-200">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="text-[11px] font-bold text-gray-800 leading-tight">{laneName}</h3>
-                        <span className="text-[8px] font-semibold px-1 py-0.5 rounded bg-blue-100/70 text-blue-700 leading-none">
-                          {laneMachines.length}
-                        </span>
+                {Object.entries(groupedMachines).map(([laneName, laneMachines]) => {
+                  const isLaneConfigured = laneMachines.some((m) => !!m.designId);
 
-                        {/* Quick Set Jig Button per Lane */}
-                        {isPic && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const foundLine = lines.find((l) => l.lineName === laneName);
-                              if (foundLine) {
-                                setSelectedLaneId(foundLine.id);
-                              } else if (laneMachines[0]?.lineId) {
-                                setSelectedLaneId(laneMachines[0].lineId);
-                              }
-                              setSelectedJigId(laneMachines[0]?.designId || '');
-                              setShowSetJigModal(true);
-                            }}
-                            className="px-1.5 py-0.5 text-[8.5px] font-semibold text-blue-700 hover:text-white bg-blue-50 hover:bg-blue-600 rounded border border-blue-200 transition-colors flex items-center gap-0.5 cursor-pointer"
-                            title={`Set Jig untuk ${laneName}`}
+                  return (
+                    <div
+                      key={laneName}
+                      className={`bg-white rounded-lg border overflow-hidden shadow-2xs transition-colors ${
+                        isLaneConfigured ? 'border-gray-200' : 'border-gray-200 opacity-85'
+                      }`}
+                    >
+                      {/* Lane Header Bar (Gaya Tabel Header) */}
+                      <div
+                        className={`flex items-center justify-between px-2.5 py-1 border-b ${
+                          isLaneConfigured ? 'bg-slate-50 border-gray-200' : 'bg-gray-100/80 border-gray-200 text-gray-500'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {isPic && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const foundLine = lines.find((l) => l.lineName === laneName);
+                                if (foundLine) {
+                                  setSelectedLaneId(foundLine.id);
+                                } else if (laneMachines[0]?.lineId) {
+                                  setSelectedLaneId(laneMachines[0].lineId);
+                                }
+                                setSelectedJigId(laneMachines[0]?.designId || '');
+                                setShowSetJigModal(true);
+                              }}
+                              className="w-3.5 h-3.5 p-0 text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                              title={`Set Jig untuk ${laneName}`}
+                            >
+                              <span className="material-symbols-outlined text-[9.5px] leading-none">link</span>
+                            </button>
+                          )}
+                          {isPic && <span className="text-gray-300 text-[10px] select-none">|</span>}
+                          <h3 className={`text-[11px] font-bold leading-tight ${isLaneConfigured ? 'text-gray-800' : 'text-gray-500'}`}>
+                            {laneName}
+                          </h3>
+                          <span
+                            className={`text-[8px] font-semibold px-1 py-0.5 rounded leading-none ${
+                              isLaneConfigured ? 'bg-blue-100/70 text-blue-700' : 'bg-gray-200 text-gray-600'
+                            }`}
                           >
-                            <span className="material-symbols-outlined text-[11px]">link</span>
-                            <span>Set Jig</span>
-                          </button>
-                        )}
+                            {laneMachines.length}
+                          </span>
+                          {!isLaneConfigured && (
+                            <span className="text-[7.5px] font-semibold px-1 py-0.2 rounded bg-gray-200 text-gray-500 uppercase tracking-tight">
+                              Belum Set Jig
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[8.5px] text-gray-400 font-medium">
+                          <span className="flex items-center gap-1" title="Aman (Semua Parameter Aman)">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            {laneMachines.filter((m) => !!m.designId && m.jigCondition === 'SAFE' && m.tpmSchedule === 'SAFE').length}
+                          </span>
+                          <span className="flex items-center gap-1" title="Peringatan (Mendekati Limit/Jadwal TPM)">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            {laneMachines.filter((m) => !!m.designId && (m.jigCondition === 'WARNING' || m.tpmSchedule === 'WARNING') && m.jigCondition !== 'OVERDUE' && m.tpmSchedule !== 'OVERDUE').length}
+                          </span>
+                          <span className="flex items-center gap-1" title="Kritis / Lewat Lifetime / Overdue">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            {laneMachines.filter((m) => !!m.designId && (m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE')).length}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-[8.5px] text-gray-400 font-medium">
-                        <span className="flex items-center gap-1" title="Aman (Semua Parameter Aman)">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          {laneMachines.filter((m) => m.jigCondition === 'SAFE' && m.tpmSchedule === 'SAFE').length}
-                        </span>
-                        <span className="flex items-center gap-1" title="Peringatan (Mendekati Limit/Jadwal TPM)">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                          {laneMachines.filter((m) => (m.jigCondition === 'WARNING' || m.tpmSchedule === 'WARNING') && m.jigCondition !== 'OVERDUE' && m.tpmSchedule !== 'OVERDUE').length}
-                        </span>
-                        <span className="flex items-center gap-1" title="Kritis / Lewat Lifetime / Overdue">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                          {laneMachines.filter((m) => m.jigCondition === 'OVERDUE' || m.tpmSchedule === 'OVERDUE').length}
-                        </span>
+
+                      {/* Flat Grid Cell Table Layout - Tanpa Card, Border Pemisah Presisi */}
+                      <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8 border-t border-l border-gray-200 bg-white">
+                        {laneMachines.map((machine) => {
+                          const hasJig = !!machine.designId;
+                          const topCircleClass = hasJig
+                            ? getCircleColor(machine.jigCondition)
+                            : 'bg-gray-300 border-gray-400';
+                          const btmCircleClass = hasJig
+                            ? getCircleColor(machine.tpmSchedule)
+                            : 'bg-gray-300 border-gray-400';
+
+                          return (
+                            <div
+                              key={machine.id}
+                              onClick={() => setSelectedMachineDetail(machine)}
+                              className={`aspect-square p-1 flex flex-col justify-between items-center cursor-pointer group select-none transition-colors border-r border-b border-gray-200 ${
+                                hasJig ? 'bg-white hover:bg-blue-50/50' : 'bg-gray-50/80 hover:bg-gray-100'
+                              }`}
+                              title={`${machine.code} - ${machine.name} (${laneName})${!hasJig ? ' [Belum ada Jig]' : ''}`}
+                            >
+                              {/* Machine Code at top */}
+                              <div className="w-full text-center px-0.5">
+                                <span
+                                  className={`text-[8.5px] sm:text-[9.5px] tracking-tight font-black font-mono block truncate leading-tight transition-colors ${
+                                    hasJig ? 'text-gray-800 group-hover:text-blue-600' : 'text-gray-400 group-hover:text-gray-600'
+                                  }`}
+                                >
+                                  {machine.code}
+                                </span>
+                              </div>
+
+                              {/* 2-Circle Status Indicators in Center */}
+                              <div className="flex flex-col items-center justify-center gap-1.5 my-auto">
+                                {/* Bulat Atas: Kondisi Jig */}
+                                <div
+                                  className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${topCircleClass}`}
+                                  title={hasJig ? `Kondisi Jig: ${machine.jigCondition}` : 'Belum di-set Jig'}
+                                />
+                                {/* Bulat Bawah: Jadwal TPM */}
+                                <div
+                                  className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${btmCircleClass}`}
+                                  title={hasJig ? `Jadwal TPM: ${machine.tpmSchedule}` : 'Belum di-set Jig'}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-
-                    {/* Flat Grid Cell Table Layout - Tanpa Card, Border Pemisah Presisi */}
-                    <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 xl:grid-cols-8 border-t border-l border-gray-200 bg-white">
-                      {laneMachines.map((machine) => {
-                        const topCircleClass = getCircleColor(machine.jigCondition);
-                        const btmCircleClass = getCircleColor(machine.tpmSchedule);
-
-                        return (
-                          <div
-                            key={machine.id}
-                            onClick={() => setSelectedMachineDetail(machine)}
-                            className="aspect-square bg-white hover:bg-blue-50/50 p-1 flex flex-col justify-between items-center cursor-pointer group select-none transition-colors border-r border-b border-gray-200"
-                            title={`${machine.code} - ${machine.name} (${laneName})`}
-                          >
-                            {/* Machine Code at top */}
-                            <div className="w-full text-center px-0.5">
-                              <span className="text-[8.5px] sm:text-[9.5px] tracking-tight font-black font-mono text-gray-800 group-hover:text-blue-600 transition-colors block truncate leading-tight">
-                                {machine.code}
-                              </span>
-                            </div>
-
-                            {/* 2-Circle Status Indicators in Center */}
-                            <div className="flex flex-col items-center justify-center gap-1.5 my-auto">
-                              {/* Bulat Atas: Kondisi Jig */}
-                              <div
-                                className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${topCircleClass}`}
-                                title={`Kondisi Jig: ${machine.jigCondition}`}
-                              />
-                              {/* Bulat Bawah: Jadwal TPM */}
-                              <div
-                                className={`w-3 h-3 rounded-full border shadow-2xs transition-transform group-hover:scale-110 ${btmCircleClass}`}
-                                title={`Jadwal TPM: ${machine.tpmSchedule}`}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

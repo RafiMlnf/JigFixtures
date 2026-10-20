@@ -92,10 +92,10 @@ export default function DashboardPage() {
     loadAllDashboardData();
   }, []);
 
-  // Combined item list for Stock & Lifetime
+  // Combined item list for Stock & Lifetime (Prioritize live masterList from backend API)
   const displayItems: JigFixtureItem[] = useMemo(() => {
-    if (items && items.length > 0) return items;
-    if (masterList && masterList.length > 0) {
+    // If masterList fetched from database has been loaded, use it exclusively
+    if (masterList && Array.isArray(masterList)) {
       return masterList.map((m, idx) => ({
         id: m.id,
         no: idx + 1,
@@ -120,6 +120,7 @@ export default function DashboardPage() {
         triggerReason: m.triggerReason,
       }));
     }
+    if (items && items.length > 0) return items;
     return [];
   }, [items, masterList]);
 
@@ -770,25 +771,13 @@ export default function DashboardPage() {
                 Task & Approval
               </h2>
 
-              <div className={`flex items-center gap-1.5 transition-all duration-200 ${
+              <div className={`flex items-center transition-all duration-200 ${
                 taskSearch
                   ? 'w-full'
-                  : 'w-auto group-hover/header:w-full group-focus-within/header:w-full ml-auto'
+                  : 'w-6 group-hover/header:w-full group-focus-within/header:w-full ml-auto'
               }`}>
-                {taskStats.waiting > 0 && userCanApprove && (
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkApproveModal(true)}
-                    className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white transition-colors cursor-pointer shadow-3xs flex items-center gap-0.5 shrink-0"
-                    title="Setujui semua task sekaligus"
-                  >
-                    <span className="material-symbols-outlined text-[10px]">done_all</span>
-                    Approve
-                  </button>
-                )}
-
                 {/* Search Bar: Icon-only by default, expands to full width on hover/focus */}
-                <div className="relative flex items-center flex-1 min-w-0">
+                <div className="relative flex items-center w-full">
                   <span
                     className="material-symbols-outlined text-white/90 absolute right-2 pointer-events-none select-none flex items-center justify-center leading-none z-10"
                     style={{ fontSize: '11px', width: '11px', height: '11px', fontVariationSettings: "'wght' 300" }}
@@ -873,8 +862,12 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={task.id}
-                          className={`bg-white hover:bg-slate-50/90 border rounded-lg p-1.5 flex items-center justify-between gap-2 transition-all shadow-3xs group ${
-                            isRevision ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200'
+                          className={`rounded-lg p-1.5 flex items-center justify-between gap-2 transition-all shadow-3xs group ${
+                            isRevision
+                              ? 'border border-rose-300 bg-rose-50/30 hover:bg-rose-50/60'
+                              : isWaiting
+                              ? 'border border-amber-400 hover:border-amber-500 bg-white'
+                              : 'border border-slate-200 bg-white hover:bg-slate-50/90'
                           }`}
                         >
                           {/* Info Ringkas: Link ke detail */}
@@ -886,13 +879,9 @@ export default function DashboardPage() {
                               <span className="font-mono font-bold text-[9.5px] text-slate-800 group-hover:text-blue-600 transition-colors shrink-0">
                                 {task.noReg}
                               </span>
-                              {isRevision ? (
+                              {isRevision && (
                                 <span className="text-[7.5px] font-bold px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
                                   Revisi
-                                </span>
-                              ) : (
-                                <span className="text-[7.5px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
-                                  Menunggu
                                 </span>
                               )}
                             </div>
@@ -963,11 +952,31 @@ export default function DashboardPage() {
               <div className="mt-auto pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
                 <Link
                   href="/approval-center"
-                  className="text-[#0063ff] hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                  className="font-semibold text-slate-600 hover:text-[#0063ff] transition-colors cursor-pointer truncate max-w-[160px]"
+                  title="Buka Approval Center"
                 >
-                  Approval Center Lengkap
-                  <span className="material-symbols-outlined text-[11px]">arrow_forward</span>
+                  {taskStats.waiting > 0 ? `${taskStats.waiting} task menunggu persetujuan` : 'Semua task telah disetujui'}
                 </Link>
+
+                {taskStats.waiting > 0 && userCanApprove ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkApproveModal(true)}
+                    className="text-[9.5px] font-bold px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shadow-3xs flex items-center gap-1 shrink-0 ml-auto"
+                    title="Setujui semua task sekaligus"
+                  >
+                    <span className="material-symbols-outlined text-[11px]">done_all</span>
+                    <span>Approve Semua ({taskStats.waiting})</span>
+                  </button>
+                ) : (
+                  <Link
+                    href="/approval-center"
+                    className="text-[#0063ff] hover:underline font-bold text-[10px] flex items-center gap-0.5 cursor-pointer ml-auto"
+                  >
+                    Approval Center Lengkap
+                    <span className="material-symbols-outlined text-[11px]">arrow_forward</span>
+                  </Link>
+                )}
               </div>
             </div>
           </div>

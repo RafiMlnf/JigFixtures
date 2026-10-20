@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { fetchMasterList, getFileUrl, createChildPart, deleteChildPart, downloadDesignPdfPage, downloadDesignPdfFull } from '@/lib/api/phase3';
+import { fetchMasterList, getFileUrl, createChildPart, deleteChildPart, downloadDesignPdfPage, downloadDesignPdfFull, fetchMasterParts } from '@/lib/api/phase3';
 import { canEdit } from '@/lib/rbac';
 import { DetailSkeleton } from '@/components/ui/SkeletonLoading';
 
@@ -169,7 +169,10 @@ function DesignDetailPageContent({ params }: PageProps) {
   const [cpPdfPageIndex, setCpPdfPageIndex] = useState<number>(2);
   const [cpSubmitting, setCpSubmitting] = useState(false);
 
-
+  // Master Part Catalog (Many-to-Many shared part logic)
+  const [masterCatalog, setMasterCatalog] = useState<any[]>([]);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [selectedMaster, setSelectedMaster] = useState<any | null>(null);
 
   const loadItem = async () => {
     setLoading(true);
@@ -184,7 +187,7 @@ function DesignDetailPageContent({ params }: PageProps) {
     }
   };
 
-  const handleOpenAddCpModal = () => {
+  const handleOpenAddCpModal = async () => {
     const nextPageIndex = item?.childParts ? item.childParts.length + 2 : 2;
     setCpPartNumber('');
     setCpName('');
@@ -196,7 +199,26 @@ function DesignDetailPageContent({ params }: PageProps) {
     setCpMinStock(0);
     setCpActStock(0);
     setCpPdfPageIndex(nextPageIndex);
+    setSelectedMaster(null);
+    setIsCatalogOpen(false);
     setShowAddCpModal(true);
+
+    try {
+      const masters = await fetchMasterParts();
+      setMasterCatalog(masters || []);
+    } catch (err) {
+      console.error('Failed to load master parts catalog:', err);
+    }
+  };
+
+  const handleSelectFromCatalog = (master: any) => {
+    setSelectedMaster(master);
+    setCpPartNumber(master.partNumber);
+    setCpName(master.name);
+    setCpDescription(master.description || '');
+    setCpMinStock(master.minimumStock ?? 0);
+    setCpActStock(master.actualStock ?? 0);
+    setIsCatalogOpen(false);
   };
 
   const handleCreateChildPart = async (e: React.FormEvent) => {
@@ -957,6 +979,17 @@ function DesignDetailPageContent({ params }: PageProps) {
                                     <span className="truncate max-w-[100px]">{cp.material}</span>
                                   </>
                                 )}
+                                {(cp as any).sharedJigCount && (cp as any).sharedJigCount > 1 && (
+                                  <>
+                                    <span>·</span>
+                                    <span className="px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 font-semibold">
+                                      Dipakai {(cp as any).sharedJigCount} Jig
+                                    </span>
+                                  </>
+                                )}
+                                <span className="ml-auto font-medium text-slate-500">
+                                  Stok: <strong>{cp.actualStock ?? 0}</strong>
+                                </span>
                               </div>
                             </div>
 
@@ -1160,6 +1193,62 @@ function DesignDetailPageContent({ params }: PageProps) {
                 <span className="font-bold">Induk Jig:</span> {item.noReg} — {item.assyPartName}
               </div>
 
+              {/* Many-to-Many Shared Catalog Selector */}
+              {masterCatalog.length > 0 && (
+                <div className="bg-slate-50 border border-slate-250 rounded-xl p-2.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-700 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-[#0063ff]">category</span>
+                      Gunakan Part dari Katalog (Bisa Dipakai Banyak Jig)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCatalogOpen(!isCatalogOpen)}
+                      className="text-[9px] font-bold text-[#0063ff] hover:underline cursor-pointer"
+                    >
+                      {isCatalogOpen ? 'Tutup Pilihan' : 'Pilih dari Katalog'}
+                    </button>
+                  </div>
+
+                  {isCatalogOpen && (
+                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1 border-t border-slate-200 pt-1.5 no-scrollbar">
+                      {masterCatalog.map((m) => (
+                        <div
+                          key={m.id}
+                          onClick={() => handleSelectFromCatalog(m)}
+                          className={`p-1.5 rounded-lg border text-left cursor-pointer transition-colors flex items-center justify-between text-[10px] ${
+                            cpPartNumber === m.partNumber
+                              ? 'bg-blue-50 border-blue-400 text-blue-900 font-semibold'
+                              : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-bold flex items-center gap-1">
+                              <span>{m.partNumber}</span>
+                              <span className="text-[8px] font-normal px-1 py-0.2 bg-blue-100 text-blue-700 rounded">
+                                Dipakai di {m.usageCount || 0} Jig
+                              </span>
+                            </div>
+                            <div className="text-[9px] text-slate-500">{m.name}</div>
+                          </div>
+                          <div className="text-right text-[8.5px]">
+                            <span className="text-slate-400 block">Stok Gudang:</span>
+                            <span className="font-bold text-slate-700">{m.actualStock} pcs</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedMaster && (
+                    <div className="mt-1.5 text-[9px] text-emerald-700 font-medium flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                      <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                      Part ini terhubung ke Master Part <strong>{selectedMaster.partNumber}</strong> (Stok gudang tersentralisasi).
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 {/* Part Number */}
                 <div className="col-span-2">
@@ -1170,9 +1259,14 @@ function DesignDetailPageContent({ params }: PageProps) {
                     className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none text-gray-700 font-semibold focus:ring-1 focus:ring-blue-500"
                     placeholder="Contoh: CP-LOC-01"
                     value={cpPartNumber}
-                    onChange={(e) => setCpPartNumber(e.target.value)}
+                    onChange={(e) => {
+                      setCpPartNumber(e.target.value);
+                      if (selectedMaster && selectedMaster.partNumber !== e.target.value) {
+                        setSelectedMaster(null);
+                      }
+                    }}
                   />
-                  <p className="text-[8px] text-gray-400 mt-0.5">Part number sublist drawing harus unik di bawah Jig ini.</p>
+                  <p className="text-[8px] text-gray-400 mt-0.5">Jika Part Number sama dengan part lain, sistem akan otomatis menghubungkan stok fisiknya.</p>
                 </div>
 
                 {/* Nama ChildPart */}

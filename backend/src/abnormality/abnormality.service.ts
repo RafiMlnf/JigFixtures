@@ -417,28 +417,37 @@ export class AbnormalityService {
   }
 
   /** Set Jig to Lane (1 Jig applies to 1 Lane / Line) */
-  async assignJigToLane(lineId: string, designId: string) {
-    // 1. Update design to point to this lineId if not yet
-    if (designId) {
+  async assignJigToLane(lineId: string, designId?: string | null) {
+    const targetDesignId = designId && designId.trim() !== '' ? designId : null;
+
+    if (targetDesignId) {
+      // 1. Update design to point to this lineId if not yet
       await this.prisma.design.update({
-        where: { id: designId },
+        where: { id: targetDesignId },
         data: { lineId },
       });
 
       // 2. Update all machines in this line to point to this design_id
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE "machine" SET "design_id" = $1, "updated_at" = CURRENT_TIMESTAMP WHERE "line_id" = $2`,
-        designId,
-        lineId,
-      );
+      await this.prisma.machine.updateMany({
+        where: { lineId },
+        data: {
+          designId: targetDesignId,
+          manualJigStatus: null,
+          manualTpmStatus: null,
+        },
+      });
     } else {
-      // Unlink jig from all machines in this line
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE "machine" SET "design_id" = NULL, "updated_at" = CURRENT_TIMESTAMP WHERE "line_id" = $1`,
-        lineId,
-      );
+      // Unlink jig from all machines in this line (Lepas Jig)
+      await this.prisma.machine.updateMany({
+        where: { lineId },
+        data: {
+          designId: null,
+          manualJigStatus: null,
+          manualTpmStatus: null,
+        },
+      });
     }
 
-    return { success: true, lineId, designId };
+    return { success: true, lineId, designId: targetDesignId };
   }
 }
