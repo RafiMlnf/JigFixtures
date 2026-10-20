@@ -36,6 +36,77 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+function parseRevisionNotes(rawNote: string) {
+  if (!rawNote) return { generalNote: '', pins: [] };
+
+  const lines = rawNote.split('\n');
+  const pins: Array<{ number: number; text: string }> = [];
+  const generalLines: string[] = [];
+
+  let currentPin: { number: number; text: string } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Matches: • [Pin #1] desc, [Pin #1] desc, [Pin 1] desc, Pin #1: desc, Pin 1 - desc
+    const pinMatch = trimmed.match(/^(?:•\s*)?\[?(?:Pin|PIN)\s*#?(\d+)\]?:?\s*(.*)$/i);
+    if (pinMatch) {
+      if (currentPin) {
+        pins.push(currentPin);
+      }
+      currentPin = {
+        number: parseInt(pinMatch[1], 10),
+        text: pinMatch[2]?.trim() || '',
+      };
+    } else if (currentPin && !trimmed.toLowerCase().startsWith('detail poin revisi')) {
+      currentPin.text = currentPin.text ? `${currentPin.text} ${trimmed}` : trimmed;
+    } else {
+      if (currentPin) {
+        pins.push(currentPin);
+        currentPin = null;
+      }
+      if (!trimmed.toLowerCase().startsWith('detail poin revisi')) {
+        generalLines.push(trimmed);
+      }
+    }
+  }
+
+  if (currentPin) {
+    pins.push(currentPin);
+  }
+
+  // If no pins were found via "[Pin #X]", check if there are numbered points like "1. ..." or "2. ..."
+  if (pins.length === 0) {
+    const numberedMatches: Array<{ number: number; text: string }> = [];
+    const nonNumbered: string[] = [];
+    lines.forEach((l) => {
+      const t = l.trim();
+      const numMatch = t.match(/^(\d+)[\.\)]\s*(.+)$/);
+      if (numMatch) {
+        numberedMatches.push({
+          number: parseInt(numMatch[1], 10),
+          text: numMatch[2].trim(),
+        });
+      } else if (t && !t.toLowerCase().startsWith('detail poin revisi')) {
+        nonNumbered.push(t);
+      }
+    });
+
+    if (numberedMatches.length > 0) {
+      return {
+        generalNote: nonNumbered.join('\n').trim(),
+        pins: numberedMatches,
+      };
+    }
+  }
+
+  return {
+    generalNote: generalLines.join('\n').trim(),
+    pins,
+  };
+}
+
 export default function ReviewApprovalPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
@@ -51,6 +122,15 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto dismiss toast notification after 3.5 seconds
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
   const [approvalDetail, setApprovalDetail] = useState<any>(null);
   const [loadingApproval, setLoadingApproval] = useState(true);
@@ -62,9 +142,10 @@ export default function ReviewApprovalPage({ params }: PageProps) {
   const [viewingSavedSnapshot, setViewingSavedSnapshot] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [pdfTotalPages, setPdfTotalPages] = useState<number>(1);
+  const [activePdfPage, setActivePdfPage] = useState<number>(1);
   const [selectedSnapshotPage, setSelectedSnapshotPage] = useState<number>(1);
-  const [showPagePickerModal, setShowPagePickerModal] = useState<boolean>(false);
   const [isSwitchingPage, setIsSwitchingPage] = useState<boolean>(false);
+  const [selectedRevisionDetail, setSelectedRevisionDetail] = useState<any>(null);
 
   // Resubmit Revision Modal Form States (for Drawer)
   const [revFile2D, setRevFile2D] = useState<File | null>(null);
@@ -130,49 +211,16 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     loadApprovalData();
   }, [id]);
 
-  // Snapshot Capture & Revision Submission Handlers
-  const handleTakeSnapshot = async () => {
+
+
+  // Snapshot Capture Handler (Direct snapshot of active page without modal popup)
+  const handleTakeSnapshot = async (pageToSnap?: number) => {
     if (!pdf2DUrl) {
       alert('File PDF 2D Drawing belum tersedia untuk diambil snapshot.');
       return;
     }
-    setIsCapturingSnapshot(true);
-    try {
-      // Load standalone PDF.js in the browser (avoids Turbopack / Webpack canvas module resolution)
-      let pdfjs: any = (window as any).pdfjsLib;
-      if (!pdfjs) {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = '/pdf.min.js';
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Gagal memuat engine PDF reader'));
-          document.head.appendChild(script);
-        });
-        pdfjs = (window as any).pdfjsLib;
-      }
-
-      if (!pdfjs) {
-        throw new Error('PDF Engine tidak dapat diinisialisasi.');
-      }
-
-      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
-      const loadingTask = pdfjs.getDocument(pdf2DUrl);
-      const pdfDoc = await loadingTask.promise;
-      const total = pdfDoc.numPages || 1;
-      setPdfTotalPages(total);
-
-      if (total > 1) {
-        // If multi-page, prompt user to select which page
-        setShowPagePickerModal(true);
-      } else {
-        await renderPdfPageSnapshot(1);
-      }
-    } catch (err: any) {
-      console.error('Failed to capture PDF snapshot:', err);
-      alert(`Gagal memeriksa file PDF: ${err.message || 'Error server'}.`);
-    } finally {
-      setIsCapturingSnapshot(false);
-    }
+    const targetPage = pageToSnap || activePdfPage || 1;
+    await renderPdfPageSnapshot(targetPage);
   };
 
   const renderPdfPageSnapshot = async (pageNum: number) => {
@@ -205,7 +253,6 @@ export default function ReviewApprovalPage({ params }: PageProps) {
       const dataUrl = canvas.toDataURL('image/png');
       setSnapshotImage(dataUrl);
       setSelectedSnapshotPage(safePage);
-      setShowPagePickerModal(false);
       setShowSnapshotEditor(true);
     } catch (err: any) {
       console.error('Failed to render page snapshot:', err);
@@ -317,6 +364,157 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     }
   };
 
+  // Derive active files and items
+  const activeDocFromTable = fullItem?.documents?.slice().reverse().find((d: any) => d.loc2D || d.path2D);
+  const revWith2D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc2D || r.path2D);
+  const revWith3D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc3D || r.path3D);
+  const latestRev = revWith2D ?? revWith3D ?? fullItem?.revisionHistories?.[fullItem.revisionHistories.length - 1];
+  const targetPdf = activeDocFromTable?.loc2D || activeDocFromTable?.path2D || revWith2D?.loc2D || revWith2D?.path2D;
+  const target3D = revWith3D?.loc3D || revWith3D?.path3D;
+  const pdf2DUrl = targetPdf ? getFileUrl(targetPdf) : null;
+  const model3DUrl = target3D ? getFileUrl(target3D) : null;
+  const markupImgUrl = approval?.markupData || (approval?.annotatedDocPath ? getFileUrl(approval.annotatedDocPath) : null);
+  const item = fullItem ?? baseItem;
+
+  // Inspect PDF total pages automatically when PDF URL becomes available
+  useEffect(() => {
+    if (!pdf2DUrl) return;
+    let cancelled = false;
+    const inspectPdf = async () => {
+      try {
+        let pdfjs: any = (window as any).pdfjsLib;
+        if (!pdfjs) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = '/pdf.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Gagal load pdf reader'));
+            document.head.appendChild(script);
+          });
+          pdfjs = (window as any).pdfjsLib;
+        }
+        if (!pdfjs || cancelled) return;
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+        const doc = await pdfjs.getDocument(pdf2DUrl).promise;
+        if (!cancelled && doc) {
+          setPdfTotalPages(doc.numPages || 1);
+        }
+      } catch (err) {
+        console.warn('Gagal membaca info halaman PDF:', err);
+      }
+    };
+    inspectPdf();
+    return () => { cancelled = true; };
+  }, [pdf2DUrl]);
+
+  // Derived Revision Events (Chronological: latest first)
+  const revisionEvents = React.useMemo(() => {
+    const list: any[] = [];
+
+    // 1. Current approval cycle
+    if (approval) {
+      const isReject = approval.status === 'REJECTED' || approval.sectionStatus === 'REJECTED' || approval.deptStatus === 'REJECTED';
+      const isApprove = approval.status === 'APPROVED';
+      const isWaiting = approval.status === 'WAITING';
+
+      const drafterName = approval.submittedBy?.name || approval.author || 'Kukuh W.';
+      const reviewerName = approval.sectionStatus === 'REJECTED'
+        ? (approval.sectionHead?.name || 'M. Fariedl')
+        : approval.deptStatus === 'REJECTED'
+          ? (approval.deptHead?.name || 'Rahmat K.')
+          : approval.sectionHead?.name || approval.deptHead?.name || 'Section Head';
+
+      if (isReject) {
+        // Status sedang ditolak / diminta revisi oleh Approver
+        const revNote = approval.finalComment || approval.sectionComment || approval.deptComment || approval.note || 'Perlu perbaikan drawing';
+        const hasMarkup = !!(approval.markupData || approval.annotatedDocPath);
+        list.push({
+          id: `current_reject_${approval.id}`,
+          isCurrent: true,
+          revStatus: item?.revStatus ? `Rev ${item.revStatus}` : 'Aktif',
+          status: 'REJECTED',
+          date: approval.date || 'Saat ini',
+          dateShort: approval.date ? approval.date.slice(0, 5) : 'Kini',
+          requester: reviewerName,
+          requesterRole: approval.sectionStatus === 'REJECTED' ? 'Section Head' : 'Dept Head',
+          submitter: drafterName,
+          displayAuthor: reviewerName, // Diminta revisi oleh Approver (Sect/Dept)
+          eventType: 'REQUEST',
+          note: revNote,
+          hasMarkup,
+          markupImgUrl: hasMarkup ? (approval.markupData || (approval.annotatedDocPath ? getFileUrl(approval.annotatedDocPath) : null)) : null,
+          doc2D: targetPdf ? getFileUrl(targetPdf) : null,
+          doc3D: target3D ? getFileUrl(target3D) : null,
+        });
+      } else {
+        // Status sedang diajukan revisi baru oleh Drafter (WAITING) atau disetujui (APPROVED)
+        const drafterNote = approval.revisionNote || approval.note || (isApprove ? 'Desain telah disetujui' : 'Revisi drawing diajukan');
+        list.push({
+          id: `current_submit_${approval.id}`,
+          isCurrent: true,
+          revStatus: item?.revStatus ? `Rev ${item.revStatus}` : 'Aktif',
+          status: approval.status,
+          date: approval.date || 'Saat ini',
+          dateShort: approval.date ? approval.date.slice(0, 5) : 'Kini',
+          requester: reviewerName,
+          requesterRole: 'Approver',
+          submitter: drafterName,
+          displayAuthor: drafterName, // Diajukan oleh Drafter
+          eventType: 'SUBMIT',
+          note: drafterNote,
+          hasMarkup: false, // Drawing baru yang disubmit Drafter belum dicoret
+          markupImgUrl: null,
+          doc2D: targetPdf ? getFileUrl(targetPdf) : null,
+          doc3D: target3D ? getFileUrl(target3D) : null,
+        });
+      }
+    }
+
+    // 2. Archived revision histories from database
+    if (fullItem?.revisionHistories && fullItem.revisionHistories.length > 0) {
+      fullItem.revisionHistories.forEach((rh: any) => {
+        const hasMarkup = !!(rh.markupData || rh.annotatedDocPath);
+        const d = rh.createdAt ? new Date(rh.createdAt) : null;
+        const drafterName = rh.changedBy?.name || 'Kukuh W.';
+        const reviewerName = rh.requestedByName || rh.approvedByName || 'Section Head';
+        
+        // Pada arsip revisi yang memiliki catatan coretan atau feedback, tampilkan reviewer yang meminta revisi tersebut
+        const authorToShow = hasMarkup || rh.revisionNote ? reviewerName : drafterName;
+
+        list.push({
+          id: rh.id,
+          isCurrent: false,
+          revStatus: `Rev ${rh.revStatus || '0'}`,
+          status: 'ARCHIVED',
+          date: d ? d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+          dateShort: d ? `${d.getDate()}/${d.getMonth() + 1}` : '—',
+          requester: reviewerName,
+          requesterRole: 'Approver',
+          submitter: drafterName,
+          displayAuthor: authorToShow,
+          eventType: hasMarkup ? 'REQUEST' : 'SUBMIT',
+          note: rh.revisionNote || rh.description || 'Perubahan drawing',
+          hasMarkup,
+          markupImgUrl: rh.markupData || (rh.annotatedDocPath ? getFileUrl(rh.annotatedDocPath) : null),
+          doc2D: (rh.loc2D || rh.path2D) ? getFileUrl(rh.loc2D || rh.path2D) : null,
+          doc3D: (rh.loc3D || rh.path3D) ? getFileUrl(rh.loc3D || rh.path3D) : null,
+        });
+      });
+    }
+
+    return list;
+  }, [approval, fullItem, item, targetPdf, target3D]);
+
+  // Status mapping
+  const isPending = approval?.status === 'WAITING';
+  const isApproved = approval?.status === 'APPROVED';
+  const isRevised = approval?.status === 'REJECTED';
+
+  // Role permissions for decisions
+  const canDecideSec = user?.role === 'PE_SECTION_HEAD' && approval?.sectionStatus === 'WAITING' && isPending;
+  const canDecideDept = user?.role === 'PE_DEPT_HEAD' && approval?.sectionStatus === 'APPROVED' && approval?.deptStatus === 'WAITING' && isPending;
+  const canDecide = canDecideSec || canDecideDept;
+
   if (isLoading || loadingApproval) {
     return (
       <div className="flex-1 flex items-center justify-center p-6 bg-white">
@@ -341,34 +539,21 @@ export default function ReviewApprovalPage({ params }: PageProps) {
     );
   }
 
-  // Derive active files
-  const activeDocFromTable = fullItem?.documents?.slice().reverse().find((d: any) => d.loc2D || d.path2D);
-  const revWith2D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc2D || r.path2D);
-  const revWith3D = fullItem?.revisionHistories?.slice().reverse().find((r) => r.loc3D || r.path3D);
-  const latestRev = revWith2D ?? revWith3D ?? fullItem?.revisionHistories?.[fullItem.revisionHistories.length - 1];
-  const targetPdf = activeDocFromTable?.loc2D || activeDocFromTable?.path2D || revWith2D?.loc2D || revWith2D?.path2D;
-  const target3D = revWith3D?.loc3D || revWith3D?.path3D;
-  const pdf2DUrl = targetPdf ? getFileUrl(targetPdf) : null;
-  const model3DUrl = target3D ? getFileUrl(target3D) : null;
-  const markupImgUrl = approval?.markupData || (approval?.annotatedDocPath ? getFileUrl(approval.annotatedDocPath) : null);
-  const item = fullItem ?? baseItem;
-
-  // Status mapping
-  const isPending = approval.status === 'WAITING';
-  const isApproved = approval.status === 'APPROVED';
-  const isRevised = approval.status === 'REJECTED';
-
-  // Role permissions for decisions
-  const canDecideSec = user?.role === 'PE_SECTION_HEAD' && approval.sectionStatus === 'WAITING' && isPending;
-  const canDecideDept = user?.role === 'PE_DEPT_HEAD' && approval.sectionStatus === 'APPROVED' && approval.deptStatus === 'WAITING' && isPending;
-  const canDecide = canDecideSec || canDecideDept;
-
   return (
     <div className="flex-1 flex flex-col px-4 pb-4 pt-2 bg-white h-full overflow-hidden relative">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-xl z-50 animate-fade-in">
-          {toastMessage}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gray-900/95 backdrop-blur-xs text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200 flex items-center gap-2.5 border border-gray-700/60 max-w-lg">
+          <span className="material-symbols-outlined text-emerald-400 text-base shrink-0">check_circle</span>
+          <span className="leading-snug">{toastMessage}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="ml-1 text-gray-400 hover:text-white rounded-md p-0.5 transition-colors cursor-pointer shrink-0"
+            title="Tutup"
+          >
+            <span className="material-symbols-outlined text-sm block">close</span>
+          </button>
         </div>
       )}
 
@@ -396,19 +581,59 @@ export default function ReviewApprovalPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Status Badge */}
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-[9.5px] font-bold px-2.5 py-1 rounded-full border ${
-              isApproved
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : isRevised
-                ? 'bg-rose-50 text-rose-700 border-rose-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}
+        {/* ─── ALUR SIMPLE DOT (APPROVAL DRAFTER, SECT, DEPT) ─── */}
+        <div className="flex items-center gap-2 bg-slate-50 border border-gray-200 px-3 py-1 rounded-full shadow-3xs">
+          {/* Drafter */}
+          <div className="flex items-center gap-1.5" title={`Drafter: ${approval.author} (Diajukan)`}>
+            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-2xs" />
+            <span className="text-[8.5px] font-bold text-gray-700">Drafter</span>
+          </div>
+
+          <div className="w-2.5 h-px bg-gray-300" />
+
+          {/* Section Head */}
+          <div
+            className="flex items-center gap-1.5"
+            title={`Section Head: ${approval.sectionHead?.name || 'Section Head'} (${approval.sectionStatus === 'APPROVED' ? 'Disetujui' : approval.sectionStatus === 'REJECTED' ? 'Perlu Revisi' : 'Menunggu'
+              })`}
           >
-            {isApproved ? 'Disetujui' : isRevised ? 'Perlu Revisi' : 'Menunggu Persetujuan'}
-          </span>
+            <div
+              className={`w-2 h-2 rounded-full ${approval.sectionStatus === 'APPROVED'
+                ? 'bg-emerald-500'
+                : approval.sectionStatus === 'REJECTED'
+                  ? 'bg-rose-500 animate-pulse'
+                  : 'bg-amber-400'
+                } shadow-2xs`}
+            />
+            <span className="text-[8.5px] font-bold text-gray-700">Sect</span>
+          </div>
+
+          <div className="w-2.5 h-px bg-gray-300" />
+
+          {/* Dept Head */}
+          <div
+            className="flex items-center gap-1.5"
+            title={`Dept Head: ${approval.deptHead?.name || 'Dept Head'} (${approval.deptStatus === 'APPROVED'
+              ? 'Disetujui'
+              : approval.deptStatus === 'REJECTED'
+                ? 'Perlu Revisi'
+                : approval.sectionStatus === 'APPROVED'
+                  ? 'Menunggu'
+                  : 'Antre'
+              })`}
+          >
+            <div
+              className={`w-2 h-2 rounded-full ${approval.deptStatus === 'APPROVED'
+                ? 'bg-emerald-500'
+                : approval.deptStatus === 'REJECTED'
+                  ? 'bg-rose-500 animate-pulse'
+                  : approval.sectionStatus === 'APPROVED'
+                    ? 'bg-amber-400'
+                    : 'bg-gray-300'
+                } shadow-2xs`}
+            />
+            <span className="text-[8.5px] font-bold text-gray-700">Dept</span>
+          </div>
         </div>
       </header>
 
@@ -419,62 +644,70 @@ export default function ReviewApprovalPage({ params }: PageProps) {
         <div className="flex-1 flex flex-col min-w-0 border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
           {/* Top Viewer Toolbar */}
           <div className="h-9 flex items-center justify-between px-2.5 border-b border-gray-200 bg-white shrink-0">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPreviewMode('2D')}
-                className={`flex items-center gap-1 px-2.5 h-7 text-[10px] font-bold rounded-md transition-all ${
-                  previewMode === '2D'
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPreviewMode('2D')}
+                  className={`flex items-center gap-1 px-2.5 h-7 text-[10px] font-bold rounded-md transition-all ${previewMode === '2D'
                     ? 'bg-blue-50 text-blue-700'
                     : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[13px]">picture_as_pdf</span>
-                2D Drawing
-              </button>
-              <button
-                onClick={() => setPreviewMode('3D')}
-                className={`flex items-center gap-1 px-2.5 h-7 text-[10px] font-bold rounded-md transition-all ${
-                  previewMode === '3D'
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[13px]">deployed_code</span>
-                3D Model
-              </button>
-            </div>
-
-            {/* Drawing Markup Controls (Only when saved markup exists) */}
-            {previewMode === '2D' && markupImgUrl && (
-              <div className="flex items-center gap-1.5">
-                {/* Saved Markup Toggle for Drawer or Reviewer */}
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewingSavedSnapshot(!viewingSavedSnapshot)}
-                    className={`px-2.5 py-1 rounded-lg text-[9.5px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                      viewingSavedSnapshot
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
                     }`}
-                    title="Lihat snapshot gambar yang telah diberi coretan & pin tanda oleh approver"
-                  >
-                    <span className="material-symbols-outlined text-[13px]">
-                      {viewingSavedSnapshot ? 'picture_as_pdf' : 'draw'}
-                    </span>
-                    <span>{viewingSavedSnapshot ? 'Buka PDF Asli' : 'Lihat Coretan Revisi'}</span>
-                  </button>
+                >
+                  <span className="material-symbols-outlined text-[13px]">picture_as_pdf</span>
+                  2D Drawing
+                </button>
+                <button
+                  onClick={() => setPreviewMode('3D')}
+                  className={`flex items-center gap-1 px-2.5 h-7 text-[10px] font-bold rounded-md transition-all ${previewMode === '3D'
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                    }`}
+                >
+                  <span className="material-symbols-outlined text-[13px]">deployed_code</span>
+                  3D Model
+                </button>
+              </div>
 
+              {/* In-Viewer Direct Page Navigation (No popup modal needed!) */}
+              {previewMode === '2D' && pdfTotalPages > 1 && !viewingSavedSnapshot && (
+                <div className="flex items-center gap-1 bg-gray-100 border border-gray-250 rounded-lg p-0.5">
                   <button
                     type="button"
-                    onClick={() => setLightboxImg(markupImgUrl)}
-                    className="px-2 py-1 rounded-lg text-[9.5px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 cursor-pointer"
-                    title="Buka gambar coretan resolusi penuh (Lightbox)"
+                    disabled={activePdfPage <= 1}
+                    onClick={() => setActivePdfPage((p) => Math.max(1, p - 1))}
+                    className="w-5 h-5 rounded flex items-center justify-center hover:bg-white text-gray-600 disabled:opacity-30 cursor-pointer transition-colors"
+                    title="Halaman Sebelumnya"
                   >
-                    <span className="material-symbols-outlined text-[13px]">fullscreen</span>
-                    <span>Perbesar</span>
+                    <span className="material-symbols-outlined text-[13px]">chevron_left</span>
+                  </button>
+                  <span className="text-[9px] font-mono font-bold text-gray-700 px-1 select-none">
+                    Hal <strong className="text-blue-600">{activePdfPage}</strong> / {pdfTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={activePdfPage >= pdfTotalPages}
+                    onClick={() => setActivePdfPage((p) => Math.min(pdfTotalPages, p + 1))}
+                    className="w-5 h-5 rounded flex items-center justify-center hover:bg-white text-gray-600 disabled:opacity-30 cursor-pointer transition-colors"
+                    title="Halaman Berikutnya"
+                  >
+                    <span className="material-symbols-outlined text-[13px]">chevron_right</span>
                   </button>
                 </div>
+              )}
+            </div>
+
+            {/* Drawing Markup Controls (Only when saved markup exists and viewing snapshot) */}
+            {previewMode === '2D' && markupImgUrl && viewingSavedSnapshot && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setLightboxImg(markupImgUrl)}
+                  className="px-2 py-1 rounded-lg text-[9.5px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 cursor-pointer"
+                  title="Buka gambar coretan resolusi penuh (Lightbox)"
+                >
+                  <span className="material-symbols-outlined text-[13px]">fullscreen</span>
+                  <span>Perbesar</span>
+                </button>
               </div>
             )}
           </div>
@@ -484,48 +717,23 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             {previewMode === '2D' ? (
               viewingSavedSnapshot && markupImgUrl ? (
                 /* Viewing Saved Annotated Snapshot */
-                <div className="relative w-full h-full flex flex-col items-center justify-between p-3 bg-slate-900/95 overflow-auto">
-                  <div className="w-full flex items-center justify-between pb-2 border-b border-slate-700 text-white shrink-0">
-                    <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-rose-400">draw</span>
-                      Snapshot Coretan &amp; Pin Penanda Revisi
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setLightboxImg(markupImgUrl)}
-                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-xs">fullscreen</span>
-                        <span>Ukuran Penuh</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setViewingSavedSnapshot(false)}
-                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <span>Tutup &amp; Lihat PDF</span>
-                        <span className="material-symbols-outlined text-xs">close</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex-1 flex items-center justify-center p-2 min-h-0 w-full">
-                    <img
-                      src={markupImgUrl}
-                      alt="Coretan Revisi"
-                      onClick={() => setLightboxImg(markupImgUrl)}
-                      className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl border border-slate-700 bg-white cursor-zoom-in"
-                      title="Klik untuk melihat ukuran penuh"
-                    />
-                  </div>
+                <div className="relative w-full h-full flex items-center justify-center bg-slate-900/95 overflow-auto p-2">
+                  <img
+                    src={markupImgUrl}
+                    alt="Coretan Revisi"
+                    onClick={() => setLightboxImg(markupImgUrl)}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-slate-700 bg-white cursor-zoom-in"
+                    title="Klik untuk melihat ukuran penuh"
+                  />
                 </div>
               ) : pdf2DUrl ? (
-                /* Standard Clean PDF Iframe */
+                /* Standard Clean PDF Iframe with Direct Page Navigation */
                 <div className="relative w-full h-full">
                   <iframe
-                    src={`${pdf2DUrl}#navpanes=0&pagemode=none&view=FitH`}
+                    key={activePdfPage}
+                    src={`${pdf2DUrl}#page=${activePdfPage}&navpanes=0&pagemode=none&view=FitH`}
                     className="w-full h-full border-0"
-                    title="2D Drawing PDF"
+                    title={`2D Drawing PDF - Halaman ${activePdfPage}`}
                   />
                 </div>
               ) : markupImgUrl ? (
@@ -571,42 +779,41 @@ export default function ReviewApprovalPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* ── RIGHT: SPECIFICATIONS & 2-CHOICE DECISION FLOW ── */}
+        {/* ── RIGHT: DETAIL DRAWING, COMPACT REVISION HISTORY & DECISION FLOW ── */}
         <div className="w-80 flex flex-col gap-2.5 shrink-0 overflow-y-auto no-scrollbar">
 
           {/* Card 1: Drawing Specification */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden">
-            <div className="h-7 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[13px]">description</span>
+          <div className="flex flex-col bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden shrink-0">
+            <div className="h-6 px-2.5 bg-slate-100 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-gray-700">
                 Detail Drawing
-              </h3>
+              </span>
             </div>
-            <div className="p-3">
-              <div className="grid grid-cols-2 gap-y-2 gap-x-3 text-[10px]">
+            <div className="p-2.5">
+              <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10px]">
                 <div>
-                  <span className="text-[8.5px] text-gray-400 block font-medium">No. Registrasi</span>
-                  <span className="font-mono font-bold text-gray-800">{item?.noReg || approval.noReg}</span>
+                  <span className="text-[8px] text-gray-400 block font-medium uppercase">No. Registrasi</span>
+                  <span className="font-mono font-bold text-gray-800 text-[9.5px] truncate block">{item?.noReg || approval.noReg}</span>
                 </div>
                 <div>
-                  <span className="text-[8.5px] text-gray-400 block font-medium">Versi</span>
-                  <span className="font-bold text-gray-800">Rev {item?.revStatus || '0'}</span>
+                  <span className="text-[8px] text-gray-400 block font-medium uppercase">Versi</span>
+                  <span className="font-bold text-gray-800 text-[9.5px]">Rev {item?.revStatus || '0'}</span>
                 </div>
                 <div>
-                  <span className="text-[8.5px] text-gray-400 block font-medium">Line Produk</span>
-                  <span className="font-semibold text-gray-700 truncate block">{item?.lineProduct || '—'}</span>
+                  <span className="text-[8px] text-gray-400 block font-medium uppercase">Line Produk</span>
+                  <span className="font-semibold text-gray-700 truncate block text-[9.5px]">{item?.lineProduct || '—'}</span>
                 </div>
                 <div>
-                  <span className="text-[8.5px] text-gray-400 block font-medium">Proses</span>
-                  <span className="font-semibold text-gray-700 truncate block">{item?.process || '—'}</span>
+                  <span className="text-[8px] text-gray-400 block font-medium uppercase">Proses</span>
+                  <span className="font-semibold text-gray-700 truncate block text-[9.5px]">{item?.process || '—'}</span>
                 </div>
               </div>
 
               {/* Submitter's Note */}
               {approval.note && (
-                <div className="mt-2.5 pt-2 border-t border-gray-100">
+                <div className="mt-2 pt-1.5 border-t border-gray-100">
                   <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">Catatan Pengajuan</span>
-                  <p className="text-[9.5px] text-gray-600 italic bg-gray-50 p-2 rounded-lg border border-gray-150 leading-relaxed">
+                  <p className="text-[9px] text-gray-600 italic bg-gray-50 p-1.5 rounded-lg border border-gray-150 leading-relaxed break-words" title={approval.note}>
                     &ldquo;{approval.note}&rdquo;
                   </p>
                 </div>
@@ -614,151 +821,68 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Card 2: Sequential Stepper (Section Head -> Dept Head) */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden">
-            <div className="h-7 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[13px]">timeline</span>
-                Alur Persetujuan
-              </h3>
+          {/* Card 2: SANGAT COMPACT TABLE REVISION HISTORY LISTING */}
+          <div className="flex flex-col bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden shrink-0">
+            <div className="h-6 px-2.5 bg-slate-100 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center text-gray-700">
+                <span className="text-[9.5px] font-bold uppercase tracking-wider">Histori Event Revisi</span>
+              </div>
+              <span className="text-[8.5px] font-mono text-gray-400 font-bold">
+                {revisionEvents.length} event
+              </span>
             </div>
 
-            <div className="p-3 space-y-2 text-[10px]">
-              {/* Section Head Stage */}
-              <div className="flex items-start gap-2.5 p-2 rounded-lg bg-gray-50 border border-gray-150">
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white ${
-                    approval.sectionStatus === 'APPROVED'
-                      ? 'bg-emerald-500'
-                      : approval.sectionStatus === 'REJECTED'
-                      ? 'bg-rose-500'
-                      : 'bg-amber-400'
-                  }`}
-                >
-                  {approval.sectionStatus === 'APPROVED' ? '✓' : approval.sectionStatus === 'REJECTED' ? '✕' : '1'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-800">Section Head</span>
-                    <span
-                      className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
-                        approval.sectionStatus === 'APPROVED'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : approval.sectionStatus === 'REJECTED'
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      {approval.sectionStatus === 'APPROVED'
-                        ? 'Disetujui'
-                        : approval.sectionStatus === 'REJECTED'
-                        ? 'Perlu Revisi'
-                        : 'Menunggu'}
-                    </span>
-                  </div>
-                  <p className="text-[9px] text-gray-500 mt-0.5">
-                    {approval.sectionHead?.name || 'Menunggu verifikasi'}
-                  </p>
-                  {approval.sectionComment && (
-                    <p className="text-[9px] text-gray-700 italic mt-1 bg-white p-1.5 rounded border border-gray-200 leading-snug">
-                      &ldquo;{approval.sectionComment}&rdquo;
-                    </p>
-                  )}
+            <div>
+              {revisionEvents.length === 0 ? (
+                <div className="p-3 text-center text-gray-400 text-[9px] italic">
+                  Belum ada event revisi tercatat.
                 </div>
-              </div>
-
-              {/* Dept Head Stage */}
-              <div className="flex items-start gap-2.5 p-2 rounded-lg bg-gray-50 border border-gray-150">
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white ${
-                    approval.deptStatus === 'APPROVED'
-                      ? 'bg-emerald-500'
-                      : approval.deptStatus === 'REJECTED'
-                      ? 'bg-rose-500'
-                      : approval.sectionStatus === 'APPROVED'
-                      ? 'bg-amber-400'
-                      : 'bg-gray-300'
-                  }`}
-                >
-                  {approval.deptStatus === 'APPROVED' ? '✓' : approval.deptStatus === 'REJECTED' ? '✕' : '2'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-gray-800">Dept Head</span>
-                    <span
-                      className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
-                        approval.deptStatus === 'APPROVED'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : approval.deptStatus === 'REJECTED'
-                          ? 'bg-rose-100 text-rose-700'
-                          : approval.sectionStatus === 'APPROVED'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-gray-200 text-gray-500'
-                      }`}
-                    >
-                      {approval.deptStatus === 'APPROVED'
-                        ? 'Disetujui'
-                        : approval.deptStatus === 'REJECTED'
-                        ? 'Perlu Revisi'
-                        : approval.sectionStatus === 'APPROVED'
-                        ? 'Menunggu'
-                        : 'Antre'}
-                    </span>
-                  </div>
-                  <p className="text-[9px] text-gray-500 mt-0.5">
-                    {approval.deptHead?.name || (approval.sectionStatus === 'APPROVED' ? 'Menunggu verifikasi' : 'Menunggu Section Head')}
-                  </p>
-                  {approval.deptComment && (
-                    <p className="text-[9px] text-gray-700 italic mt-1 bg-white p-1.5 rounded border border-gray-200 leading-snug">
-                      &ldquo;{approval.deptComment}&rdquo;
-                    </p>
-                  )}
-                </div>
-              </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-[9px] table-fixed">
+                  <thead>
+                    <tr className="bg-slate-50 text-gray-500 font-semibold border-b border-gray-200 text-[8px] uppercase select-none">
+                      <th className="px-1.5 py-1 w-[40px]">Rev</th>
+                      <th className="px-1.5 py-1 w-[44px]">Tgl</th>
+                      <th className="px-1.5 py-1 w-[58px]">Oleh</th>
+                      <th className="px-1.5 py-1">Deskripsi Revisi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-gray-700">
+                    {revisionEvents.map((ev) => (
+                      <tr
+                        key={ev.id}
+                        onClick={() => setSelectedRevisionDetail(ev)}
+                        className={`hover:bg-blue-50/80 cursor-pointer transition-colors ${ev.isCurrent && isRevised ? 'bg-rose-50/40' : ''
+                          }`}
+                        title="Klik untuk melihat detail lengkap revisi & coretan"
+                      >
+                        <td className="px-1.5 py-1.5 font-mono font-bold text-blue-600 truncate text-[9px] align-top">
+                          {ev.revStatus}
+                        </td>
+                        <td className="px-1.5 py-1.5 text-gray-400 whitespace-nowrap text-[8px] align-top">
+                          {ev.dateShort}
+                        </td>
+                        <td className="px-1.5 py-1.5 font-medium text-gray-800 text-[8.5px] break-words align-top" title={ev.displayAuthor || ev.submitter}>
+                          {ev.displayAuthor || ev.submitter}
+                        </td>
+                        <td className="px-1.5 py-1.5 text-gray-600 text-[8.5px] break-words leading-tight align-top" title={ev.note}>
+                          {ev.note || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
 
-          {/* Card 3: Feedback Revisi Aktif (Jika status REJECTED) */}
-          {isRevised && (
-            <div className="flex flex-col bg-rose-50/50 border border-rose-300 rounded-xl shadow-xs overflow-hidden">
-              <div className="h-7 px-3 bg-rose-600 text-white flex items-center justify-between shrink-0">
-                <h3 className="text-[10px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[13px]">assignment_late</span>
-                  Catatan Revisi dari Approver
-                </h3>
-              </div>
-              <div className="p-3 space-y-2">
-                <p className="text-[10px] text-rose-900 bg-white/90 p-2 rounded-lg border border-rose-200 font-medium leading-relaxed">
-                  {approval.finalComment || approval.sectionComment || approval.deptComment || 'Drawing memerlukan perbaikan.'}
-                </p>
-                {markupImgUrl && (
-                  <p className="text-[9px] text-rose-700 flex items-center gap-1 font-semibold">
-                    <span className="material-symbols-outlined text-[13px]">draw</span>
-                    <span>Terdapat coretan penanda revisi pada gambar di sebelah kiri.</span>
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Card 4: Action Decision Panel (HANYA 2 PILIHAN UNTUK APPROVE / REVISI) */}
-          <div className="flex flex-col bg-white border border-blue-200/60 rounded-xl shadow-xs overflow-hidden mt-auto">
-            <div className="h-7 px-3 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[13px]">gavel</span>
-                Keputusan ({user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'})
-              </h3>
-            </div>
-            <div className="p-3 space-y-2">
+          {/* Action Decision Buttons (HANYA TOMBOL) */}
+          <div className="mt-auto shrink-0 pt-1">
             {canDecide ? (
-              <div className="space-y-2">
-                <p className="text-[8.5px] font-bold uppercase text-gray-400 tracking-wider">
-                  Keputusan Verifikasi ({user?.role === 'PE_DEPT_HEAD' ? 'Dept Head' : 'Section Head'})
-                </p>
-
-                {/* HANYA 2 PILIHAN: SETUJUI / REVISI (SNAPSHOT & PIN) */}
+              <div className="space-y-1.5">
+                {/* HANYA 2 PILIHAN: ACC (SETUJUI) & REVISI (PENA ICON) */}
                 <div className="grid grid-cols-2 gap-2">
-                  {/* Pilihan 1: Setujui */}
+                  {/* Pilihan 1: Setujui (ACC) */}
                   <button
                     type="button"
                     onClick={() => { setComment(''); setShowApproveModal(true); }}
@@ -768,12 +892,12 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                     <span>Setujui</span>
                   </button>
 
-                  {/* Pilihan 2: Revisi (Snapshot & Pin) */}
+                  {/* Pilihan 2: Revisi (Icon Pena & Teks Revisi) */}
                   <button
                     type="button"
                     onClick={() => {
                       if (pdf2DUrl) {
-                        handleTakeSnapshot();
+                        handleTakeSnapshot(activePdfPage);
                       } else {
                         setComment('');
                         setShowReviseModal(true);
@@ -783,9 +907,9 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                     className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[10.5px] font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-[15px]">
-                      {isCapturingSnapshot ? 'sync' : 'screenshot_monitor'}
+                      {isCapturingSnapshot ? 'sync' : 'edit'}
                     </span>
-                    <span>{isCapturingSnapshot ? 'Mengambil...' : 'Revisi (Snapshot)'}</span>
+                    <span>{isCapturingSnapshot ? 'Memuat...' : 'Revisi'}</span>
                   </button>
                 </div>
 
@@ -801,8 +925,7 @@ export default function ReviewApprovalPage({ params }: PageProps) {
               </div>
             ) : isRevised && isDrawer ? (
               /* DRAWER ACTION: UPLOAD REVISIAN BARU */
-              <div className="space-y-2">
-                <p className="text-[8.5px] font-bold uppercase text-gray-400 tracking-wider">Tindakan Drawer</p>
+              <div className="space-y-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -820,8 +943,8 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                 </p>
               </div>
             ) : isPending ? (
-              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center text-amber-800 text-[9.5px] font-semibold flex items-center justify-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px] text-amber-600">schedule</span>
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center text-amber-800 text-[9px] font-semibold flex items-center justify-center gap-1.5">
+                <span className="material-symbols-outlined text-[13px] text-amber-600">schedule</span>
                 <span>
                   {approval.sectionStatus === 'WAITING'
                     ? 'Menunggu verifikasi Section Head'
@@ -829,14 +952,32 @@ export default function ReviewApprovalPage({ params }: PageProps) {
                 </span>
               </div>
             ) : (
-              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-center text-gray-600 text-[9.5px] font-semibold flex items-center justify-center gap-1.5">
-                <span className="material-symbols-outlined text-[14px]">
-                  {isApproved ? 'verified' : 'cancel'}
-                </span>
-                <span>Proses selesai ({isApproved ? 'Disetujui' : 'Perlu Revisi'})</span>
+              <div className="space-y-1.5">
+                {markupImgUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setViewingSavedSnapshot(!viewingSavedSnapshot)}
+                    className={`w-full py-2 px-3 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-3xs ${viewingSavedSnapshot
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
+                      : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300'
+                      }`}
+                    title="Lihat snapshot gambar yang telah diberi coretan & pin tanda oleh approver"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {viewingSavedSnapshot ? 'picture_as_pdf' : 'draw'}
+                    </span>
+                    <span>{viewingSavedSnapshot ? 'Buka PDF Asli' : 'Lihat Coretan Revisi'}</span>
+                  </button>
+                )}
+
+                <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-center text-gray-600 text-[9px] font-semibold flex items-center justify-center gap-1.5">
+                  <span className="material-symbols-outlined text-[13px]">
+                    {isApproved ? 'verified' : 'cancel'}
+                  </span>
+                  <span>Proses selesai ({isApproved ? 'Disetujui' : 'Perlu Revisi'})</span>
+                </div>
               </div>
             )}
-            </div>
           </div>
 
         </div>
@@ -888,8 +1029,8 @@ export default function ReviewApprovalPage({ params }: PageProps) {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <form onSubmit={handleReviseSubmit} className="max-w-sm w-full bg-white rounded-2xl p-5 text-gray-800 shadow-2xl border border-gray-200">
             <h3 className="font-bold text-xs text-amber-700 mb-1 flex items-center gap-1.5 border-b border-gray-100 pb-2">
-              <span className="material-symbols-outlined text-[16px]">history_edu</span>
-              Permintaan Revisi Dokumen
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+              Revisi Dokumen
             </h3>
             <p className="text-[9.5px] text-gray-600 my-2 leading-relaxed">
               Tuliskan catatan perbaikan atau ambil snapshot drawing untuk menandai bagian yang perlu direvisi secara visual dengan pin (📍) dan coretan.
@@ -898,19 +1039,19 @@ export default function ReviewApprovalPage({ params }: PageProps) {
             {pdf2DUrl && (
               <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg mb-2 text-[9px] text-amber-900 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[15px] text-amber-600 shrink-0">screenshot_monitor</span>
+                  <span className="material-symbols-outlined text-[15px] text-amber-600 shrink-0">draw</span>
                   <span className="font-medium">Ingin menandai langsung pada gambar drawing?</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setShowReviseModal(false);
-                    handleTakeSnapshot();
+                    handleTakeSnapshot(activePdfPage);
                   }}
                   className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[8.5px] font-bold cursor-pointer shrink-0 flex items-center gap-1 shadow-2xs"
                 >
-                  <span className="material-symbols-outlined text-[12px]">draw</span>
-                  <span>Snapshot &amp; Pin</span>
+                  <span className="material-symbols-outlined text-[12px]">edit</span>
+                  <span>Coretan &amp; Pin</span>
                 </button>
               </div>
             )}
@@ -1048,66 +1189,186 @@ export default function ReviewApprovalPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* ─── MODAL: PILIH HALAMAN DRAWING (UNTUK MULTI-PAGE PDF) ─── */}
-      {showPagePickerModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="bg-white border border-gray-300 rounded-2xl w-full max-w-sm overflow-hidden flex flex-col shadow-2xl relative text-gray-800">
-            {/* Header Standar App */}
-            <div className="h-9 px-3.5 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-              <h3 className="font-bold text-xs flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px]">auto_stories</span>
-                Pilih Halaman Drawing
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowPagePickerModal(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg w-6 h-6 flex items-center justify-center font-bold text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 space-y-3">
-              <p className="text-[10px] text-gray-500 leading-relaxed">
-                Drawing PDF ini memiliki <strong className="text-gray-800 font-bold">{pdfTotalPages} lembar halaman</strong>. Pilih lembar gambar yang ingin diambil snapshot untuk diberi tanda revisi:
-              </p>
-
-              <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                {Array.from({ length: pdfTotalPages }, (_, i) => i + 1).map((pageNum) => (
-                  <button
-                    key={pageNum}
-                    type="button"
-                    disabled={isCapturingSnapshot}
-                    onClick={() => renderPdfPageSnapshot(pageNum)}
-                    className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer text-center group ${
-                      selectedSnapshotPage === pageNum
-                        ? 'border-[#0063ff] bg-blue-50/70 text-[#0063ff] shadow-xs ring-1 ring-[#0063ff]'
-                        : 'border-gray-200 bg-gray-50 hover:bg-blue-50/40 hover:border-blue-300 text-gray-700'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-2xl text-[#0063ff] group-hover:scale-110 transition-transform">
-                      picture_as_pdf
+      {/* ─── MODAL: DETAIL REVISION HISTORY LENGKAP DENGAN CORETAN & DESC PIN TERPISAH ─── */}
+      {selectedRevisionDetail && (() => {
+        const parsedNotes = parseRevisionNotes(selectedRevisionDetail.note);
+        return (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border border-gray-200 text-gray-800">
+              {/* Header */}
+              <div className="h-9 px-4 bg-slate-100 border-b border-gray-200 text-gray-800 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-xs flex items-center gap-1.5 text-gray-800">
+                    <span>Detail Revisi —</span>
+                    <span className="font-mono bg-white border border-gray-300 text-blue-600 px-2 py-0.5 rounded text-[10.5px] font-bold">
+                      {selectedRevisionDetail.revStatus}
                     </span>
-                    <span className="text-[11px] font-bold">Halaman {pageNum}</span>
-                    <span className="text-[8.5px] text-gray-400">Lembar ke-{pageNum}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="pt-2 border-t border-gray-150 flex justify-end">
+                  </h3>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowPagePickerModal(false)}
-                  className="w-full py-1.5 border border-gray-300 text-gray-700 font-bold rounded-lg text-xs hover:bg-gray-100 transition-colors cursor-pointer"
+                  onClick={() => setSelectedRevisionDetail(null)}
+                  className="text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded-lg w-7 h-7 flex items-center justify-center font-bold text-sm cursor-pointer transition-colors"
+                  title="Tutup Modal"
                 >
-                  Batal
+                  ✕
                 </button>
+              </div>
+
+              {/* Body: 2 Kolom (Kiri: Preview Coretan Gambar, Kanan: Kolom Deskripsi Tiap Pin) */}
+              <div className="flex-1 flex flex-col md:flex-row overflow-hidden divide-y md:divide-y-0 md:divide-x divide-gray-200 min-h-0">
+
+                {/* ─── KOLOM KIRI: PREVIEW GAMBAR & CORETAN ─── */}
+                <div className="w-full md:w-7/12 flex flex-col bg-slate-950 overflow-hidden min-h-[280px]">
+                  <div className="flex-1 overflow-auto p-3 flex items-center justify-center bg-slate-950/90 relative">
+                    {selectedRevisionDetail.markupImgUrl ? (
+                      <img
+                        src={selectedRevisionDetail.markupImgUrl}
+                        alt="Coretan Visual Revisi"
+                        onClick={() => setLightboxImg(selectedRevisionDetail.markupImgUrl)}
+                        className="max-h-full max-w-full object-contain rounded-lg cursor-zoom-in hover:opacity-95 transition-opacity bg-white shadow-lg"
+                        title="Klik untuk memperbesar gambar"
+                      />
+                    ) : (
+                      <div className="p-6 text-center text-slate-500 text-[10.5px] flex flex-col items-center gap-1.5">
+                        <span className="material-symbols-outlined text-2xl text-slate-600">hide_image</span>
+                        <span>Tidak ada coretan visual pada event ini (revisi catatan teks saja).</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ─── KOLOM KANAN: DESKRIPSI TERPISAH TIAP PIN ─── */}
+                <div className="w-full md:w-5/12 flex flex-col bg-white overflow-hidden min-h-0">
+                  <div className="p-3.5 overflow-y-auto space-y-3 flex-1 text-[11px] no-scrollbar">
+
+                    {/* 1. Tracking Information Grid */}
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-gray-200">
+                      <div>
+                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                          Diminta Oleh
+                        </span>
+                        <span className="font-bold text-gray-800 flex items-center gap-1 mt-0.5 text-[9.5px] truncate">
+                          {selectedRevisionDetail.requester || 'Approver'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                          Diajukan Oleh
+                        </span>
+                        <span className="font-bold text-gray-800 flex items-center gap-1 mt-0.5 text-[9.5px] truncate">
+                          {selectedRevisionDetail.submitter || 'Kukuh W.'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                          Waktu / Tanggal
+                        </span>
+                        <span className="font-semibold text-gray-700 text-[9.5px]">
+                          {selectedRevisionDetail.date}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[8px] text-gray-400 font-bold uppercase tracking-wider block">
+                          Status Siklus
+                        </span>
+                        <span className={`font-bold text-[9.5px] ${selectedRevisionDetail.isCurrent ? 'text-amber-600' : 'text-gray-600'
+                          }`}>
+                          {selectedRevisionDetail.isCurrent ? 'Siklus Aktif' : 'Arsip Riwayat'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2. Catatan Pengantar / Umum (Jika Ada) */}
+                    {parsedNotes.generalNote && (
+                      <div>
+                        <label className="text-[8.5px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
+                          Catatan Umum Revisi
+                        </label>
+                        <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 text-[10px] leading-relaxed italic break-words">
+                          &ldquo;{parsedNotes.generalNote}&rdquo;
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. Daftar Kolom Deskripsi Tiap Pin (Terpisah per Pin) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[8.5px] font-mono text-gray-400 font-bold">
+                          {parsedNotes.pins.length > 0 ? `${parsedNotes.pins.length} Pin` : 'Tanpa Pin'}
+                        </span>
+                      </div>
+
+                      {parsedNotes.pins.length > 0 ? (
+                        <div className="space-y-2">
+                          {parsedNotes.pins.map((pin) => (
+                            <div
+                              key={pin.number}
+                              className="p-2.5 bg-rose-50/70 border border-rose-200/90 rounded-xl flex items-start gap-2.5 shadow-3xs hover:border-rose-300 transition-colors"
+                            >
+                              <div className="w-5 h-5 rounded-full bg-rose-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                                {pin.number}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[8.5px] font-bold text-rose-800 uppercase tracking-wider block mb-0.5">
+                                  Keterangan Pin #{pin.number}
+                                </span>
+                                <p className="text-[10px] text-gray-800 leading-snug break-words font-medium">
+                                  {pin.text || 'Periksa area penanda ini pada drawing.'}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        /* Fallback jika revisi teks manual tanpa nomor pin */
+                        <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-gray-800 text-[10px] leading-relaxed break-words font-medium">
+                          {selectedRevisionDetail.note || 'Tidak ada catatan perbaikan.'}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+
+                  {/* Action Buttons in Modal Footer */}
+                  <div className="p-2.5 border-t border-gray-150 bg-gray-50 flex gap-2 shrink-0">
+                    {selectedRevisionDetail.markupImgUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingSavedSnapshot(true);
+                          setSelectedRevisionDetail(null);
+                        }}
+                        className="flex-1 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#0063ff] border border-blue-200 font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1 text-[9.5px]"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">visibility</span>
+                        Tampilkan di Viewer Utama
+                      </button>
+                    )}
+
+                    {selectedRevisionDetail.doc2D && (
+                      <a
+                        href={selectedRevisionDetail.doc2D}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-1.5 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors flex items-center justify-center gap-1 text-[9.5px]"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">download</span>
+                        Unduh Drawing
+                      </a>
+                    )}
+                  </div>
+
+                </div>
+
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ─── MODAL 4: SNAPSHOT EDITOR (PIN & DRAWING MARKUP) ─── */}
       {showSnapshotEditor && snapshotImage && (

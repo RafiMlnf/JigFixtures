@@ -172,6 +172,12 @@ model RevisionHistory {
   path2D         String?  @map("2d_path")
   loc2D          String?  @map("2d_loc")
 
+  annotatedDocPath String?  @map("annotated_doc_path")
+  markupData       String?  @map("markup_data")
+  requestedByName  String?  @map("requested_by_name")
+  requestedAt      DateTime? @map("requested_at")
+  revisionNote     String?  @map("revision_note")
+
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@map("revision_history")

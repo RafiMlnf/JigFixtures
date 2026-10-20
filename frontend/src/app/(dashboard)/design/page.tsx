@@ -29,6 +29,11 @@ interface RevHistoryInfo {
   loc2D: string | null;
   path3D: string | null;
   loc3D: string | null;
+  annotatedDocPath?: string | null;
+  markupData?: string | null;
+  requestedByName?: string | null;
+  requestedAt?: string | null;
+  revisionNote?: string | null;
 }
 
 interface AbnormalityInfo {
@@ -283,6 +288,10 @@ export function DesignPageContent() {
   const [isGlobalRevisionDropdownOpen, setIsGlobalRevisionDropdownOpen] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<MasterItem | null>(null);
+
+  // Revision History Modal & Lightbox
+  const [historyModalItem, setHistoryModalItem] = useState<MasterItem | null>(null);
+  const [historyLightboxImg, setHistoryLightboxImg] = useState<string | null>(null);
 
   // ChildPart expand and modal state
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -1194,7 +1203,18 @@ export function DesignPageContent() {
         {loading ? (
           <TableSkeleton rows={8} cols={10} compact />
         ) : (
-          <table className="w-full text-left border-collapse text-[10px] table-fixed">
+          <table className="w-full min-w-[750px] text-left border-collapse text-[10px] table-fixed">
+            <colgroup>
+              <col className="w-[34px]" />
+              <col className="w-[38px]" />
+              <col className="w-[125px]" />
+              <col className="w-[160px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[50px]" />
+              <col className="w-[85px]" />
+              <col className="w-[80px]" />
+            </colgroup>
             <thead>
               <tr className="bg-slate-50/90 text-gray-500 font-semibold border-b border-gray-200 sticky top-0 z-10 text-[9px] uppercase tracking-wider whitespace-nowrap select-none">
                 {/* Multi-select checkbox column */}
@@ -1211,15 +1231,15 @@ export function DesignPageContent() {
                   </div>
                 </th>
                 <th className="px-1.5 py-1 text-center w-[38px]">No</th>
-                <th className="px-2 py-1 w-[115px]">No. Reg</th>
-                <th className="px-2 py-1 w-[140px]">Assy Part Name</th>
-                <th className="px-2 py-1 w-[85px]">Line</th>
-                <th className="px-2 py-1 w-[85px]">OP</th>
-                <th className="px-1 py-1 text-center w-[45px]">Type</th>
-                <th className="px-1 py-1 text-center w-[75px]">
+                <th className="px-2 py-1 w-[125px]">No. Reg</th>
+                <th className="px-2 py-1 w-[160px]">Assy Part Name</th>
+                <th className="px-2 py-1 w-[90px]">Line</th>
+                <th className="px-2 py-1 w-[90px]">OP</th>
+                <th className="px-1 py-1 text-center w-[50px]">Type</th>
+                <th className="px-1 py-1 text-center w-[85px]">
                   Approval
                 </th>
-                <th className="px-1.5 py-1 text-center w-[65px]">Aksi</th>
+                <th className="px-1.5 py-1 text-center w-[80px]">Aksi</th>
               </tr>
             </thead>
             <tbody className="text-gray-700 divide-y divide-gray-100">
@@ -1320,7 +1340,19 @@ export function DesignPageContent() {
                       </td>
 
                       <td className="px-1 py-0.5 text-center truncate" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-0.5">
+                        <div className="flex items-center justify-center gap-1">
+                          {/* Tombol Lihat Riwayat Revisi (Tersedia untuk semua user) */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHistoryModalItem(item);
+                            }}
+                            className="text-gray-400 hover:text-blue-600 p-0.5 hover:bg-blue-50 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                            title={`Lihat Riwayat Revisi (${item.revisionHistories?.length || 0} event)`}
+                          >
+                            <span className="material-symbols-outlined text-[13px]">history</span>
+                          </button>
+
                           {isPic && (
                             <>
                               <button
@@ -1352,7 +1384,7 @@ export function DesignPageContent() {
                     {/* ChildPart Expanded Sub-Row */}
                     {isExpanded && (
                       <tr className="bg-slate-50/80">
-                        <td colSpan={10} className="px-4 py-3">
+                        <td colSpan={9} className="px-4 py-3">
                           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                             {/* Sub-header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-150">
@@ -1487,7 +1519,7 @@ export function DesignPageContent() {
               })}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     Tidak ada data master Jig &amp; Fixture yang cocok dengan filter pencarian.
                   </td>
                 </tr>
@@ -2951,6 +2983,298 @@ export function DesignPageContent() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: RIWAYAT REVISI LENGKAP (TABEL POP UP PANJANG) ─── */}
+      {historyModalItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setHistoryModalItem(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white flex items-center justify-between shrink-0 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
+                  <span className="material-symbols-outlined text-[18px]">history</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold tracking-tight text-white">
+                      Riwayat Revisi Dokumen & Coretan
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/30 text-blue-200 border border-blue-400/40">
+                      {historyModalItem.noReg}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-medium truncate max-w-xl">
+                    {historyModalItem.assyPartName} &bull; Line: {historyModalItem.lineProduct || '-'} &bull; OP: {historyModalItem.process || '-'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium text-slate-400 bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
+                  Total {historyModalItem.revisionHistories?.length || 0} Revisi Tercatat
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setHistoryModalItem(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Tutup (Esc)"
+                >
+                  <span className="material-symbols-outlined text-lg">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body: Long Table Container */}
+            <div className="flex-1 overflow-x-auto overflow-y-auto p-4 bg-slate-50">
+              {(!historyModalItem.revisionHistories || historyModalItem.revisionHistories.length === 0) ? (
+                <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mx-auto mb-3">
+                    <span className="material-symbols-outlined text-2xl">description</span>
+                  </div>
+                  <h4 className="text-sm font-bold text-gray-700">Belum Ada Riwayat Revisi</h4>
+                  <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+                    Drawing ini masih berstatus rilis awal (Rev 0) dan belum memiliki catatan pengajuan revisi atau approval sebelumnya.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-3xs overflow-hidden">
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100/90 text-gray-600 font-bold border-b border-gray-200 text-[10px] uppercase tracking-wider whitespace-nowrap sticky top-0 z-10 select-none">
+                        <th className="px-3 py-2 text-center w-[60px]">Rev</th>
+                        <th className="px-3 py-2 w-[120px]">Tanggal</th>
+                        <th className="px-3 py-2 w-[140px]">Diminta Oleh</th>
+                        <th className="px-3 py-2 w-[140px]">Disetujui Oleh</th>
+                        <th className="px-3 py-2 min-w-[240px]">Catatan / Deskripsi Revisi</th>
+                        <th className="px-3 py-2 text-center w-[130px]">Coretan Visual</th>
+                        <th className="px-3 py-2 text-center w-[130px]">File Drawing</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-150 text-gray-700">
+                      {historyModalItem.revisionHistories.map((rev, rIdx) => {
+                        const d = rev.createdAt ? new Date(rev.createdAt) : null;
+                        const dateFormatted = d
+                          ? d.toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—';
+
+                        const markupSrc = rev.markupData || (rev.annotatedDocPath ? getFileUrl(rev.annotatedDocPath) : null);
+                        const file2DUrl = rev.loc2D || rev.path2D ? getFileUrl(rev.loc2D || rev.path2D) : null;
+                        const file3DUrl = rev.loc3D || rev.path3D ? getFileUrl(rev.loc3D || rev.path3D) : null;
+                        const hasMarkup = !!markupSrc;
+
+                        return (
+                          <tr
+                            key={rev.id || rIdx}
+                            onClick={() => {
+                              router.push(`/design/${historyModalItem.id}?tab=rev&revId=${rev.id || rev.revStatus}`);
+                            }}
+                            className={`hover:bg-blue-100/60 transition-colors cursor-pointer group ${
+                              rIdx === 0 ? 'bg-blue-50/20' : ''
+                            }`}
+                            title="Klik untuk membuka drawing lama versi revisi ini di halaman detail drawing"
+                          >
+                            {/* Rev Badge */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-blue-100 text-blue-800 border border-blue-200 shadow-3xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                {rev.revStatus?.startsWith('Rev') ? rev.revStatus : `Rev ${rev.revStatus || '0'}`}
+                              </span>
+                              {rIdx === 0 && (
+                                <span className="block text-[8.5px] font-semibold text-blue-600 mt-0.5">
+                                  Terbaru
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Tanggal */}
+                            <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 font-medium text-[10.5px]">
+                              {dateFormatted}
+                            </td>
+
+                            {/* Diminta Oleh */}
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold text-gray-800 truncate" title={rev.requestedByName || rev.changedBy || '—'}>
+                                {rev.requestedByName || rev.changedBy || '—'}
+                              </div>
+                              <div className="text-[9.5px] text-gray-400">
+                                {rev.requestedByName ? 'Pemohon Revisi' : 'Drafter / PIC'}
+                              </div>
+                            </td>
+
+                            {/* Disetujui Oleh */}
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold text-emerald-800 truncate" title={rev.approvedByName || '—'}>
+                                {rev.approvedByName || '—'}
+                              </div>
+                              <div className="text-[9.5px] text-gray-400">
+                                {rev.approvedByName ? 'Section / Dept Head' : 'Belum Approval'}
+                              </div>
+                            </td>
+
+                            {/* Catatan / Deskripsi Revisi */}
+                            <td className="px-3 py-2.5">
+                              <div className="text-[11px] text-gray-800 leading-snug whitespace-pre-wrap break-words">
+                                {rev.revisionNote || rev.description || 'Tidak ada catatan revisi.'}
+                              </div>
+                              {rev.poNumber && (
+                                <div className="mt-1 text-[9.5px] text-gray-500 font-mono">
+                                  PO: <span className="font-bold text-gray-700">{rev.poNumber}</span>
+                                  {rev.leadTime ? ` • Lead Time: ${rev.leadTime} hari` : ''}
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Coretan Visual / Pin */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              {hasMarkup && markupSrc ? (
+                                <div className="inline-flex flex-col items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryLightboxImg(markupSrc)}
+                                    className="group relative block w-14 h-10 rounded-lg overflow-hidden border border-rose-300 bg-slate-900 shadow-3xs hover:border-rose-500 transition-all cursor-pointer"
+                                    title="Klik untuk memperbesar coretan penanda revisi"
+                                  >
+                                    <img
+                                      src={markupSrc}
+                                      alt="Coretan"
+                                      className="w-full h-full object-cover group-hover:scale-110 transition-transform bg-white"
+                                    />
+                                    <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 flex items-center justify-center text-white transition-colors">
+                                      <span className="material-symbols-outlined text-[13px]">fullscreen</span>
+                                    </div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryLightboxImg(markupSrc)}
+                                    className="text-[9.5px] font-bold text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[11px]">draw</span>
+                                    <span>Lihat Coretan</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-gray-400 italic">
+                                  Tanpa Coretan
+                                </span>
+                              )}
+                            </td>
+
+                            {/* File Drawing */}
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5 justify-center">
+                                {file2DUrl ? (
+                                  <a
+                                    href={file2DUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-bold text-[9.5px] flex items-center gap-1 transition-colors shadow-3xs"
+                                    title="Buka / Download Drawing 2D (PDF)"
+                                  >
+                                    <span className="material-symbols-outlined text-[12px]">picture_as_pdf</span>
+                                    <span>2D</span>
+                                  </a>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 text-[9px] text-gray-400 bg-gray-100 rounded border border-gray-200">
+                                    2D -
+                                  </span>
+                                )}
+
+                                {file3DUrl ? (
+                                  <a
+                                    href={file3DUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-md font-bold text-[9.5px] flex items-center gap-1 transition-colors shadow-3xs"
+                                    title="Buka / Download Model 3D"
+                                  >
+                                    <span className="material-symbols-outlined text-[12px]">view_in_ar</span>
+                                    <span>3D</span>
+                                  </a>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 bg-white border-t border-gray-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span className="material-symbols-outlined text-sm text-blue-600">info</span>
+                <span>Klik pada <b>baris revisi</b> untuk membuka halaman drawing &amp; arsip revisian lama, atau klik icon <b>Visual</b> untuk memperbesar coretan.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryModalItem(null)}
+                className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── LIGHTBOX PREVIEW CORETAN DARI RIWAYAT ─── */}
+      {historyLightboxImg && (
+        <div
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setHistoryLightboxImg(null)}
+        >
+          <div
+            className="relative max-w-5xl max-h-[92vh] flex flex-col items-center bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between px-4 py-2 bg-slate-800 text-white shrink-0 border-b border-slate-700">
+              <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-rose-400">draw</span>
+                Gambar Coretan &amp; Pin Penanda Revisi
+              </span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={historyLightboxImg}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-xs">open_in_new</span>
+                  <span>Buka Tab Baru</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setHistoryLightboxImg(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-3 overflow-auto flex items-center justify-center">
+              <img
+                src={historyLightboxImg}
+                alt="Coretan Resolusi Penuh"
+                className="max-h-[80vh] max-w-full object-contain rounded bg-white shadow-lg"
+              />
+            </div>
           </div>
         </div>
       )}

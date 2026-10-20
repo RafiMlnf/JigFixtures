@@ -38,12 +38,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickLogin = async (quickEmail: string) => {
+  const handleQuickLogin = async (quickEmail: string, quickNpk: string) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const pass = quickEmail === 'admin' ? 'admin123' : 'password';
-      await login(quickEmail, pass);
+      await login(quickEmail, quickNpk);
       router.push('/');
     } catch (e: any) {
       setErrorMsg(e.message || 'Quick login failed.');
@@ -159,43 +158,56 @@ export default function LoginPage() {
 
           {/* Quick Access - 4 buttons in a horizontal row */}
           <div className="mt-4 pt-3 border-t border-gray-150">
-            <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-2 text-center">Quick Access Shortcut</p>
+            <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-2 text-center">
+              Akses Cepat (Quick Login)
+            </p>
             <div className="grid grid-cols-4 gap-1.5">
+              {/* 1. Drafter: Kukuh W. (NPK: NPK001) */}
               <button
                 type="button"
-                onClick={() => handleQuickLogin('admin')}
-                className="py-1 px-1.5 bg-gray-50 hover:bg-green-50 border border-gray-200 hover:border-green-300 rounded-lg text-[8px] font-bold text-gray-600 hover:text-green-700 flex flex-col items-center gap-0.5 transition-colors cursor-pointer"
-                title="Login as PIC (admin)"
+                onClick={() => handleQuickLogin('admin', 'NPK001')}
+                className="py-1.5 px-1 bg-blue-50/60 hover:bg-blue-100/80 border border-blue-200/80 rounded-lg text-gray-700 hover:text-blue-800 flex flex-col items-center text-center transition-all cursor-pointer shadow-3xs"
+                title="Login sebagai Drafter (Kukuh W. / NPK001)"
               >
-                <span className="material-symbols-outlined text-[10px]">person</span>
-                <span>PIC</span>
+                <span className="material-symbols-outlined text-[13px] text-blue-600 mb-0.5">engineering</span>
+                <span className="text-[8px] font-bold text-gray-800 leading-tight truncate w-full">Kukuh W.</span>
+                <span className="text-[7px] text-blue-600 font-semibold leading-tight">Drafter</span>
               </button>
+
+              {/* 2. Section Head: M. Fariedl (NPK: NPK002) */}
               <button
                 type="button"
-                onClick={() => handleQuickLogin('sec@example.com')}
-                className="py-1 px-1.5 bg-gray-50 hover:bg-yellow-50 border border-gray-200 hover:border-yellow-300 rounded-lg text-[8px] font-bold text-gray-600 hover:text-yellow-700 flex flex-col items-center gap-0.5 transition-colors cursor-pointer"
-                title="Login as Section Head"
+                onClick={() => handleQuickLogin('sec@example.com', 'NPK002')}
+                className="py-1.5 px-1 bg-amber-50/60 hover:bg-amber-100/80 border border-amber-200/80 rounded-lg text-gray-700 hover:text-amber-800 flex flex-col items-center text-center transition-all cursor-pointer shadow-3xs"
+                title="Login sebagai Section Head (M. Fariedl / NPK002)"
               >
-                <span className="material-symbols-outlined text-[10px]">badge</span>
-                <span>Section</span>
+                <span className="material-symbols-outlined text-[13px] text-amber-600 mb-0.5">fact_check</span>
+                <span className="text-[8px] font-bold text-gray-800 leading-tight truncate w-full">M. Fariedl</span>
+                <span className="text-[7px] text-amber-600 font-semibold leading-tight">Section</span>
               </button>
+
+              {/* 3. Dept Head: Rahmat K. (NPK: NPK003) */}
               <button
                 type="button"
-                onClick={() => handleQuickLogin('dept@example.com')}
-                className="py-1 px-1.5 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-[8px] font-bold text-gray-600 hover:text-blue-700 flex flex-col items-center gap-0.5 transition-colors cursor-pointer"
-                title="Login as Dept Head"
+                onClick={() => handleQuickLogin('dept@example.com', 'NPK003')}
+                className="py-1.5 px-1 bg-emerald-50/60 hover:bg-emerald-100/80 border border-emerald-200/80 rounded-lg text-gray-700 hover:text-emerald-800 flex flex-col items-center text-center transition-all cursor-pointer shadow-3xs"
+                title="Login sebagai Dept Head (Rahmat K. / NPK003)"
               >
-                <span className="material-symbols-outlined text-[10px]">shield_person</span>
-                <span>Dept</span>
+                <span className="material-symbols-outlined text-[13px] text-emerald-600 mb-0.5">verified_user</span>
+                <span className="text-[8px] font-bold text-gray-800 leading-tight truncate w-full">Rahmat K.</span>
+                <span className="text-[7px] text-emerald-600 font-semibold leading-tight">Dept Head</span>
               </button>
+
+              {/* 4. Guest / Tamu (NPK: NPK004) */}
               <button
                 type="button"
-                onClick={() => handleQuickLogin('guest@example.com')}
-                className="py-1 px-1.5 bg-gray-50 hover:bg-gray-150 border border-gray-200 rounded-lg text-[8px] font-bold text-gray-600 flex flex-col items-center gap-0.5 transition-colors cursor-pointer"
-                title="Login as Guest"
+                onClick={() => handleQuickLogin('guest@example.com', 'NPK004')}
+                className="py-1.5 px-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 flex flex-col items-center text-center transition-all cursor-pointer shadow-3xs"
+                title="Login sebagai Tamu / Guest (NPK004)"
               >
-                <span className="material-symbols-outlined text-[10px]">visibility</span>
-                <span>Guest</span>
+                <span className="material-symbols-outlined text-[13px] text-gray-500 mb-0.5">visibility</span>
+                <span className="text-[8px] font-bold text-gray-800 leading-tight truncate w-full">Tamu</span>
+                <span className="text-[7px] text-gray-500 font-semibold leading-tight">Guest</span>
               </button>
             </div>
           </div>

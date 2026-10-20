@@ -343,37 +343,7 @@ export default function SnapshotEditorModal({
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="w-full max-w-6xl max-h-[96vh] bg-white rounded-2xl shadow-2xl border border-blue-200/80 flex flex-col overflow-hidden text-slate-800">
-        {/* Header - Standard App Brand Bar */}
-        <div className="h-10 px-4 bg-[#0063ff] text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[18px]">draw</span>
-            <div>
-              <h3 className="font-bold text-xs flex items-center gap-2 leading-tight">
-                Editor Coretan &amp; Pin Penanda Revisi
-                <span className="bg-white/20 text-white text-[9.5px] font-mono px-2 py-0.5 rounded font-bold border border-white/20">
-                  {designNoReg}
-                </span>
-                {totalPages > 1 && (
-                  <span className="bg-amber-400 text-slate-950 font-bold text-[9px] px-2 py-0.5 rounded shadow-3xs">
-                    Halaman {currentPage} dari {totalPages}
-                  </span>
-                )}
-              </h3>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="text-white/80 hover:text-white hover:bg-white/10 rounded-lg w-7 h-7 flex items-center justify-center transition-colors cursor-pointer"
-            title="Tutup Modal"
-          >
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
-        </div>
-
-        {/* Toolbar */}
+        {/* Minimal Toolbar */}
         <div className="px-3.5 py-1.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0 select-none">
           {/* Tool Modes & Page Switcher */}
           <div className="flex items-center gap-2">
@@ -523,6 +493,19 @@ export default function SnapshotEditorModal({
               >
                 <span className="material-symbols-outlined text-[13px]">delete</span>
                 <span>Bersihkan</span>
+              </button>
+            </div>
+
+            {/* Close Button */}
+            <div className="border-l border-slate-200 pl-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                title="Tutup"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
           </div>

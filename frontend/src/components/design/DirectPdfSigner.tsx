@@ -23,7 +23,7 @@ export default function DirectPdfSigner({
   onClose,
   onApplySignature,
   roleLabel = 'Drafter',
-  signerName = 'User PIC',
+  signerName = 'Kukuh W.',
   signerNpk = 'NPK001',
   showCommentField = false,
 }: DirectPdfSignerProps) {

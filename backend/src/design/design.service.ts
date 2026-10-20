@@ -256,6 +256,11 @@ export class DesignService {
         loc2D: rev.loc2D,
         path3D: rev.path3D,
         loc3D: rev.loc3D,
+        annotatedDocPath: (rev as any).annotatedDocPath || null,
+        markupData: (rev as any).markupData || null,
+        requestedByName: (rev as any).requestedByName || null,
+        requestedAt: (rev as any).requestedAt ? (rev as any).requestedAt.toISOString() : null,
+        revisionNote: (rev as any).revisionNote || null,
       })),
       abnormalities: d.abnormalities.map((abn) => ({
         id: abn.id,

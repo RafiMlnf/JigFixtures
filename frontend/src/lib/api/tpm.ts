@@ -54,6 +54,7 @@ export interface TpmScheduleItem {
   tpmScheduleDeadline?: string | null;
   tpmLifetimeSetAt?: string | null;
   childPartsCount: number;
+  qty?: string | number;
 }
 
 export interface TpmChecklistItem {

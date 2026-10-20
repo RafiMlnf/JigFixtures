@@ -33,6 +33,11 @@ interface RevHistoryInfo {
   path3D?: string | null;
   loc2D?: string | null;
   path2D?: string | null;
+  annotatedDocPath?: string | null;
+  markupData?: string | null;
+  requestedByName?: string | null;
+  requestedAt?: string | null;
+  revisionNote?: string | null;
 }
 
 interface AbnormalityInfo {
@@ -140,17 +145,41 @@ function DesignDetailPageContent({ params }: PageProps) {
   const [viewer3DName, setViewer3DName] = useState<string | undefined>();
   const [previewMode, setPreviewMode] = useState<'2D' | '3D'>('2D');
 
-  // Sync tab with URL query parameter ?tab=
+  // Sync tab with URL query parameter ?tab= and ?revId=
   useEffect(() => {
     const tabParam = searchParams.get('tab');
+    const revIdParam = searchParams.get('revId');
+
     if (tabParam === 'etiket') {
       setActiveTab('info');
       setInspectorOpen(true);
-    } else if (tabParam && ['info', 'childpart', 'rev', 'abn'].includes(tabParam)) {
+    } else if (tabParam === 'rev') {
+      setActiveTab('rev');
+      setInspectorOpen(true);
+      if (revIdParam && item?.revisionHistories) {
+        const targetRev = item.revisionHistories.find((r) => r.id === revIdParam || r.revStatus === revIdParam);
+        if (targetRev) {
+          setViewingRevDoc({
+            id: targetRev.id,
+            loc2D: targetRev.loc2D || targetRev.path2D || null,
+            revStatus: targetRev.revStatus,
+            description: targetRev.description,
+            requestedByName: targetRev.requestedByName,
+            approvedByName: targetRev.approvedByName,
+            createdAt: targetRev.createdAt,
+            markupData: targetRev.markupData,
+            annotatedDocPath: targetRev.annotatedDocPath,
+            revisionNote: targetRev.revisionNote,
+            poNumber: targetRev.poNumber,
+          });
+          setPreviewMode('2D');
+        }
+      }
+    } else if (tabParam && ['info', 'childpart', 'abn'].includes(tabParam)) {
       setActiveTab(tabParam as InspectorTab);
       setInspectorOpen(true);
     }
-  }, [searchParams]);
+  }, [searchParams, item]);
 
   // Multi-page 2D drawing state (Page 1 = Parent Jig, Page 2+ = Child ChildParts)
   const [activePdfPage, setActivePdfPage] = useState<number>(1);
@@ -263,7 +292,20 @@ function DesignDetailPageContent({ params }: PageProps) {
 
   const [downloadingPage, setDownloadingPage] = useState<number | null>(null);
   const [downloadingFull, setDownloadingFull] = useState(false);
-  const [viewingRevDoc, setViewingRevDoc] = useState<{ loc2D: string; revStatus: string } | null>(null);
+  const [viewingRevDoc, setViewingRevDoc] = useState<{
+    id?: string;
+    loc2D?: string | null;
+    revStatus: string;
+    description?: string;
+    requestedByName?: string | null;
+    approvedByName?: string | null;
+    createdAt?: string;
+    markupData?: string | null;
+    annotatedDocPath?: string | null;
+    revisionNote?: string | null;
+    poNumber?: string | null;
+  } | null>(null);
+  const [historyLightboxImg, setHistoryLightboxImg] = useState<string | null>(null);
 
   const handleDownloadSinglePage = async (pageNum: number, filename?: string) => {
     if (!item) return;
@@ -1027,84 +1069,195 @@ function DesignDetailPageContent({ params }: PageProps) {
                   </div>
                 )}
 
-                {/* ─ REVISI TAB ─ */}
+                {/* ─ REVISI TAB (TABEL COMPACT PILIH REVISION HISTORY) ─ */}
                 {activeTab === 'rev' && (
-                  <div className="space-y-2">
-                    <p className="text-[8px] font-bold uppercase text-gray-400 mb-2 tracking-widest">Riwayat Revisi</p>
-                    {item.revisionHistories.length === 0 ? (
-                      <p className="text-[10px] text-gray-400 italic">Belum ada riwayat revisi.</p>
-                    ) : (
-                      item.revisionHistories.map((rev) => (
-                        <div key={rev.id} className="bg-white rounded-lg p-2.5 border border-gray-200 hover:border-gray-300 transition-colors shadow-2xs">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[9px] font-bold font-mono text-blue-600">Rev {rev.revStatus}</span>
-                            <span className="text-[8px] text-gray-400">{new Date(rev.createdAt).toLocaleDateString('id-ID')}</span>
-                          </div>
-                          <p className="text-[9px] text-gray-600 mb-1.5 leading-relaxed font-medium">"{rev.description}"</p>
-                          <div className="flex justify-between text-[8px] text-gray-400 border-t border-gray-50 pt-1.5">
-                            <span>{rev.vendorName}</span>
-                            {rev.poNumber && <span className="font-mono text-gray-600">PO: {rev.poNumber}</span>}
-                          </div>
-                          {rev.approvedByName && (
-                            <div className="mt-1.5 pt-1.5 border-t border-gray-50 text-[8px] text-gray-400 flex justify-between">
-                              <span>Approved by</span>
-                              <span className="text-gray-700 font-bold">{rev.approvedByName}</span>
-                            </div>
-                          )}
-                          {(rev.loc2D || rev.loc3D) && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-gray-100 flex flex-wrap gap-1.5">
-                              {rev.loc2D && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setViewingRevDoc({ loc2D: rev.loc2D!, revStatus: rev.revStatus });
-                                      setPreviewMode('2D');
-                                    }}
-                                    className={`flex-1 min-w-[70px] py-1 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer ${
-                                      viewingRevDoc?.loc2D === rev.loc2D
-                                        ? 'bg-amber-500 text-white shadow-2xs'
-                                        : 'bg-blue-50 hover:bg-blue-100 text-blue-700'
-                                    }`}
-                                    title="Tampilkan drawing arsip versi ini di canvas 2D"
-                                  >
-                                    <span className="material-symbols-outlined text-[10px]">
-                                      {viewingRevDoc?.loc2D === rev.loc2D ? 'check' : 'visibility'}
-                                    </span>
-                                    {viewingRevDoc?.loc2D === rev.loc2D ? 'Aktif di Canvas' : 'Lihat 2D'}
-                                  </button>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[8.5px] font-bold uppercase text-gray-500 tracking-wider flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px] text-blue-600">history</span>
+                        <span>Riwayat Revisi ({item.revisionHistories.length})</span>
+                      </p>
+                      {viewingRevDoc && (
+                        <button
+                          type="button"
+                          onClick={() => setViewingRevDoc(null)}
+                          className="text-[8.5px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                        >
+                          Reset ke Terkini
+                        </button>
+                      )}
+                    </div>
 
-                                  <a
-                                    href={getFileUrl(rev.loc2D)!}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    download={`${item.noReg}_Rev_${rev.revStatus}.pdf`}
-                                    className="flex-1 min-w-[70px] py-1 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer"
-                                    title="Unduh file drawing versi revisi ini"
-                                  >
-                                    <span className="material-symbols-outlined text-[10px]">download</span>
-                                    Unduh 2D
-                                  </a>
-                                </>
-                              )}
-                              {rev.loc3D && (
-                                <button
-                                  type="button"
+                    {item.revisionHistories.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-white border border-gray-200 text-center text-gray-400 text-[10px]">
+                        Belum ada riwayat revisi tercatat.
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-3xs overflow-hidden">
+                        <table className="w-full text-left border-collapse text-[9.5px]">
+                          <thead>
+                            <tr className="bg-slate-100/90 text-gray-500 font-bold border-b border-gray-200 text-[8px] uppercase tracking-wider select-none">
+                              <th className="px-2 py-1 text-center w-[46px]">Rev</th>
+                              <th className="px-1.5 py-1">Tanggal</th>
+                              <th className="px-1.5 py-1">Keterangan / Oleh</th>
+                              <th className="px-1.5 py-1 text-center w-[36px]">Visual</th>
+                              <th className="px-1.5 py-1 text-center w-[36px]">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 text-gray-700">
+                            {item.revisionHistories.map((rev) => {
+                              const isActive = viewingRevDoc?.id === rev.id || viewingRevDoc?.revStatus === rev.revStatus;
+                              const d = rev.createdAt ? new Date(rev.createdAt) : null;
+                              const markupSrc = rev.markupData || (rev.annotatedDocPath ? getFileUrl(rev.annotatedDocPath) : null);
+                              const hasMarkup = !!markupSrc;
+                              const file2D = rev.loc2D || rev.path2D;
+                              const file3D = rev.loc3D || rev.path3D;
+
+                              return (
+                                <tr
+                                  key={rev.id}
                                   onClick={() => {
-                                    setViewer3DUrl(getFileUrl(rev.loc3D!));
-                                    setViewer3DName(rev.path3D || undefined);
-                                    setPreviewMode('3D');
+                                    setViewingRevDoc({
+                                      id: rev.id,
+                                      loc2D: file2D || null,
+                                      revStatus: rev.revStatus,
+                                      description: rev.description,
+                                      requestedByName: rev.requestedByName,
+                                      approvedByName: rev.approvedByName,
+                                      createdAt: rev.createdAt,
+                                      markupData: rev.markupData,
+                                      annotatedDocPath: rev.annotatedDocPath,
+                                      revisionNote: rev.revisionNote,
+                                      poNumber: rev.poNumber,
+                                    });
+                                    setPreviewMode('2D');
                                   }}
-                                  className="flex-1 min-w-[70px] py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[8px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer"
+                                  className={`hover:bg-blue-50/70 cursor-pointer transition-colors ${
+                                    isActive ? 'bg-amber-50/80 font-medium' : ''
+                                  }`}
+                                  title="Klik untuk menampilkan drawing versi ini di layar kiri"
                                 >
-                                  <span className="material-symbols-outlined text-[10px]">deployed_code</span>
-                                  View 3D
-                                </button>
-                              )}
-                            </div>
-                          )}
+                                  {/* Rev Badge */}
+                                  <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                                    <span
+                                      className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold shadow-3xs ${
+                                        isActive
+                                          ? 'bg-amber-600 text-white'
+                                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                      }`}
+                                    >
+                                      Rev {rev.revStatus}
+                                    </span>
+                                  </td>
+
+                                  {/* Tanggal */}
+                                  <td className="px-1.5 py-1.5 whitespace-nowrap text-gray-400 text-[8px]">
+                                    {d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear().toString().slice(-2)}` : '—'}
+                                  </td>
+
+                                  {/* Keterangan & Oleh */}
+                                  <td className="px-1.5 py-1.5 max-w-[110px]">
+                                    <p className="truncate text-gray-800 text-[9px] font-semibold" title={rev.revisionNote || rev.description}>
+                                      {rev.revisionNote || rev.description || 'Revisi drawing'}
+                                    </p>
+                                    <p className="text-[7.5px] text-gray-400 truncate">
+                                      {rev.requestedByName || rev.changedBy || 'PIC'} &bull; {rev.approvedByName || 'Draft'}
+                                    </p>
+                                  </td>
+
+                                  {/* Coretan Visual */}
+                                  <td className="px-1.5 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    {hasMarkup && markupSrc ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setHistoryLightboxImg(markupSrc)}
+                                        className="w-5 h-5 rounded border border-rose-300 hover:border-rose-500 bg-rose-50 text-rose-600 flex items-center justify-center cursor-pointer transition-colors mx-auto"
+                                        title="Buka Coretan Visual / Pin"
+                                      >
+                                        <span className="material-symbols-outlined text-[11px]">draw</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-gray-300 text-[8px] block">—</span>
+                                    )}
+                                  </td>
+
+                                  {/* File Download / View */}
+                                  <td className="px-1.5 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-center gap-0.5">
+                                      {file2D && (
+                                        <a
+                                          href={getFileUrl(file2D)!}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          download={`${item.noReg}_Rev_${rev.revStatus}.pdf`}
+                                          className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                          title="Unduh 2D PDF"
+                                        >
+                                          <span className="material-symbols-outlined text-[13px]">download</span>
+                                        </a>
+                                      )}
+                                      {file3D && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setViewer3DUrl(getFileUrl(file3D!));
+                                            setViewer3DName(rev.path3D || undefined);
+                                            setPreviewMode('3D');
+                                          }}
+                                          className="p-0.5 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer"
+                                          title="View 3D Model"
+                                        >
+                                          <span className="material-symbols-outlined text-[13px]">deployed_code</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Selected Revision Info Card */}
+                    {viewingRevDoc && (
+                      <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-[9px] space-y-1.5 shadow-3xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-amber-900 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px] text-amber-600">visibility</span>
+                            Sedang Dilihat: Rev {viewingRevDoc.revStatus}
+                          </span>
+                          <span className="text-[8px] font-mono text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                            Arsip
+                          </span>
                         </div>
-                      ))
+                        <p className="text-gray-700 leading-snug">
+                          {viewingRevDoc.revisionNote || viewingRevDoc.description || 'Tidak ada catatan revisi.'}
+                        </p>
+                        <div className="text-[8px] text-gray-500 border-t border-amber-200/60 pt-1 flex justify-between">
+                          <span>Diminta: <strong>{viewingRevDoc.requestedByName || '—'}</strong></span>
+                          <span>Disetujui: <strong>{viewingRevDoc.approvedByName || '—'}</strong></span>
+                        </div>
+                        {viewingRevDoc.markupData || viewingRevDoc.annotatedDocPath ? (
+                          <div className="pt-1 flex items-center justify-between border-t border-amber-200/60">
+                            <span className="text-[8px] text-rose-700 font-semibold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[11px]">draw</span>
+                              Ada coretan revisi
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const m = viewingRevDoc.markupData || (viewingRevDoc.annotatedDocPath ? getFileUrl(viewingRevDoc.annotatedDocPath) : null);
+                                if (m) setHistoryLightboxImg(m);
+                              }}
+                              className="text-[8.5px] font-bold text-[#0063ff] hover:underline cursor-pointer"
+                            >
+                              Perbesar Coretan &rarr;
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1379,6 +1532,51 @@ function DesignDetailPageContent({ params }: PageProps) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── LIGHTBOX PREVIEW CORETAN REVISI ── */}
+      {historyLightboxImg && (
+        <div
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setHistoryLightboxImg(null)}
+        >
+          <div
+            className="relative max-w-5xl max-h-[92vh] flex flex-col items-center bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between px-4 py-2 bg-slate-800 text-white shrink-0 border-b border-slate-700">
+              <span className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-rose-400">draw</span>
+                Gambar Coretan &amp; Pin Penanda Revisi
+              </span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={historyLightboxImg}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-xs">open_in_new</span>
+                  <span>Buka Tab Baru</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setHistoryLightboxImg(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="p-3 overflow-auto flex items-center justify-center">
+              <img
+                src={historyLightboxImg}
+                alt="Coretan Resolusi Penuh"
+                className="max-h-[80vh] max-w-full object-contain rounded bg-white shadow-lg"
+              />
+            </div>
           </div>
         </div>
       )}

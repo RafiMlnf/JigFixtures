@@ -73,7 +73,7 @@ export default function ApprovalCenterPage() {
                 ? 'Menunggu'
                 : statusFilter === 'APPROVED'
                 ? 'Disetujui'
-                : 'Perlu Revisi'}
+                : 'Revisi'}
             </span>
             <span className="material-symbols-outlined text-[13px] text-gray-500">expand_more</span>
             <select
@@ -84,7 +84,7 @@ export default function ApprovalCenterPage() {
               <option value="ALL">Semua Status</option>
               <option value="WAITING">Menunggu Approval</option>
               <option value="APPROVED">Disetujui</option>
-              <option value="REJECTED">Perlu Revisi</option>
+              <option value="REJECTED">Revisi</option>
             </select>
           </div>
 
@@ -173,7 +173,7 @@ export default function ApprovalCenterPage() {
                   {/* Status Badge */}
                   <td className="px-1.5 py-0.5 text-center whitespace-nowrap">
                     <span
-                      className={`text-[8.5px] font-bold px-2 py-0.5 rounded-full ${
+                      className={`text-[8.5px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
                         app.status === 'APPROVED'
                           ? 'bg-emerald-100 text-emerald-700'
                           : app.status === 'REJECTED'
@@ -181,11 +181,16 @@ export default function ApprovalCenterPage() {
                           : 'bg-amber-100 text-amber-700'
                       }`}
                     >
-                      {app.status === 'APPROVED'
-                        ? 'Disetujui'
-                        : app.status === 'REJECTED'
-                        ? 'Perlu Revisi'
-                        : 'Menunggu'}
+                      {app.status === 'REJECTED' && (
+                        <span className="material-symbols-outlined text-[10px]">edit</span>
+                      )}
+                      <span>
+                        {app.status === 'APPROVED'
+                          ? 'Disetujui'
+                          : app.status === 'REJECTED'
+                          ? 'Revisi'
+                          : 'Menunggu'}
+                      </span>
                     </span>
                   </td>
 
@@ -203,7 +208,7 @@ export default function ApprovalCenterPage() {
                       {/* Section Head Dot */}
                       <div
                         className="flex items-center gap-0.5"
-                        title={`Section Head: ${secStatus === 'APPROVED' ? 'Disetujui' : secStatus === 'REJECTED' ? 'Perlu Revisi' : 'Menunggu'}`}
+                        title={`Section Head: ${secStatus === 'APPROVED' ? 'Disetujui' : secStatus === 'REJECTED' ? 'Revisi' : 'Menunggu'}`}
                       >
                         <div className={`w-2 h-2 rounded-full ${getDotColor(secStatus)} shadow-2xs`} />
                         <span className="text-[7px] font-mono text-gray-400 font-bold">SEC</span>
@@ -214,7 +219,7 @@ export default function ApprovalCenterPage() {
                       {/* Dept Head Dot */}
                       <div
                         className="flex items-center gap-0.5"
-                        title={`Dept Head: ${deptLocked ? 'Antre Section Head' : deptStatus === 'APPROVED' ? 'Disetujui' : deptStatus === 'REJECTED' ? 'Perlu Revisi' : 'Menunggu'}`}
+                        title={`Dept Head: ${deptLocked ? 'Antre Section Head' : deptStatus === 'APPROVED' ? 'Disetujui' : deptStatus === 'REJECTED' ? 'Revisi' : 'Menunggu'}`}
                       >
                         <div className={`w-2 h-2 rounded-full ${getDotColor(deptStatus, deptLocked)} shadow-2xs`} />
                         <span className="text-[7px] font-mono text-gray-400 font-bold">DEPT</span>

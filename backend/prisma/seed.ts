@@ -34,38 +34,35 @@ async function main() {
   }
   console.log('✔ Roles verified / seeded.');
 
-  // 2. Seed Default Users
-  const passwordHash = bcrypt.hashSync('password', 10);
-  const adminPasswordHash = bcrypt.hashSync('admin123', 10);
-
+  // 2. Seed Default Users (Password value equals NPK)
   const users = [
     {
       email: 'admin',
-      name: 'PIC Jig Fixture',
+      name: 'Kukuh W.',
       npk: 'NPK001',
       roleId: rolesMap['PE_JIG_FIXTURE'],
-      password: adminPasswordHash,
+      password: bcrypt.hashSync('NPK001', 10),
     },
     {
       email: 'sec@example.com',
       name: 'M. Fariedl (Section Head)',
       npk: 'NPK002',
       roleId: rolesMap['PE_SECTION_HEAD'],
-      password: passwordHash,
+      password: bcrypt.hashSync('NPK002', 10),
     },
     {
       email: 'dept@example.com',
       name: 'Rahmat K. (Dept Head)',
       npk: 'NPK003',
       roleId: rolesMap['PE_DEPT_HEAD'],
-      password: passwordHash,
+      password: bcrypt.hashSync('NPK003', 10),
     },
     {
       email: 'guest@example.com',
       name: 'Tamu / Guest View Only',
       npk: 'NPK004',
       roleId: rolesMap['TAMU'],
-      password: passwordHash,
+      password: bcrypt.hashSync('NPK004', 10),
     },
   ];
 

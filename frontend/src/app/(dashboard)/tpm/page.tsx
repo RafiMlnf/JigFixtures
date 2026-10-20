@@ -747,6 +747,7 @@ export default function TPMPage() {
                     <th className="w-[140px] px-2 py-1">No. Reg / Part</th>
                     <th className="w-[230px] max-w-[280px] px-2 py-1">Item Name</th>
                     <th className="px-2 py-1">Line &amp; OP</th>
+                    <th className="w-[45px] px-2 py-1 text-center">Qty</th>
                     <th className="w-[130px] px-2 py-1 text-center">Lifetime</th>
                     <th className="w-[105px] px-2 py-1 text-center">Jadwal Servis</th>
                     {isPic && <th className="w-[130px] px-2 py-1 text-center">Aksi</th>}
@@ -856,6 +857,11 @@ export default function TPMPage() {
                             {item.lineName || '—'}
                             {item.processName ? ` · ${item.processName}` : ''}
                           </span>
+                        </td>
+
+                        {/* Qty */}
+                        <td className="px-2 py-0.5 text-center whitespace-nowrap font-mono font-medium text-[9.5px] text-gray-700">
+                          {item.qty || '1'}
                         </td>
 
                         {/* Lifetime (Days only) */}

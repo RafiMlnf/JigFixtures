@@ -261,6 +261,7 @@ export class TpmService {
           tpmScheduleDeadline: d.tpmScheduleDeadline,
           tpmLifetimeSetAt: d.tpmLifetimeSetAt,
           childPartsCount: (d.childParts || []).length,
+          qty: d.qty || '1',
         });
       }
 
@@ -289,6 +290,7 @@ export class TpmService {
             tpmScheduleDeadline: cp.tpmScheduleDeadline,
             tpmLifetimeSetAt: cp.tpmLifetimeSetAt,
             childPartsCount: 0,
+            qty: cp.qty || '1',
           });
         }
       }

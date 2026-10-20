@@ -102,6 +102,7 @@ export class ApprovalService {
             vendor: true,
             documents: true,
             revisionHistories: {
+              include: { changedBy: true },
               orderBy: { createdAt: 'desc' },
             },
           },
@@ -413,6 +414,8 @@ export class ApprovalService {
           },
         },
         submittedBy: true,
+        sectionHead: true,
+        deptHead: true,
       },
     });
 
@@ -425,16 +428,27 @@ export class ApprovalService {
     const old2D = oldDoc?.loc2D || approval.design.revisionHistories.find((r) => r.loc2D)?.loc2D || null;
     const oldPath2D = oldDoc?.path2D || oldDoc?.loc2D || approval.design.revisionHistories.find((r) => r.path2D)?.path2D || null;
 
+    const revRequester = approval.sectionStatus === 'REJECTED'
+      ? approval.sectionHead?.name || 'Section Head'
+      : approval.deptStatus === 'REJECTED'
+      ? approval.deptHead?.name || 'Dept Head'
+      : approval.sectionHead?.name || approval.deptHead?.name || 'Approver';
+
     await this.prisma.revisionHistory.create({
       data: {
         designId: approval.designId,
         revStatus: approval.design.revStatus || '0',
-        description: `Arsip sebelum revisi: ${approval.finalComment || approval.revisionNote || 'Revisi sebelumnya'}`,
+        description: dto.revisionNote || approval.finalComment || approval.sectionComment || approval.deptComment || 'Revisi drawing',
         changedById: userId,
         loc2D: old2D,
         path2D: oldPath2D,
         loc3D: approval.design.revisionHistories[0]?.loc3D || null,
         path3D: approval.design.revisionHistories[0]?.path3D || null,
+        annotatedDocPath: approval.annotatedDocPath || null,
+        markupData: approval.markupData || null,
+        requestedByName: revRequester,
+        requestedAt: approval.sectionAt || approval.deptAt || new Date(),
+        revisionNote: approval.finalComment || approval.sectionComment || approval.deptComment || null,
       },
     });
 

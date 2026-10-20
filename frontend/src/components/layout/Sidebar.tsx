@@ -7,6 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { canEdit, type AppRole } from '@/lib/rbac';
 import logoImg from '../../../assets/img/mtmwide.png';
+import jfLogoImg from '../../../assets/img/logoapp.png';
 
 interface MenuItem {
   name: string;
@@ -141,12 +142,11 @@ export default function Sidebar() {
             />
           </div>
         ) : (
-          <div className="flex items-center justify-center p-0.5" title="PT Menara Terus Makmur">
+          <div className="flex items-center justify-center p-0.5" title="Jig & Fixtures">
             <Image
-              src={logoImg}
-              alt="Logo PT Menara Terus Makmur"
-              className="w-[48px] h-auto object-contain"
-              style={{ filter: 'url(#white-outline)' }}
+              src={jfLogoImg}
+              alt="Logo Jig & Fixtures"
+              className="w-[38px] h-[38px] object-contain"
               priority
             />
           </div>
